@@ -192,6 +192,8 @@ img { max-width: 100%; }
   padding: 28px 24px;
   position: relative;
   transition: transform 0.2s, box-shadow 0.2s;
+  display: flex;
+  flex-direction: column;
 }
 .feature-card:hover {
   transform: translateY(-4px);
@@ -259,10 +261,12 @@ img { max-width: 100%; }
 .feature-card-btn-row {
   display: flex;
   gap: 6px;
+  margin-top: auto; /* ดันแถวปุ่มลงล่างสุดของการ์ดเสมอ ให้ตรงแถวกันข้ามการ์ด */
+  padding-top: 14px;
 }
 .feature-card-btn-row .feature-card-btn {
   flex: 1;
-  margin-top: 14px;
+  margin-top: 0;
   padding: 7px 4px;
   font-size: 12px;
   text-align: center;
