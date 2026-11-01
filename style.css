@@ -236,6 +236,118 @@ img { max-width: 100%; }
   font-weight: 800;
 }
 
+/* ---------- Ad slot card ---------- */
+.feature-card.ad-slot {
+  border: 2px dashed #cbd5e1;
+  background: #f8fafc;
+  display: flex;
+  flex-direction: column;
+}
+.ad-slot-label {
+  position: absolute;
+  top: 18px; right: 18px;
+  background: #fff;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 20px;
+}
+.ad-slot-btn { margin-top: 14px; padding: 8px 16px; font-size: 13px; align-self: flex-start; }
+
+/* ---------- Community feed ---------- */
+.community {
+  background: var(--bg-light);
+  padding: 70px 20px;
+}
+.community-inner {
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.avatar {
+  width: 42px; height: 42px;
+  border-radius: 50%;
+  background: #e0f2fe;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.post-composer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px 16px;
+  margin-bottom: 10px;
+}
+.composer-input {
+  flex: 1;
+  border: none;
+  background: #f1f5f9;
+  border-radius: 20px;
+  padding: 10px 16px;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--muted);
+}
+.composer-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+.composer-action {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: default;
+}
+
+.post-card {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 18px;
+  margin-bottom: 16px;
+}
+.post-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.post-meta { display: flex; flex-direction: column; }
+.post-meta strong { font-size: 14px; }
+.post-meta span { font-size: 12px; color: var(--muted); }
+.post-text { font-size: 14px; color: var(--text); margin-bottom: 14px; line-height: 1.7; }
+.post-actions {
+  display: flex;
+  gap: 20px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.community-note {
+  text-align: center;
+  font-size: 12px;
+  color: #94a3b8;
+  margin-top: 10px;
+}
+
 /* ---------- Connect flow ---------- */
 .connect-flow {
   background: var(--bg-light);
