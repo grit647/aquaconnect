@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AquaConnect — เชื่อมโยงวงการสัตว์น้ำ</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="header-inner">
+    <div class="logo">
+      <span class="logo-icon">🦐</span>
+      <span class="logo-text">AquaConnect</span>
+    </div>
+    <button class="nav-toggle" id="navToggle" aria-label="เปิดเมนู">☰</button>
+    <nav class="main-nav" id="mainNav">
+      <a href="#home" class="active">หน้าแรก</a>
+      <a href="#info">ข้อมูล</a>
+      <a href="#farm">จัดการการเลี้ยง</a>
+      <a href="#larvae">ขายลูกกุ้ง</a>
+      <a href="#suppliers">ปัจจัยการผลิต</a>
+      <a href="#login" class="nav-cta">เข้าสู่ระบบ</a>
+    </nav>
+  </div>
+</header>
+
+<section class="hero" id="home">
+  <div class="hero-inner">
+    <h1>เลี้ยงเป็นระบบ ขายตรงถึงผู้ซื้อ<br>ไม่ต้องผ่านคนกลาง</h1>
+    <p>แพลตฟอร์มสำหรับผู้เลี้ยงสัตว์น้ำครบวงจร — บันทึก/วิเคราะห์ข้อมูลฟาร์ม
+      หาข้อมูลความรู้ ซื้อขายลูกพันธุ์ ไปจนถึงเชื่อมตรงกับผู้ซื้อ/ผู้บริโภค</p>
+    <div class="hero-actions">
+      <a href="#signup" class="btn btn-primary">เริ่มใช้งานฟรี</a>
+      <a href="#demo" class="btn btn-ghost">ดูตัวอย่างการใช้งาน</a>
+    </div>
+    <div class="hero-stats">
+      <div><strong>4</strong><span>บริการหลัก</span></div>
+      <div><strong>ฟรี</strong><span>สำหรับเกษตรกร</span></div>
+      <div><strong>ตรง</strong><span>เชื่อมถึงผู้ซื้อ</span></div>
+    </div>
+  </div>
+</section>
+
+<section class="features">
+  <div class="section-head">
+    <h2>บริการหลักของเรา</h2>
+    <p>ออกแบบมาเพื่อผู้เลี้ยงสัตว์น้ำโดยเฉพาะ จากประสบการณ์ตรงในวงการ</p>
+  </div>
+
+  <div class="feature-grid">
+    <div class="feature-card" id="info">
+      <div class="feature-icon">📚</div>
+      <h3>ข้อมูล</h3>
+      <p>ความรู้/ข่าวสารวงการสัตว์น้ำ เทคนิคการเลี้ยง สถานการณ์ตลาด อัปเดตสม่ำเสมอ</p>
+    </div>
+
+    <div class="feature-card featured" id="farm">
+      <div class="feature-badge">ใช้งานหลัก</div>
+      <div class="feature-icon">📊</div>
+      <h3>จัดการการเลี้ยง</h3>
+      <p>บันทึกข้อมูลรายวัน ติดตามคุณภาพน้ำ อาหาร และวิเคราะห์ผลการเลี้ยงแบบเรียลไทม์</p>
+      <ul class="feature-list">
+        <li>กรอกข้อมูลรายวัน (pH, ALK, แคลเซียม ฯลฯ)</li>
+        <li>ติดตามคุณภาพน้ำ/ไนโตรเจน</li>
+        <li>บันทึกการให้อาหาร คำนวณ FCR</li>
+        <li>กราฟวิเคราะห์แนวโน้ม</li>
+      </ul>
+    </div>
+
+    <div class="feature-card" id="larvae">
+      <div class="feature-icon">🐚</div>
+      <h3>ขายลูกกุ้ง</h3>
+      <p>ตลาดซื้อขายลูกพันธุ์กุ้ง เชื่อมฟาร์มอนุบาลกับเกษตรกรโดยตรง</p>
+    </div>
+
+    <div class="feature-card" id="suppliers">
+      <div class="feature-icon">🧪</div>
+      <h3>ปัจจัยการผลิต</h3>
+      <p>ไดเรกทอรีร้านค้าอาหารสัตว์น้ำ เคมีภัณฑ์ และอุปกรณ์การเลี้ยงที่เชื่อถือได้</p>
+    </div>
+  </div>
+</section>
+
+<section class="connect-flow">
+  <div class="section-head">
+    <h2>เชื่อมทุกฝ่ายในวงจรเดียว</h2>
+    <p>ตัดขั้นตอนที่ไม่จำเป็น ผลผลิตถึงมือผู้ซื้อเร็วขึ้น ได้ราคาที่เป็นธรรมกว่า</p>
+  </div>
+  <div class="flow-diagram">
+    <div class="flow-node">
+      <span class="flow-icon">🧑‍🌾</span>
+      <span>ผู้เลี้ยง</span>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node flow-node-center">
+      <span class="flow-icon">🦐</span>
+      <span>AquaConnect</span>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node">
+      <span class="flow-icon">🛒</span>
+      <span>ผู้ซื้อ / คนกิน</span>
+    </div>
+  </div>
+</section>
+
+<section class="advertiser-note">
+  <div class="advertiser-inner">
+    <h2>สำหรับผู้ค้าปัจจัยการผลิต</h2>
+    <p>เข้าถึงฐานเกษตรกรผู้เลี้ยงสัตว์น้ำที่ใช้งานจริงบนแพลตฟอร์มของเรา
+      ลงโฆษณาสินค้าของคุณให้ตรงกลุ่มเป้าหมาย</p>
+    <a href="#advertise" class="btn btn-outline">สนใจลงโฆษณา</a>
+  </div>
+</section>
+
+<footer class="site-footer">
+  <p>🦐 AquaConnect — แพลตฟอร์มสำหรับผู้เลี้ยงสัตว์น้ำ</p>
+  <p class="footer-note">ชื่อเว็บนี้เป็นชื่อชั่วคราว เปลี่ยนได้ภายหลัง</p>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
