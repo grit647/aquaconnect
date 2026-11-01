@@ -258,10 +258,18 @@ img { max-width: 100%; }
 .feature-card-btn { display: inline-block; margin-top: 14px; padding: 8px 16px; font-size: 13px; }
 .feature-card-btn-row {
   display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
+  gap: 6px;
 }
-.feature-card-btn-row .feature-card-btn { margin-top: 14px; }
+.feature-card-btn-row .feature-card-btn {
+  flex: 1;
+  margin-top: 14px;
+  padding: 7px 4px;
+  font-size: 12px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 /* การ์ดชุมชนผู้เลี้ยง ในแถวฟีเจอร์ (คลิกได้ทั้งการ์ด ลิงก์ไปหน้า community.html) */
 .feature-card-link {
