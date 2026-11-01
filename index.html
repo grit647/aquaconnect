@@ -28,15 +28,61 @@
 </header>
 
 <section class="hero" id="home">
-  <div class="hero-inner">
-    <h1>เลี้ยงเป็นระบบ ขายตรงถึงผู้ซื้อ<br>ไม่ต้องผ่านคนกลาง</h1>
-    <p>แพลตฟอร์มสำหรับผู้เลี้ยงสัตว์น้ำครบวงจร — บันทึก/วิเคราะห์ข้อมูลฟาร์ม
-      หาข้อมูลความรู้ ซื้อขายลูกพันธุ์ ไปจนถึงเชื่อมตรงกับผู้ซื้อ/ผู้บริโภค</p>
-    <div class="hero-stats">
-      <div><strong>0</strong><span>ผู้เข้าชม</span></div>
-      <div><strong>0</strong><span>สมาชิกทั้งหมด</span></div>
+  <div class="hero-grid">
+    <div class="weather-widget">
+      <select class="province-select" id="provinceSelect">
+        <option>ปราจีนบุรี</option>
+        <option>ฉะเชิงเทรา</option>
+        <option>สมุทรสาคร</option>
+        <option>สุราษฎร์ธานี</option>
+        <option>จันทบุรี</option>
+        <option>ตราด</option>
+        <option>ระยอง</option>
+      </select>
+      <div class="map-placeholder">
+        <span class="map-emoji">🗺️</span>
+        <span class="map-pin">📍</span>
+      </div>
+      <div class="weather-info">
+        <span class="weather-icon">⛅</span>
+        <div class="weather-text">
+          <strong>32°C</strong>
+          <span>มีเมฆบางส่วน</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="hero-inner">
+      <h1>เลี้ยงเป็นระบบ ขายตรงถึงผู้ซื้อ<br>ไม่ต้องผ่านคนกลาง</h1>
+      <p>แพลตฟอร์มสำหรับผู้เลี้ยงสัตว์น้ำครบวงจร — บันทึก/วิเคราะห์ข้อมูลฟาร์ม
+        หาข้อมูลความรู้ ซื้อขายลูกพันธุ์ ไปจนถึงเชื่อมตรงกับผู้ซื้อ/ผู้บริโภค</p>
+      <div class="hero-stats">
+        <div><strong>0</strong><span>ผู้เข้าชม</span></div>
+        <div><strong>0</strong><span>สมาชิกทั้งหมด</span></div>
+      </div>
     </div>
   </div>
+
+  <div class="price-ticker">
+    <span class="price-ticker-label">📊 ราคากุ้งวันนี้</span>
+    <div class="price-ticker-track">
+      <span class="price-ticker-content">
+        กุ้งขาว ไซส์ 50 ตัว/กก. 150 บาท &nbsp;&nbsp;•&nbsp;&nbsp;
+        กุ้งขาว ไซส์ 60 ตัว/กก. 140 บาท &nbsp;&nbsp;•&nbsp;&nbsp;
+        กุ้งขาว ไซส์ 70 ตัว/กก. 130 บาท &nbsp;&nbsp;•&nbsp;&nbsp;
+        กุ้งขาว ไซส์ 100 ตัว/กก. 115 บาท &nbsp;&nbsp;•&nbsp;&nbsp;
+        กุ้งก้ามกราม ไซส์ 30 ตัว/กก. 220 บาท &nbsp;&nbsp;•&nbsp;&nbsp;
+      </span>
+      <span class="price-ticker-content" aria-hidden="true">
+        กุ้งขาว ไซส์ 50 ตัว/กก. 150 บาท &nbsp;&nbsp;•&nbsp;&nbsp;
+        กุ้งขาว ไซส์ 60 ตัว/กก. 140 บาท &nbsp;&nbsp;•&nbsp;&nbsp;
+        กุ้งขาว ไซส์ 70 ตัว/กก. 130 บาท &nbsp;&nbsp;•&nbsp;&nbsp;
+        กุ้งขาว ไซส์ 100 ตัว/กก. 115 บาท &nbsp;&nbsp;•&nbsp;&nbsp;
+        กุ้งก้ามกราม ไซส์ 30 ตัว/กก. 220 บาท &nbsp;&nbsp;•&nbsp;&nbsp;
+      </span>
+    </div>
+  </div>
+  <p class="ticker-note">* ตัวอย่างข้อมูลราคาเท่านั้น ยังไม่เชื่อมระบบอัปเดทราคาจริง</p>
 </section>
 
 <section class="features">
