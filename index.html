@@ -136,72 +136,57 @@
   </div>
 
   <div class="feature-grid">
-    <div class="feature-card ad-slot">
-      <div class="ad-slot-label">พื้นที่โฆษณา</div>
+    <button class="feature-card feature-card-compact ad-slot" data-card="ad1">
+      <span class="ad-slot-label">พื้นที่โฆษณา</span>
       <div class="feature-icon">📢</div>
       <h3>พื้นที่สำหรับผู้ค้า 1</h3>
-      <p>ตำแหน่งโฆษณาสินค้า/บริการจากผู้ค้าปัจจัยการผลิต แสดงให้เกษตรกรที่ใช้งานจริงเห็น</p>
-      <a href="#advertise" class="btn btn-ghost ad-slot-btn">สนใจลงโฆษณา</a>
-    </div>
+    </button>
 
-    <div class="feature-card featured" id="farm">
-      <div class="feature-badge">ใช้งานหลัก</div>
+    <button class="feature-card feature-card-compact featured" data-card="farm">
+      <span class="feature-badge">ใช้งานหลัก</span>
       <div class="feature-icon">📊</div>
       <h3>จัดการการเลี้ยง</h3>
-      <p>บันทึกข้อมูลรายวัน ติดตามคุณภาพน้ำ อาหาร และวิเคราะห์ผลการเลี้ยงแบบเรียลไทม์</p>
-      <ul class="feature-list">
-        <li>กรอกข้อมูลรายวัน (pH, ALK, แคลเซียม ฯลฯ)</li>
-        <li>ติดตามคุณภาพน้ำ/ไนโตรเจน</li>
-        <li>บันทึกการให้อาหาร คำนวณ FCR</li>
-        <li>กราฟวิเคราะห์แนวโน้ม</li>
-      </ul>
-    </div>
+    </button>
 
-    <div class="feature-card ad-slot">
-      <div class="ad-slot-label">พื้นที่โฆษณา</div>
+    <button class="feature-card feature-card-compact ad-slot" data-card="ad2">
+      <span class="ad-slot-label">พื้นที่โฆษณา</span>
       <div class="feature-icon">📢</div>
       <h3>พื้นที่สำหรับผู้ค้า 2</h3>
-      <p>ตำแหน่งโฆษณาสินค้า/บริการจากผู้ค้าปัจจัยการผลิต แสดงให้เกษตรกรที่ใช้งานจริงเห็น</p>
-      <a href="#advertise" class="btn btn-ghost ad-slot-btn">สนใจลงโฆษณา</a>
-    </div>
+    </button>
 
-    <div class="feature-card" id="info">
+    <button class="feature-card feature-card-compact" data-card="info">
       <div class="feature-icon">📚</div>
       <h3>ข้อมูล</h3>
-      <p>ความรู้/ข่าวสารวงการสัตว์น้ำ เทคนิคการเลี้ยง สถานการณ์ตลาด อัปเดตสม่ำเสมอ</p>
-      <div class="feature-card-btn-row">
-        <a href="#add-info" class="btn btn-ghost feature-card-btn">➕ เพิ่มข้อมูล</a>
-      </div>
-    </div>
+    </button>
 
-    <div class="feature-card" id="larvae">
+    <button class="feature-card feature-card-compact" data-card="larvae">
       <div class="feature-icon">🐚</div>
       <h3>ขายลูกกุ้ง</h3>
-      <p>ตลาดซื้อขายลูกพันธุ์กุ้ง เชื่อมฟาร์มอนุบาลกับเกษตรกรโดยตรง</p>
-      <div class="feature-card-btn-row">
-        <a href="#add-larvae" class="btn btn-ghost feature-card-btn">➕ เพิ่มข้อมูล</a>
-        <a href="#order-larvae" class="btn btn-primary feature-card-btn">🛒 จอง/สั่งซื้อ</a>
-      </div>
-    </div>
+    </button>
 
-    <div class="feature-card" id="suppliers">
+    <button class="feature-card feature-card-compact" data-card="suppliers">
       <div class="feature-icon">🧪</div>
       <h3>ปัจจัยการผลิต</h3>
-      <p>ไดเรกทอรีร้านค้าอาหารสัตว์น้ำ เคมีภัณฑ์ และอุปกรณ์การเลี้ยงที่เชื่อถือได้</p>
-      <div class="feature-card-btn-row">
-        <a href="#add-supplier" class="btn btn-ghost feature-card-btn">➕ เพิ่มข้อมูล</a>
-        <a href="#order-supplier" class="btn btn-primary feature-card-btn">🛒 จอง/สั่งซื้อ</a>
-      </div>
-    </div>
+    </button>
 
-    <a href="community.html" class="feature-card feature-card-link" id="community">
+    <button class="feature-card feature-card-compact" data-card="community">
       <div class="feature-icon">💬</div>
       <h3>ชุมชนผู้เลี้ยง</h3>
-      <p>พูดคุย ถามตอบ แชร์ประสบการณ์ ประกาศซื้อ-ขาย กับเกษตรกรคนอื่นๆ เหมือนโพสต์บนโซเชียล</p>
-      <span class="community-card-cta">เข้าชุมชน →</span>
-    </a>
+    </button>
   </div>
 </section>
+
+<div class="modal-overlay" id="cardModal" style="display:none;">
+  <div class="modal-box">
+    <button class="modal-close" id="modalCloseBtn" aria-label="ปิด">✕</button>
+    <span class="modal-badge" id="modalBadge" style="display:none;"></span>
+    <div class="modal-icon" id="modalIcon"></div>
+    <h3 id="modalTitle"></h3>
+    <p id="modalDesc"></p>
+    <ul class="feature-list modal-list" id="modalList" style="display:none;"></ul>
+    <div class="feature-card-btn-row modal-btn-row" id="modalButtons"></div>
+  </div>
+</div>
 
 <section class="connect-flow">
   <div class="section-head">
