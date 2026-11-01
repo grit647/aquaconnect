@@ -255,6 +255,7 @@ img { max-width: 100%; }
   border-radius: 20px;
 }
 .ad-slot-btn { margin-top: 14px; padding: 8px 16px; font-size: 13px; align-self: flex-start; }
+.feature-card-btn { display: inline-block; margin-top: 14px; padding: 8px 16px; font-size: 13px; }
 
 /* การ์ดชุมชนผู้เลี้ยง ในแถวฟีเจอร์ (คลิกได้ทั้งการ์ด ลิงก์ไปหน้า community.html) */
 .feature-card-link {
