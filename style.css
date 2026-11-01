@@ -229,6 +229,15 @@ img { max-width: 100%; }
   padding: 4px 4px 20px;
 }
 
+/* ตัววิ่งที่ 2 (กิจกรรมชุมชน) ใช้สีต่างจากตัวแรก (ราคากุ้ง) ให้แยกแยะง่าย */
+.activity-ticker {
+  background: var(--primary-dark);
+  border-radius: 0;
+}
+.activity-ticker-label {
+  background: #0891b2;
+}
+
 .btn {
   display: inline-block;
   padding: 13px 28px;
