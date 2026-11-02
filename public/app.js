@@ -182,6 +182,51 @@ const ROLES = {
 };
 const ROLE_MAX_SELECT = 2;
 
+// บทบาท "แอดมิน" ไม่เปิดให้สมัครเอง (ไม่อยู่ใน ROLES) แต่ยังต้องมี meta ไว้โชว์ผลหลัง login
+const ADMIN_META = { label: 'แอดมิน', icon: '🛡️', desc: 'ผู้ดูแลระบบ' };
+function getRoleMeta(key) {
+  return ROLES[key] || (key === 'admin' ? ADMIN_META : { label: key, icon: '👤', desc: '' });
+}
+
+// เรียก API backend จริง (register/login/logout/me) — คุกกี้ session แนบไปอัตโนมัติ
+async function apiPost(path, body) {
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
+    body: JSON.stringify(body || {}),
+  });
+  let data = {};
+  try { data = await res.json(); } catch (e) { /* ignore: response ไม่มี body */ }
+  if (!res.ok) throw new Error(data.error || 'เกิดข้อผิดพลาด ลองใหม่อีกครั้ง');
+  return data;
+}
+async function apiGet(path) {
+  const res = await fetch(path, { credentials: 'same-origin' });
+  return res.json();
+}
+
+// เก็บค่าจากฟิลด์เพิ่มเติมตามหมวด (ที่ renderFieldHtml สร้างไว้) เป็น { roleKey: { fieldKey: value } }
+function collectRoleDetails() {
+  const details = {};
+  authState.selectedRoles.forEach((roleKey) => {
+    const r = ROLES[roleKey];
+    if (!r.fields.length) return;
+    const roleData = {};
+    r.fields.forEach((f) => {
+      const id = `f_${roleKey}_${f.key}`;
+      if (f.type === 'checkboxGroup') {
+        roleData[f.key] = Array.from(document.querySelectorAll(`#${id} input[type="checkbox"]:checked`)).map((c) => c.value);
+      } else {
+        const el = document.getElementById(id);
+        roleData[f.key] = el ? el.value.trim() : '';
+      }
+    });
+    details[roleKey] = roleData;
+  });
+  return details;
+}
+
 const authModalEl = document.getElementById('authModal');
 const authModalContentEl = document.getElementById('authModalContent');
 const authModalCloseBtn = document.getElementById('authModalCloseBtn');
@@ -212,6 +257,7 @@ function renderAuthView(view, opts) {
   if (view === 'registerRoles') return renderRegisterRolesView();
   if (view === 'registerForm') return renderRegisterFormView();
   if (view === 'roleSwitch') return renderRoleSwitchView(opts && opts.roles, opts && opts.afterLabel);
+  if (view === 'accountMenu') return renderAccountMenuView();
 }
 
 // ---------- 1) หน้าเข้าสู่ระบบ ----------
@@ -237,7 +283,6 @@ function renderLoginView() {
       </div>
     </form>
     <p class="auth-switch-note">ยังไม่มีบัญชี? <button type="button" id="goRegisterBtn">สมัครสมาชิก</button></p>
-    <p class="auth-mock-note">* หน้าตัวอย่าง UI เท่านั้น ยังไม่เชื่อมระบบล็อกอินจริง</p>
   `;
 
   document.getElementById('goRegisterBtn').addEventListener('click', () => {
@@ -245,11 +290,12 @@ function renderLoginView() {
     renderAuthView('registerRoles');
   });
 
-  document.getElementById('loginForm').addEventListener('submit', (e) => {
+  document.getElementById('loginForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const phone = document.getElementById('loginPhone').value.trim();
     const pin = document.getElementById('loginPin').value.trim();
     const errEl = document.getElementById('loginError');
+    errEl.classList.remove('show');
     if (!/^\d{9,10}$/.test(phone)) {
       errEl.textContent = 'กรอกเบอร์โทรศัพท์ให้ถูกต้อง';
       errEl.classList.add('show');
@@ -260,9 +306,22 @@ function renderLoginView() {
       errEl.classList.add('show');
       return;
     }
-    // ตัวอย่าง: ยังไม่มี backend จริง จำลองว่าบัญชีนี้มี 2 สถานะ เพื่อโชว์หน้าสลับสถานะ
-    const demoRoles = ['farmer', 'supplier'];
-    renderAuthView('roleSwitch', { roles: demoRoles, afterLabel: 'เข้าสู่ระบบสำเร็จ (ตัวอย่าง: บัญชีนี้มี 2 สถานะ)' });
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+    submitBtn.disabled = true;
+    try {
+      const { user } = await apiPost('/api/auth/login', { phone, pin });
+      authState.loggedInUser = { name: user.name, roles: user.roles, activeRole: user.roles[0] };
+      if (user.roles.length > 1) {
+        renderAuthView('roleSwitch', { roles: user.roles, afterLabel: 'เข้าสู่ระบบสำเร็จ! เลือกสถานะที่จะใช้งานตอนนี้' });
+      } else {
+        finishLogin(user.roles[0]);
+      }
+    } catch (err) {
+      errEl.textContent = err.message;
+      errEl.classList.add('show');
+    } finally {
+      submitBtn.disabled = false;
+    }
   });
 }
 
@@ -389,7 +448,6 @@ function renderRegisterFormView() {
         <button type="submit" class="btn btn-primary">สมัครสมาชิก</button>
       </div>
     </form>
-    <p class="auth-mock-note">* หน้าตัวอย่าง UI เท่านั้น ยังไม่บันทึกข้อมูลจริง</p>
   `;
 
   document.getElementById('backToRolesBtn').addEventListener('click', () => renderAuthView('registerRoles'));
@@ -400,10 +458,12 @@ function renderRegisterFormView() {
     });
   });
 
-  document.getElementById('registerForm').addEventListener('submit', (e) => {
+  document.getElementById('registerForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const errEl = document.getElementById('registerError');
+    errEl.classList.remove('show');
     const name = document.getElementById('regName').value.trim();
+    const province = document.getElementById('regProvince').value;
     const phone = document.getElementById('regPhone').value.trim();
     const pin = document.getElementById('regPin').value.trim();
     const pinConfirm = document.getElementById('regPinConfirm').value.trim();
@@ -429,12 +489,24 @@ function renderRegisterFormView() {
       return;
     }
 
-    authState.loggedInUser = { name, roles: [...authState.selectedRoles], activeRole: authState.selectedRoles[0] };
-
-    if (authState.selectedRoles.length > 1) {
-      renderAuthView('roleSwitch', { roles: authState.selectedRoles, afterLabel: 'สมัครสมาชิกสำเร็จ! เลือกสถานะที่จะใช้งานตอนนี้' });
-    } else {
-      finishLogin(authState.selectedRoles[0]);
+    const roleDetails = collectRoleDetails();
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+    submitBtn.disabled = true;
+    try {
+      const { user } = await apiPost('/api/auth/register', {
+        name, phone, pin, province, roles: authState.selectedRoles, roleDetails,
+      });
+      authState.loggedInUser = { name: user.name, roles: user.roles, activeRole: user.roles[0] };
+      if (user.roles.length > 1) {
+        renderAuthView('roleSwitch', { roles: user.roles, afterLabel: 'สมัครสมาชิกสำเร็จ! เลือกสถานะที่จะใช้งานตอนนี้' });
+      } else {
+        finishLogin(user.roles[0]);
+      }
+    } catch (err) {
+      errEl.textContent = err.message;
+      errEl.classList.add('show');
+    } finally {
+      submitBtn.disabled = false;
     }
   });
 }
@@ -442,13 +514,13 @@ function renderRegisterFormView() {
 // ---------- 4) หลัง login/สมัครสำเร็จ และมีมากกว่า 1 หมวด — เลือกว่าจะใช้งานสถานะไหน ----------
 function renderRoleSwitchView(roles, afterLabel) {
   const listHtml = roles.map((key) => {
-    const r = ROLES[key];
+    const meta = getRoleMeta(key);
     return `
       <div class="role-switch-card" data-role="${key}">
-        <span class="role-select-icon">${r.icon}</span>
+        <span class="role-select-icon">${meta.icon}</span>
         <div class="role-select-text">
-          <strong>${r.label}</strong>
-          <span>${r.desc}</span>
+          <strong>${meta.label}</strong>
+          <span>${meta.desc}</span>
         </div>
       </div>`;
   }).join('');
@@ -464,13 +536,49 @@ function renderRoleSwitchView(roles, afterLabel) {
   `;
 
   authModalContentEl.querySelectorAll('.role-switch-card').forEach((card) => {
-    card.addEventListener('click', () => {
-      const key = card.dataset.role;
-      if (!authState.loggedInUser) {
-        authState.loggedInUser = { name: 'ผู้ใช้ตัวอย่าง', roles: [...roles], activeRole: key };
-      }
-      finishLogin(key);
-    });
+    card.addEventListener('click', () => finishLogin(card.dataset.role));
+  });
+}
+
+// ---------- เมนูบัญชี (เปิดจากปุ่มชื่อผู้ใช้บน header เมื่อ login อยู่แล้ว) ----------
+function renderAccountMenuView() {
+  const user = authState.loggedInUser;
+  if (!user) return renderLoginView();
+
+  const listHtml = user.roles.map((key) => {
+    const meta = getRoleMeta(key);
+    const isActive = key === user.activeRole;
+    return `
+      <div class="role-switch-card ${isActive ? 'active' : ''}" data-role="${key}">
+        <span class="role-select-icon">${meta.icon}</span>
+        <div class="role-select-text">
+          <strong>${meta.label}</strong>
+          <span>${meta.desc}</span>
+        </div>
+      </div>`;
+  }).join('');
+
+  authModalContentEl.innerHTML = `
+    <div class="auth-head">
+      <div class="auth-icon">${getRoleMeta(user.activeRole).icon}</div>
+      <h3>${user.name}</h3>
+      <p>${user.roles.length > 1 ? 'เลือกสถานะที่จะใช้งาน' : getRoleMeta(user.activeRole).label}</p>
+    </div>
+    ${user.roles.length > 1 ? `<div class="role-switch-list">${listHtml}</div>` : ''}
+    <div class="auth-submit-row">
+      <button type="button" class="btn btn-ghost" id="logoutBtn">ออกจากระบบ</button>
+    </div>
+  `;
+
+  authModalContentEl.querySelectorAll('.role-switch-card').forEach((card) => {
+    card.addEventListener('click', () => finishLogin(card.dataset.role));
+  });
+
+  document.getElementById('logoutBtn').addEventListener('click', async () => {
+    try { await apiPost('/api/auth/logout', {}); } catch (e) { /* ล้าง state ฝั่งหน้าเว็บต่อได้ แม้ call ล้มเหลว */ }
+    authState.loggedInUser = null;
+    updateHeaderAuthButton();
+    closeAuthModal();
   });
 }
 
@@ -489,16 +597,15 @@ function updateHeaderAuthButton() {
     loginNavBtn.classList.remove('user-chip');
     return;
   }
-  const r = ROLES[user.activeRole];
+  const meta = getRoleMeta(user.activeRole);
   loginNavBtn.classList.add('user-chip');
-  loginNavBtn.innerHTML = `<span class="user-chip-icon">${r.icon}</span><span>${user.name}<br><span class="user-chip-role">${r.label}${user.roles.length > 1 ? ' · กดเพื่อสลับสถานะ' : ''}</span></span>`;
+  loginNavBtn.innerHTML = `<span class="user-chip-icon">${meta.icon}</span><span>${user.name}<br><span class="user-chip-role">${meta.label}${user.roles.length > 1 ? ' · กดเพื่อสลับสถานะ' : ''}</span></span>`;
 }
 
 if (loginNavBtn) {
   loginNavBtn.addEventListener('click', () => {
-    if (authState.loggedInUser && authState.loggedInUser.roles.length > 1) {
-      openAuthModal('roleSwitch');
-      renderAuthView('roleSwitch', { roles: authState.loggedInUser.roles, afterLabel: 'สลับสถานะการใช้งาน' });
+    if (authState.loggedInUser) {
+      openAuthModal('accountMenu');
       return;
     }
     openAuthModal('login');
@@ -511,3 +618,14 @@ if (authModalCloseBtn && authModalEl) {
     if (e.target.id === 'authModal') closeAuthModal();
   });
 }
+
+// โหลดหน้าแรก: เช็ค session เดิม (คุกกี้) ว่ายัง login ค้างอยู่ไหม แล้วคืนสถานะปุ่ม header ให้ตรง
+(async function restoreSession() {
+  try {
+    const { user } = await apiGet('/api/auth/me');
+    if (user && user.roles && user.roles.length) {
+      authState.loggedInUser = { name: user.name, roles: user.roles, activeRole: user.roles[0] };
+      updateHeaderAuthButton();
+    }
+  } catch (e) { /* ยังไม่ login หรือเช็คไม่ได้ ก็ปล่อยเป็นสถานะ "เข้าสู่ระบบ" ตามปกติ */ }
+})();

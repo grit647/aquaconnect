@@ -1,0 +1,19 @@
+{
+  "name": "aquaconnect",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AquaConnect — เว็บแพลตฟอร์มวงการสัตว์น้ำ (frontend static + backend register/login)",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "seed:admin": "node server/seedAdmin.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cookie-parser": "^1.4.6",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "googleapis": "^144.0.0",
+    "jsonwebtoken": "^9.0.2"
+  }
+}
