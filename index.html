@@ -26,7 +26,7 @@
       <a href="#larvae">ขายลูกกุ้ง</a>
       <a href="#suppliers">ปัจจัยการผลิต</a>
       <a href="community.html">ชุมชน</a>
-      <a href="#login" class="nav-cta">เข้าสู่ระบบ</a>
+      <button id="loginNavBtn" class="nav-cta">เข้าสู่ระบบ</button>
     </nav>
   </div>
 </header>
@@ -164,6 +164,13 @@
     <p id="modalDesc"></p>
     <ul class="feature-list modal-list" id="modalList" style="display:none;"></ul>
     <div class="feature-card-btn-row modal-btn-row" id="modalButtons"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="authModal" style="display:none;">
+  <div class="modal-box auth-modal-box">
+    <button class="modal-close" id="authModalCloseBtn" aria-label="ปิด">✕</button>
+    <div id="authModalContent"></div>
   </div>
 </div>
 

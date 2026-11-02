@@ -118,3 +118,396 @@ if (modalCloseBtn && cardModalEl) {
     if (e.target.id === 'cardModal') closeCardModal(); // คลิกพื้นหลังมืดๆ ปิด popup ได้ด้วย
   });
 }
+
+// ============================================================
+// เข้าสู่ระบบ / สมัครสมาชิก — ออกแบบหน้าตา UI เท่านั้น ยังไม่มี backend จริง
+// เลือกหมวดหมู่ได้สูงสุด 2 หมวด, สมัครปุ๊บใช้งานได้เลย, รหัสผ่านเป็น PIN ตัวเลข 6 หลัก
+// ============================================================
+
+const PROVINCES = [
+  'กรุงเทพมหานคร','กระบี่','กาญจนบุรี','กาฬสินธุ์','กำแพงเพชร','ขอนแก่น','จันทบุรี','ฉะเชิงเทรา',
+  'ชลบุรี','ชัยนาท','ชัยภูมิ','ชุมพร','เชียงราย','เชียงใหม่','ตรัง','ตราด','ตาก','นครนายก',
+  'นครปฐม','นครพนม','นครราชสีมา','นครศรีธรรมราช','นครสวรรค์','นนทบุรี','นราธิวาส','น่าน',
+  'บึงกาฬ','บุรีรัมย์','ปทุมธานี','ประจวบคีรีขันธ์','ปราจีนบุรี','ปัตตานี','พระนครศรีอยุธยา',
+  'พะเยา','พังงา','พัทลุง','พิจิตร','พิษณุโลก','เพชรบุรี','เพชรบูรณ์','แพร่','ภูเก็ต',
+  'มหาสารคาม','มุกดาหาร','แม่ฮ่องสอน','ยโสธร','ยะลา','ร้อยเอ็ด','ระนอง','ระยอง','ราชบุรี',
+  'ลพบุรี','ลำปาง','ลำพูน','เลย','ศรีสะเกษ','สกลนคร','สงขลา','สตูล','สมุทรปราการ',
+  'สมุทรสงคราม','สมุทรสาคร','สระแก้ว','สระบุรี','สิงห์บุรี','สุโขทัย','สุพรรณบุรี',
+  'สุราษฎร์ธานี','สุรินทร์','หนองคาย','หนองบัวลำภู','อ่างทอง','อำนาจเจริญ','อุดรธานี',
+  'อุตรดิตถ์','อุทัยธานี','อุบลราชธานี',
+];
+
+// ข้อมูลหมวดหมู่ผู้ใช้ 5 แบบ (แอดมินไม่อยู่ในนี้ — ไม่เปิดให้สมัครเอง) +
+// ฟิลด์เพิ่มเติมเฉพาะหมวด (ต่อยอดจากคอลัมน์ Users sheet: id, role, name, phone, email, province, registeredDate, status)
+const ROLES = {
+  farmer: {
+    label: 'เกษตรกร', icon: '🧑‍🌾',
+    desc: 'ผู้เลี้ยงกุ้ง/ปลา ใช้งานจัดการการเลี้ยง ซื้อลูกพันธุ์ โพสต์ชุมชน',
+    fields: [
+      { key: 'farmerSpecies', label: 'ชนิดที่เลี้ยง', type: 'select', options: ['กุ้ง', 'ปลา', 'อื่นๆ'] },
+      { key: 'farmerPondCount', label: 'จำนวนบ่อ / ขนาดฟาร์ม', type: 'text', placeholder: 'เช่น 5 บ่อ, 10 ไร่' },
+    ],
+  },
+  supplier: {
+    label: 'ผู้ค้าปัจจัย', icon: '🧪',
+    desc: 'ผู้ขายอาหาร/เคมีภัณฑ์/อุปกรณ์/ลูกพันธุ์',
+    fields: [
+      { key: 'supplierShopName', label: 'ชื่อร้าน / บริษัท', type: 'text', placeholder: 'เช่น ร้านอาหารกุ้งใจดี' },
+      { key: 'supplierCategory', label: 'ประเภทสินค้าที่ขาย', type: 'checkboxGroup',
+        options: ['อาหารสัตว์น้ำ', 'เคมีภัณฑ์', 'อุปกรณ์การเลี้ยง', 'ลูกพันธุ์'] },
+    ],
+  },
+  general: {
+    label: 'ทั่วไป', icon: '👤',
+    desc: 'ดูข้อมูล เข้าชุมชน โพสต์/คอมเมนต์ได้ตามปกติ',
+    fields: [],
+  },
+  reporter: {
+    label: 'ผู้ลงข้อมูล', icon: '📝',
+    desc: 'ลงราคา/ข่าวสาร/กิจกรรมให้ชุมชนเห็น',
+    fields: [
+      { key: 'reporterOrg', label: 'หน่วยงาน / สังกัด (ถ้ามี)', type: 'text', optional: true },
+      { key: 'reporterScope', label: 'ขอบเขตข้อมูลที่จะลง', type: 'checkboxGroup',
+        options: ['ราคากุ้ง/ปลา', 'ข่าวสาร', 'กิจกรรม'] },
+    ],
+  },
+  academic: {
+    label: 'นักวิชาการ', icon: '🎓',
+    desc: 'ผู้เชี่ยวชาญ ให้ความรู้/ตอบคำถามเชิงวิชาการ',
+    fields: [
+      { key: 'academicOrg', label: 'หน่วยงาน / สถาบัน', type: 'text' },
+      { key: 'academicField', label: 'สาขาความเชี่ยวชาญ', type: 'text' },
+    ],
+  },
+};
+const ROLE_MAX_SELECT = 2;
+
+const authModalEl = document.getElementById('authModal');
+const authModalContentEl = document.getElementById('authModalContent');
+const authModalCloseBtn = document.getElementById('authModalCloseBtn');
+const loginNavBtn = document.getElementById('loginNavBtn');
+
+// สถานะชั่วคราวในหน้าเว็บเท่านั้น (ไม่มี backend — รีเฟรชหน้าแล้วหายเหมือนเดิม)
+const authState = {
+  selectedRoles: [],       // ตอนสมัคร: หมวดที่เลือก (สูงสุด 2)
+  loggedInUser: null,      // { name, roles: [...], activeRole } หลัง "เข้าสู่ระบบ" สำเร็จ
+};
+
+function provinceOptionsHtml(selected) {
+  return PROVINCES.map((p) => `<option value="${p}" ${p === selected ? 'selected' : ''}>${p}</option>`).join('');
+}
+
+function openAuthModal(view) {
+  if (!authModalEl) return;
+  authModalEl.style.display = 'flex';
+  renderAuthView(view || 'login');
+}
+function closeAuthModal() {
+  if (!authModalEl) return;
+  authModalEl.style.display = 'none';
+}
+
+function renderAuthView(view, opts) {
+  if (view === 'login') return renderLoginView();
+  if (view === 'registerRoles') return renderRegisterRolesView();
+  if (view === 'registerForm') return renderRegisterFormView();
+  if (view === 'roleSwitch') return renderRoleSwitchView(opts && opts.roles, opts && opts.afterLabel);
+}
+
+// ---------- 1) หน้าเข้าสู่ระบบ ----------
+function renderLoginView() {
+  authModalContentEl.innerHTML = `
+    <div class="auth-head">
+      <div class="auth-icon">🦐</div>
+      <h3>เข้าสู่ระบบ</h3>
+      <p>เบอร์โทรศัพท์ + รหัส PIN 6 หลัก</p>
+    </div>
+    <form class="auth-form" id="loginForm">
+      <div class="form-error" id="loginError"></div>
+      <div class="form-group">
+        <label for="loginPhone">เบอร์โทรศัพท์</label>
+        <input type="tel" id="loginPhone" placeholder="08XXXXXXXX" maxlength="10" required>
+      </div>
+      <div class="form-group">
+        <label for="loginPin">รหัส PIN 6 หลัก</label>
+        <input type="password" id="loginPin" inputmode="numeric" maxlength="6" placeholder="••••••" required>
+      </div>
+      <div class="auth-submit-row">
+        <button type="submit" class="btn btn-primary">เข้าสู่ระบบ</button>
+      </div>
+    </form>
+    <p class="auth-switch-note">ยังไม่มีบัญชี? <button type="button" id="goRegisterBtn">สมัครสมาชิก</button></p>
+    <p class="auth-mock-note">* หน้าตัวอย่าง UI เท่านั้น ยังไม่เชื่อมระบบล็อกอินจริง</p>
+  `;
+
+  document.getElementById('goRegisterBtn').addEventListener('click', () => {
+    authState.selectedRoles = [];
+    renderAuthView('registerRoles');
+  });
+
+  document.getElementById('loginForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const phone = document.getElementById('loginPhone').value.trim();
+    const pin = document.getElementById('loginPin').value.trim();
+    const errEl = document.getElementById('loginError');
+    if (!/^\d{9,10}$/.test(phone)) {
+      errEl.textContent = 'กรอกเบอร์โทรศัพท์ให้ถูกต้อง';
+      errEl.classList.add('show');
+      return;
+    }
+    if (!/^\d{6}$/.test(pin)) {
+      errEl.textContent = 'รหัส PIN ต้องเป็นตัวเลข 6 หลัก';
+      errEl.classList.add('show');
+      return;
+    }
+    // ตัวอย่าง: ยังไม่มี backend จริง จำลองว่าบัญชีนี้มี 2 สถานะ เพื่อโชว์หน้าสลับสถานะ
+    const demoRoles = ['farmer', 'supplier'];
+    renderAuthView('roleSwitch', { roles: demoRoles, afterLabel: 'เข้าสู่ระบบสำเร็จ (ตัวอย่าง: บัญชีนี้มี 2 สถานะ)' });
+  });
+}
+
+// ---------- 2) สมัครสมาชิก ขั้นที่ 1: เลือกหมวดหมู่ (สูงสุด 2) ----------
+function renderRegisterRolesView() {
+  const rolesHtml = Object.entries(ROLES).map(([key, r]) => {
+    const isSelected = authState.selectedRoles.includes(key);
+    const isDisabled = !isSelected && authState.selectedRoles.length >= ROLE_MAX_SELECT;
+    return `
+      <div class="role-select-card ${isSelected ? 'selected' : ''} ${isDisabled ? 'disabled' : ''}" data-role="${key}">
+        <span class="role-select-icon">${r.icon}</span>
+        <div class="role-select-text">
+          <strong>${r.label}</strong>
+          <span>${r.desc}</span>
+        </div>
+        <span class="role-select-check">${isSelected ? '✓' : ''}</span>
+      </div>`;
+  }).join('');
+
+  authModalContentEl.innerHTML = `
+    <button type="button" class="auth-back-link" id="backToLoginBtn">‹ กลับ</button>
+    <div class="auth-head">
+      <div class="auth-icon">📋</div>
+      <h3>เลือกหมวดหมู่ของคุณ</h3>
+      <p>เลือกได้สูงสุด ${ROLE_MAX_SELECT} หมวด</p>
+    </div>
+    <div class="role-select-list">${rolesHtml}</div>
+    <p class="role-select-limit-note">เลือกแล้ว ${authState.selectedRoles.length}/${ROLE_MAX_SELECT} หมวด</p>
+    <div class="auth-submit-row">
+      <button type="button" class="btn btn-primary" id="goRegisterFormBtn" ${authState.selectedRoles.length === 0 ? 'disabled' : ''}>ถัดไป</button>
+    </div>
+  `;
+
+  document.getElementById('backToLoginBtn').addEventListener('click', () => renderAuthView('login'));
+
+  authModalContentEl.querySelectorAll('.role-select-card').forEach((card) => {
+    card.addEventListener('click', () => {
+      const key = card.dataset.role;
+      const idx = authState.selectedRoles.indexOf(key);
+      if (idx >= 0) {
+        authState.selectedRoles.splice(idx, 1);
+      } else if (authState.selectedRoles.length < ROLE_MAX_SELECT) {
+        authState.selectedRoles.push(key);
+      }
+      renderRegisterRolesView();
+    });
+  });
+
+  document.getElementById('goRegisterFormBtn').addEventListener('click', () => {
+    if (authState.selectedRoles.length === 0) return;
+    renderAuthView('registerForm');
+  });
+}
+
+// สร้าง HTML ของฟิลด์ 1 ช่อง ตามชนิดที่กำหนดไว้ใน ROLES[x].fields
+function renderFieldHtml(roleKey, field) {
+  const id = `f_${roleKey}_${field.key}`;
+  const labelHtml = `<label for="${id}">${field.label}${field.optional ? ' <span class="field-note">(ไม่บังคับ)</span>' : ''}</label>`;
+  if (field.type === 'select') {
+    const opts = field.options.map((o) => `<option value="${o}">${o}</option>`).join('');
+    return `<div class="form-group">${labelHtml}<select id="${id}">${opts}</select></div>`;
+  }
+  if (field.type === 'checkboxGroup') {
+    const chips = field.options.map((o, i) => `
+      <label class="checkbox-chip">
+        <input type="checkbox" value="${o}" name="${id}">
+        <span>${o}</span>
+      </label>`).join('');
+    return `<div class="form-group">${labelHtml}<div class="checkbox-group" id="${id}">${chips}</div></div>`;
+  }
+  return `<div class="form-group">${labelHtml}<input type="text" id="${id}" placeholder="${field.placeholder || ''}" ${field.optional ? '' : 'required'}></div>`;
+}
+
+// ---------- 3) สมัครสมาชิก ขั้นที่ 2: ฟอร์มตามหมวดที่เลือก ----------
+function renderRegisterFormView() {
+  const extraBlocksHtml = authState.selectedRoles.map((key) => {
+    const r = ROLES[key];
+    if (!r.fields.length) return '';
+    return `
+      <div class="role-extra-block">
+        <div class="role-extra-head"><span>${r.icon}</span><span>ข้อมูลเพิ่มเติม — ${r.label}</span></div>
+        ${r.fields.map((f) => renderFieldHtml(key, f)).join('')}
+      </div>`;
+  }).join('');
+
+  const roleLabelsText = authState.selectedRoles.map((k) => ROLES[k].label).join(' + ');
+
+  authModalContentEl.innerHTML = `
+    <button type="button" class="auth-back-link" id="backToRolesBtn">‹ แก้ไขหมวดหมู่</button>
+    <div class="auth-head">
+      <div class="auth-icon">📝</div>
+      <h3>สมัครสมาชิก</h3>
+      <p>หมวดหมู่ที่เลือก: ${roleLabelsText}</p>
+    </div>
+    <form class="auth-form" id="registerForm">
+      <div class="form-error" id="registerError"></div>
+
+      <div class="form-group">
+        <label for="regName">ชื่อ-นามสกุล</label>
+        <input type="text" id="regName" required>
+      </div>
+      <div class="form-group">
+        <label for="regProvince">จังหวัด</label>
+        <select id="regProvince">${provinceOptionsHtml('กรุงเทพมหานคร')}</select>
+      </div>
+      <div class="form-group">
+        <label for="regPhone">เบอร์โทรศัพท์ (ใช้ล็อกอิน)</label>
+        <input type="tel" id="regPhone" placeholder="08XXXXXXXX" maxlength="10" required>
+      </div>
+      <div class="form-row-2">
+        <div class="form-group">
+          <label for="regPin">รหัส PIN 6 หลัก</label>
+          <input type="password" id="regPin" inputmode="numeric" maxlength="6" placeholder="••••••" required>
+        </div>
+        <div class="form-group">
+          <label for="regPinConfirm">ยืนยัน PIN</label>
+          <input type="password" id="regPinConfirm" inputmode="numeric" maxlength="6" placeholder="••••••" required>
+        </div>
+      </div>
+
+      ${extraBlocksHtml}
+
+      <div class="auth-submit-row">
+        <button type="submit" class="btn btn-primary">สมัครสมาชิก</button>
+      </div>
+    </form>
+    <p class="auth-mock-note">* หน้าตัวอย่าง UI เท่านั้น ยังไม่บันทึกข้อมูลจริง</p>
+  `;
+
+  document.getElementById('backToRolesBtn').addEventListener('click', () => renderAuthView('registerRoles'));
+
+  authModalContentEl.querySelectorAll('.checkbox-chip').forEach((chip) => {
+    chip.querySelector('input').addEventListener('change', (e) => {
+      chip.classList.toggle('checked', e.target.checked);
+    });
+  });
+
+  document.getElementById('registerForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const errEl = document.getElementById('registerError');
+    const name = document.getElementById('regName').value.trim();
+    const phone = document.getElementById('regPhone').value.trim();
+    const pin = document.getElementById('regPin').value.trim();
+    const pinConfirm = document.getElementById('regPinConfirm').value.trim();
+
+    if (!name) {
+      errEl.textContent = 'กรอกชื่อ-นามสกุล';
+      errEl.classList.add('show');
+      return;
+    }
+    if (!/^\d{9,10}$/.test(phone)) {
+      errEl.textContent = 'กรอกเบอร์โทรศัพท์ให้ถูกต้อง';
+      errEl.classList.add('show');
+      return;
+    }
+    if (!/^\d{6}$/.test(pin)) {
+      errEl.textContent = 'รหัส PIN ต้องเป็นตัวเลข 6 หลัก';
+      errEl.classList.add('show');
+      return;
+    }
+    if (pin !== pinConfirm) {
+      errEl.textContent = 'รหัส PIN ทั้งสองช่องไม่ตรงกัน';
+      errEl.classList.add('show');
+      return;
+    }
+
+    authState.loggedInUser = { name, roles: [...authState.selectedRoles], activeRole: authState.selectedRoles[0] };
+
+    if (authState.selectedRoles.length > 1) {
+      renderAuthView('roleSwitch', { roles: authState.selectedRoles, afterLabel: 'สมัครสมาชิกสำเร็จ! เลือกสถานะที่จะใช้งานตอนนี้' });
+    } else {
+      finishLogin(authState.selectedRoles[0]);
+    }
+  });
+}
+
+// ---------- 4) หลัง login/สมัครสำเร็จ และมีมากกว่า 1 หมวด — เลือกว่าจะใช้งานสถานะไหน ----------
+function renderRoleSwitchView(roles, afterLabel) {
+  const listHtml = roles.map((key) => {
+    const r = ROLES[key];
+    return `
+      <div class="role-switch-card" data-role="${key}">
+        <span class="role-select-icon">${r.icon}</span>
+        <div class="role-select-text">
+          <strong>${r.label}</strong>
+          <span>${r.desc}</span>
+        </div>
+      </div>`;
+  }).join('');
+
+  authModalContentEl.innerHTML = `
+    <div class="auth-head">
+      <div class="auth-icon">✅</div>
+      <h3>เลือกสถานะที่ใช้งาน</h3>
+      <p>${afterLabel || 'บัญชีนี้มีมากกว่า 1 สถานะ — ใช้งานเป็นสถานะไหนตอนนี้?'}</p>
+    </div>
+    <div class="role-switch-list">${listHtml}</div>
+    <p class="auth-mock-note">* เลือกแล้วค่อยสลับใหม่ภายหลังได้ที่เมนูชื่อผู้ใช้</p>
+  `;
+
+  authModalContentEl.querySelectorAll('.role-switch-card').forEach((card) => {
+    card.addEventListener('click', () => {
+      const key = card.dataset.role;
+      if (!authState.loggedInUser) {
+        authState.loggedInUser = { name: 'ผู้ใช้ตัวอย่าง', roles: [...roles], activeRole: key };
+      }
+      finishLogin(key);
+    });
+  });
+}
+
+// ---------- 5) ปิดการล็อกอิน: อัปเดตปุ่มบน header ให้เป็นชื่อ+สถานะ ----------
+function finishLogin(activeRoleKey) {
+  if (authState.loggedInUser) authState.loggedInUser.activeRole = activeRoleKey;
+  updateHeaderAuthButton();
+  closeAuthModal();
+}
+
+function updateHeaderAuthButton() {
+  if (!loginNavBtn) return;
+  const user = authState.loggedInUser;
+  if (!user) {
+    loginNavBtn.textContent = 'เข้าสู่ระบบ';
+    loginNavBtn.classList.remove('user-chip');
+    return;
+  }
+  const r = ROLES[user.activeRole];
+  loginNavBtn.classList.add('user-chip');
+  loginNavBtn.innerHTML = `<span class="user-chip-icon">${r.icon}</span><span>${user.name}<br><span class="user-chip-role">${r.label}${user.roles.length > 1 ? ' · กดเพื่อสลับสถานะ' : ''}</span></span>`;
+}
+
+if (loginNavBtn) {
+  loginNavBtn.addEventListener('click', () => {
+    if (authState.loggedInUser && authState.loggedInUser.roles.length > 1) {
+      openAuthModal('roleSwitch');
+      renderAuthView('roleSwitch', { roles: authState.loggedInUser.roles, afterLabel: 'สลับสถานะการใช้งาน' });
+      return;
+    }
+    openAuthModal('login');
+  });
+}
+
+if (authModalCloseBtn && authModalEl) {
+  authModalCloseBtn.addEventListener('click', closeAuthModal);
+  authModalEl.addEventListener('click', (e) => {
+    if (e.target.id === 'authModal') closeAuthModal();
+  });
+}
