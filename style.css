@@ -49,6 +49,17 @@ img { max-width: 100%; }
 }
 .logo-icon { font-size: 26px; }
 
+.header-stats {
+  display: flex;
+  gap: 16px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.header-stats strong { color: var(--primary-dark); font-size: 14px; }
+@media (max-width: 560px) {
+  .header-stats { gap: 10px; font-size: 11px; margin-right: 10px; }
+}
+
 .nav-toggle {
   display: none;
   background: none;
