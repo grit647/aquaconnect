@@ -747,3 +747,22 @@ img { max-width: 100%; }
   font-size: 14px;
   padding: 10px 20px;
 }
+
+/* ---------- Ad strip (แถวโฆษณาแยก อยู่เหนือ "บริการหลักของเรา") ---------- */
+.ad-strip { padding: 0 20px 40px; max-width: 1200px; margin: 0 auto; }
+.ad-strip-row {
+  display: flex;
+  gap: 16px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  padding-bottom: 4px;
+}
+.ad-strip-card {
+  flex: 1 1 220px;
+  min-width: 200px;
+  scroll-snap-align: start;
+}
+@media (min-width: 760px) {
+  .ad-strip-row { overflow-x: visible; }
+  .ad-strip-card { flex: 1; min-width: 0; }
+}
