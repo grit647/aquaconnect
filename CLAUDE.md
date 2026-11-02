@@ -20,10 +20,16 @@
 
 ## สถานะปัจจุบัน
 
-**มี UI หน้าเว็บ + backend ระบบสมัครสมาชิก/เข้าสู่ระบบจริงแล้ว (2026-11-02)
-ฟีเจอร์อื่น (โพสต์/แชท/ตลาดลูกกุ้ง ฯลฯ) ยังเป็น mockup/placeholder เหมือนเดิม**
+**มี UI หน้าเว็บ + backend ระบบสมัครสมาชิก/เข้าสู่ระบบจริงแล้ว ทดสอบผ่านจริงบน
+เว็บ production ด้วยบัญชีแอดมินจริง (2026-11-02) ฟีเจอร์อื่น (โพสต์/แชท/
+ตลาดลูกกุ้ง ฯลฯ) ยังเป็น mockup/placeholder เหมือนเดิม**
 
-- Deploy อยู่ที่ `https://aquaconnect-th.onrender.com`
+- **Deploy จริงอยู่ที่ `https://aquaconnect-web.onrender.com`** (Render Web
+  Service ตัวใหม่ — สร้างแทน Static Site เดิมเพราะมี backend แล้ว)
+  - ⚠️ URL เก่า `https://aquaconnect-th.onrender.com` (Static Site เดิม) **ยัง
+    ไม่ได้ลบ** — ยังเป็น static เปล่าไม่มี backend ถ้าจะใช้งานจริงต้องใช้ URL
+    ใหม่ด้านบนเท่านั้น แนะนำให้คุณต้นลบ Static Site เก่าทิ้งเมื่อสะดวก (ผมลบ
+    แทนไม่ได้ ต้องกดเองใน Render dashboard) กันสับสนว่า URL ไหนคือของจริง
 - Source code: GitHub repo `grit647/aquaconnect` (branch `main`, Public repo)
 - โครงสร้างไฟล์:
   - `public/` — frontend (ย้ายมาจาก root เดิมเมื่อเพิ่ม backend เพื่อไม่ให้
@@ -73,37 +79,40 @@ Render เองทุกครั้ง — push ขึ้น GitHub แล้�
   ฟิลด์เพิ่มเติมเฉพาะหมวด (เช่น เกษตรกร เก็บชนิดที่เลี้ยง/จำนวนบ่อ,
   ผู้ค้าปัจจัย เก็บชื่อร้าน/ประเภทสินค้า) แยกเป็น key ตามชื่อหมวด
 
-### สิ่งที่คุณต้นต้องทำเอง ก่อนระบบนี้จะใช้งานได้จริงบนเว็บ
+### ขั้นตอนตั้งค่า backend ที่ทำไปแล้ว (เสร็จสมบูรณ์ 2026-11-02)
 
-โค้ดเขียนเสร็จและทดสอบ logic ผ่านหมดแล้ว (register/login/ซ้ำเบอร์/PIN ผิด/
-logout) แต่มี 3 ขั้นตอนที่ผมทำแทนไม่ได้จริงๆ (ต้องผ่านหน้าเว็บ Google/Render
-ของคุณต้นเอง):
+4 ขั้นตอนที่ต้องทำผ่านหน้าเว็บ Google/Render ของคุณต้นเอง (เขียนโค้ด/ทดสอบ
+logic ให้หมดแล้ว แต่ 4 ข้อนี้ทำแทนไม่ได้จริงๆ) — ทำครบและยืนยันใช้งานได้จริง
+แล้ว บันทึกไว้เป็น reference เผื่อโปรเจกต์พี่น้องในอนาคตต้องทำแบบเดียวกัน:
 
-1. **สร้าง Google service account ใหม่แยกเฉพาะโปรเจกต์นี้** (ตามที่เลือกไว้
-   — ไม่ใช้ร่วมกับโปรเจกต์อื่น) แล้วแชร์สิทธิ์ Editor ให้กับ Sheet
-   "aquaconnect-th" — ขั้นตอนเหมือนที่เคยทำให้เช่าสุข/check-service-24:
-   Google Cloud Console → สร้างโปรเจกต์ใหม่ → เปิดใช้งาน Google Sheets API →
-   สร้าง Service Account → สร้างคีย์ (JSON) → เอาอีเมลของ service account
-   ไปแชร์ (Share) กับ Google Sheet "aquaconnect-th" แบบ Editor
-2. **สร้างไฟล์ `.env`** (ก๊อปจาก `.env.example`) ใส่ค่าต่อไปนี้ — **ไฟล์นี้
-   ต้องไม่ push ขึ้น GitHub เด็ดขาด** (repo เป็น public, `.gitignore` กัน
-   `.env` ไว้ให้แล้วแต่อย่าสั่ง `git add -f` ทับ):
-   - `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_PRIVATE_KEY`, `GOOGLE_SHEET_ID`
-     (ของ Sheet "aquaconnect-th")
-   - `JWT_SECRET` — ตั้งค่าสุ่มยาวๆ เอง
-   - `SEED_ADMIN_PHONE`, `SEED_ADMIN_PIN` — เบอร์โทร/PIN จริงที่จะใช้ล็อกอิน
-     เป็นแอดมิน (ใช้เฉพาะตอนรัน `npm run seed:admin` ครั้งเดียว หลังจากนั้น
-     ลบ 2 บรรทัดนี้ออกจาก `.env` ก็ได้ ไม่จำเป็นต้องมีตอนรันเซิร์ฟเวอร์ปกติ)
-   - ใส่ทั้งในเครื่อง local (ถ้าจะรันทดสอบเอง) และใน **Render's Environment
-     Variables** (สำหรับเว็บจริง — คนละที่กับ `.env`, แต่ `SEED_ADMIN_*` ไม่
-     จำเป็นต้องตั้งบน Render เลยเพราะรัน seed แค่ครั้งเดียวจากเครื่อง local)
-3. **เปลี่ยน Render service จาก Static Site เป็น Web Service** — Build
-   Command: `npm install`, Start Command: `npm start` (คุณต้นแจ้งว่าจะทำขั้น
-   นี้เองตอน deploy)
-4. หลังตั้งค่า `.env` เสร็จ รัน **`npm run seed:admin`** ครั้งเดียว (รันบน
-   เครื่อง local ที่ตั้ง `.env` ชี้ไปที่ Sheet จริงแล้ว) — จะสร้าง header
-   row ของแท็บ `Users` ให้ (ถ้ายังไม่มี) และสร้างบัญชีแอดมินตาม
-   `SEED_ADMIN_PHONE`/`SEED_ADMIN_PIN` ที่ตั้งไว้ รันซ้ำได้ปลอดภัยไม่ทับของเดิม
+1. **สร้าง Google Cloud project + service account ใหม่แยกเฉพาะโปรเจกต์นี้**
+   (เลือกไม่ใช้ร่วมกับโปรเจกต์อื่น) — project id `aquaconnect-513503`,
+   service account `aquaconnect-backend@aquaconnect-513503.iam.gserviceaccount.com`
+   — Google Cloud Console → สร้างโปรเจกต์ใหม่ → เปิดใช้งาน Google Sheets
+   API → สร้าง Service Account → สร้างคีย์ JSON → แชร์ (Share) อีเมลของ
+   service account กับ Google Sheet "aquaconnect-th" แบบ Editor
+2. **สร้างไฟล์ `.env`** (local เท่านั้น, อยู่ใน `.gitignore`, ไม่เคย push ขึ้น
+   GitHub) ใส่ `GOOGLE_SERVICE_ACCOUNT_EMAIL`/`GOOGLE_PRIVATE_KEY`/
+   `GOOGLE_SHEET_ID`/`JWT_SECRET` + `SEED_ADMIN_PHONE`/`SEED_ADMIN_PIN`
+   ชั่วคราว (ใช้ครั้งเดียวตอน seed แล้วไม่จำเป็นต้องมีอีก)
+3. **แท็บ `Users` ของ Sheet "aquaconnect-th" มี header เก่าค้างอยู่** (จากตอน
+   draft แรกสุด: `id, role, name, phone, email, province, registeredDate,
+   status`) — เช็คแล้วว่า 0 แถวข้อมูลจริง คุณต้นยืนยันให้เขียนทับเป็น schema
+   ใหม่ได้ (`id, phone, pinHash, name, province, roles, roleDetails, status,
+   registeredDate`) ก่อนเขียนทับจริง
+4. รัน **`npm run seed:admin`** จากเครื่อง local → สร้างบัญชีแอดมินสำเร็จ
+   (ทดสอบ login ด้วยบัญชีจริงกับ Sheet จริงผ่าน ก่อน deploy ด้วยซ้ำ)
+5. **สร้าง Render Web Service ใหม่** (`aquaconnect-web`) แทน Static Site เดิม
+   — Build: `npm install`, Start: `npm start`, ตั้ง Environment Variables 4
+   ตัว (`GOOGLE_SERVICE_ACCOUNT_EMAIL`/`GOOGLE_PRIVATE_KEY`/`GOOGLE_SHEET_ID`/
+   `JWT_SECRET`) ผ่านปุ่ม "Add from .env" ของ Render (อัปโหลดไฟล์ `.env`
+   ตรงๆ กันพิมพ์ private key ผิด) — **จุดที่พลาดได้ง่าย: ปุ่มนี้เติมค่าซ้ำกับ
+   4 ช่องว่างที่ Render สร้างไว้ล่วงหน้าอัตโนมัติ (จาก `.env.example` ในโค้ด)
+   ต้องลบแถวซ้ำที่ยังว่างทิ้งเอง** ไม่งั้น deploy ไม่ผ่านเพราะมีค่าว่างซ้อนอยู่
+   — deploy สำเร็จ, ทดสอบ login บัญชีแอดมินจริงบนเว็บ production ผ่าน
+
+**⚠️ ยังไม่เสร็จ (ไม่เร่งด่วน):** Static Site เก่า `aquaconnect-th.onrender.com`
+ยังไม่ได้ลบ — แนะนำให้ลบทิ้งเมื่อสะดวกกันสับสนกับ URL ใหม่ `aquaconnect-web.onrender.com`
 
 ## รูปแบบหน้า UI ที่ตกลงกันไว้แล้ว (ผ่านการปรับหลายรอบ)
 
