@@ -1,8 +1,7 @@
-// Google Sheets client — เก็บข้อมูลสมาชิกในแท็บ "Users" ของ Sheet "aquaconnect-th"
+// Google Sheets client — generic อ่าน/เขียนได้ทุกแท็บของ Sheet "aquaconnect-th"
 // (ตั้งค่า GOOGLE_SERVICE_ACCOUNT_EMAIL / GOOGLE_PRIVATE_KEY / GOOGLE_SHEET_ID ใน .env)
 const { google } = require('googleapis');
 
-const USERS_TAB = 'Users';
 const MAX_ROW = 100000; // กันเหนียวเหมือนโปรเจกต์พี่น้อง — อย่าฮาร์ดโค้ดแคบกว่านี้
 
 function sheetId() {
@@ -23,47 +22,63 @@ async function getSheetsClient() {
   return cachedClient;
 }
 
-// อ่านทั้งแท็บ Users คืนทั้ง headers (แถวแรก) และรายชื่อผู้ใช้ (object ตาม header)
-async function readUsers() {
+// อ่านทั้งแท็บ คืนทั้ง headers (แถวแรก) และรายการแถว (object ตาม header)
+async function readTab(tabName) {
   const sheets = await getSheetsClient();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: sheetId(),
-    range: `${USERS_TAB}!A1:Z${MAX_ROW}`,
+    range: `${tabName}!A1:Z${MAX_ROW}`,
   });
   const rows = res.data.values || [];
-  if (rows.length === 0) return { headers: [], users: [] };
+  if (rows.length === 0) return { headers: [], rows: [] };
   const headers = rows[0];
-  const users = rows.slice(1).map((row, i) => {
+  const items = rows.slice(1).map((row, i) => {
     const obj = { _row: i + 2 }; // เลขแถวจริงบนชีต (แถว 1 คือ header)
     headers.forEach((h, idx) => { obj[h] = row[idx] ?? ''; });
     return obj;
   });
-  return { headers, users };
+  return { headers, rows: items };
 }
 
 // เขียน header row ทับทั้งแถว (ใช้ตอน setup/migrate ครั้งแรกเท่านั้น)
-async function writeHeaders(headers) {
+async function writeTabHeaders(tabName, headers) {
   const sheets = await getSheetsClient();
-  const lastCol = String.fromCharCode(64 + headers.length); // รองรับไม่เกิน 26 คอลัมน์ ซึ่งพอสำหรับตารางนี้
+  const lastCol = String.fromCharCode(64 + headers.length); // รองรับไม่เกิน 26 คอลัมน์ ซึ่งพอสำหรับตารางพวกนี้
   await sheets.spreadsheets.values.update({
     spreadsheetId: sheetId(),
-    range: `${USERS_TAB}!A1:${lastCol}1`,
+    range: `${tabName}!A1:${lastCol}1`,
     valueInputOption: 'RAW',
     requestBody: { values: [headers] },
   });
 }
 
-// เพิ่มผู้ใช้ 1 แถว ตามลำดับคอลัมน์ของ headers ที่อ่านมา
-async function appendUser(headers, userObj) {
+// เพิ่มแถวใหม่ 1 แถว ตามลำดับคอลัมน์ของ headers ที่อ่านมา
+async function appendRow(tabName, headers, rowObj) {
   const sheets = await getSheetsClient();
-  const row = headers.map((h) => (userObj[h] !== undefined ? String(userObj[h]) : ''));
+  const row = headers.map((h) => (rowObj[h] !== undefined ? String(rowObj[h]) : ''));
   await sheets.spreadsheets.values.append({
     spreadsheetId: sheetId(),
-    range: `${USERS_TAB}!A1`,
+    range: `${tabName}!A1`,
     valueInputOption: 'RAW',
     insertDataOption: 'INSERT_ROWS',
     requestBody: { values: [row] },
   });
 }
 
-module.exports = { readUsers, writeHeaders, appendUser, getSheetsClient, USERS_TAB };
+// เช็คว่ามีแท็บ(ชีตย่อย)ชื่อนี้อยู่ใน spreadsheet หรือยัง
+async function tabExists(tabName) {
+  const sheets = await getSheetsClient();
+  const res = await sheets.spreadsheets.get({ spreadsheetId: sheetId() });
+  return (res.data.sheets || []).some((s) => s.properties && s.properties.title === tabName);
+}
+
+// สร้างแท็บ(ชีตย่อย)ใหม่เปล่าๆ — ใช้ตอน setup ฟีเจอร์ใหม่ที่ต้องการตารางของตัวเอง
+async function createTab(tabName) {
+  const sheets = await getSheetsClient();
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: sheetId(),
+    requestBody: { requests: [{ addSheet: { properties: { title: tabName } } }] },
+  });
+}
+
+module.exports = { readTab, writeTabHeaders, appendRow, tabExists, createTab, getSheetsClient };

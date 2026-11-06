@@ -11,8 +11,9 @@
 //   SEED_ADMIN_PIN=<PIN ตัวเลข 6 หลัก>
 require('dotenv').config();
 const bcrypt = require('bcryptjs');
-const { readUsers, writeHeaders, appendUser } = require('./sheets');
+const { readTab, writeTabHeaders, appendRow } = require('./sheets');
 
+const USERS_TAB = 'Users';
 const ADMIN_PHONE = process.env.SEED_ADMIN_PHONE;
 const ADMIN_PIN = process.env.SEED_ADMIN_PIN;
 const USER_HEADERS = ['id', 'phone', 'pinHash', 'name', 'province', 'roles', 'roleDetails', 'status', 'registeredDate'];
@@ -25,11 +26,11 @@ async function run() {
     throw new Error('ตั้งค่า SEED_ADMIN_PIN ใน .env ให้เป็นตัวเลข 6 หลักก่อน');
   }
 
-  const { headers, users } = await readUsers();
+  const { headers, rows: users } = await readTab(USERS_TAB);
 
   if (headers.length === 0) {
     console.log('แท็บ Users ยังไม่มี header — กำลังสร้างให้...');
-    await writeHeaders(USER_HEADERS);
+    await writeTabHeaders(USERS_TAB, USER_HEADERS);
   } else {
     const missing = USER_HEADERS.filter((h) => !headers.includes(h));
     if (missing.length) {
@@ -47,7 +48,7 @@ async function run() {
   }
 
   const pinHash = await bcrypt.hash(ADMIN_PIN, 10);
-  await appendUser(effectiveHeaders, {
+  await appendRow(USERS_TAB, effectiveHeaders, {
     id: 'U00000',
     phone: ADMIN_PHONE,
     pinHash,

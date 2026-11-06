@@ -659,6 +659,29 @@ const SHIPPING_OPTIONS = [
 const listingModalEl = document.getElementById('listingModal');
 const listingModalContentEl = document.getElementById('listingModalContent');
 const listingModalCloseBtn = document.getElementById('listingModalCloseBtn');
+let listingImageBase64 = null; // รูปที่เลือกไว้ (ย่อขนาดแล้ว) รอส่งตอนกด submit
+
+// ย่อรูปในเครื่องก่อนส่ง (กันไฟล์ใหญ่เกินจากกล้องมือถือ) แล้วแปลงเป็น base64 data URL
+function fileToDownscaledBase64(file, maxWidth) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('อ่านไฟล์รูปไม่สำเร็จ'));
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('อ่านไฟล์รูปไม่สำเร็จ'));
+      img.onload = () => {
+        const scale = Math.min(1, maxWidth / img.width);
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', 0.85));
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
 
 function openLarvaeListingForm() {
   if (!listingModalEl) return;
@@ -677,6 +700,9 @@ function closeListingModal() {
 }
 
 function renderLarvaeListingForm() {
+  listingImageBase64 = null; // รีเซ็ตทุกครั้งที่เปิดฟอร์มใหม่
+  // ชื่อผู้ขาย: ดึงจากบัญชีที่ login อยู่โดยตรง ไม่ให้กรอกเอง (กันสวมรอย/พิมพ์ผิด)
+  const sellerDisplayName = (authState.loggedInUser && authState.loggedInUser.name) || '';
   const speciesOptions = SHRIMP_SPECIES.map((s) => `<option value="${s}">${s}</option>`).join('');
   const plOptions = PL_SIZES.map((p) => `<option value="${p}">${p}</option>`).join('');
   const shippingChips = SHIPPING_OPTIONS.map((o, i) => `
@@ -693,6 +719,11 @@ function renderLarvaeListingForm() {
     </div>
     <form class="auth-form" id="listingForm">
       <div class="form-error" id="listingError"></div>
+
+      <div class="form-group">
+        <label>ชื่อผู้ขาย</label>
+        <input type="text" value="${sellerDisplayName}" disabled>
+      </div>
 
       <div class="form-group">
         <label for="listImage">1. รูปภาพ</label>
@@ -712,15 +743,9 @@ function renderLarvaeListingForm() {
         <input type="text" id="listPlOther" class="listing-sub-input" placeholder="ระบุขนาด PL เอง" style="display:none;">
       </div>
 
-      <div class="form-row-2">
-        <div class="form-group">
-          <label for="listPrice">2. ราคา</label>
-          <input type="number" id="listPrice" min="0" step="0.01" placeholder="เช่น 150" required>
-        </div>
-        <div class="form-group">
-          <label for="listPriceUnit">หน่วยราคา</label>
-          <input type="text" id="listPriceUnit" placeholder="เช่น บาท/1,000 ตัว" value="บาท / 1,000 ตัว">
-        </div>
+      <div class="form-group">
+        <label for="listPrice">2. ราคา (บาท)</label>
+        <input type="number" id="listPrice" min="0" step="0.01" placeholder="เช่น 0.15" required>
       </div>
 
       <div class="form-group">
@@ -738,16 +763,23 @@ function renderLarvaeListingForm() {
         <button type="submit" class="btn btn-primary">ลงประกาศขาย</button>
       </div>
     </form>
-    <p class="auth-mock-note">* หน้าตัวอย่าง UI เท่านั้น ยังไม่บันทึกประกาศจริง</p>
   `;
 
-  // แสดงพรีวิวรูปที่เลือก (อ่านในเครื่อง ไม่อัปโหลดไปไหน — ตามสเกลของฟอร์มตอนนี้)
-  document.getElementById('listImage').addEventListener('change', (e) => {
+  // แสดงพรีวิว + ย่อขนาด/แปลงเป็น base64 รอส่งตอน submit
+  document.getElementById('listImage').addEventListener('change', async (e) => {
     const file = e.target.files && e.target.files[0];
     const img = document.getElementById('listImagePreview');
-    if (!file) { img.style.display = 'none'; return; }
+    if (!file) { img.style.display = 'none'; listingImageBase64 = null; return; }
     img.src = URL.createObjectURL(file);
     img.style.display = 'block';
+    try {
+      listingImageBase64 = await fileToDownscaledBase64(file, 1200);
+    } catch (err) {
+      listingImageBase64 = null;
+      const errEl = document.getElementById('listingError');
+      errEl.textContent = err.message;
+      errEl.classList.add('show');
+    }
   });
 
   // สลับโชว์ช่องกรอกเอง เมื่อเลือก "อื่นๆ"
@@ -765,7 +797,7 @@ function renderLarvaeListingForm() {
     });
   });
 
-  document.getElementById('listingForm').addEventListener('submit', (e) => {
+  document.getElementById('listingForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const errEl = document.getElementById('listingError');
     errEl.classList.remove('show');
@@ -777,18 +809,51 @@ function renderLarvaeListingForm() {
       return;
     }
 
-    // UI เท่านั้น — ยังไม่ส่งข้อมูลไปไหนจริง แค่โชว์หน้าสรุปว่ากรอกสำเร็จ
-    listingModalContentEl.innerHTML = `
-      <div class="auth-head">
-        <div class="auth-icon">✅</div>
-        <h3>บันทึกตัวอย่างสำเร็จ</h3>
-        <p>นี่คือหน้าตัวอย่าง UI — ยังไม่เชื่อมระบบบันทึกประกาศขายจริง</p>
-      </div>
-      <div class="auth-submit-row">
-        <button type="button" class="btn btn-primary" id="closeListingSuccessBtn">ปิด</button>
-      </div>
-    `;
-    document.getElementById('closeListingSuccessBtn').addEventListener('click', closeListingModal);
+    const speciesSel = document.getElementById('listSpecies').value;
+    const species = speciesSel === 'อื่นๆ' ? document.getElementById('listSpeciesOther').value.trim() : speciesSel;
+    if (!species) {
+      errEl.textContent = 'กรอกพันธุ์กุ้ง';
+      errEl.classList.add('show');
+      return;
+    }
+
+    const plSel = document.getElementById('listPl').value;
+    const plSize = plSel.startsWith('อื่นๆ') ? document.getElementById('listPlOther').value.trim() : plSel;
+    if (!plSize) {
+      errEl.textContent = 'กรอกขนาดลูกกุ้งที่ขาย (PL)';
+      errEl.classList.add('show');
+      return;
+    }
+
+    const checkedShipping = listingModalContentEl.querySelector('input[name="listingShipping"]:checked');
+    const shippingType = checkedShipping ? checkedShipping.value : 'free';
+    const shippingAmount = shippingType === 'fixed' ? document.getElementById('listShippingAmount').value : undefined;
+    const promotion = document.getElementById('listPromo').value.trim();
+
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+    submitBtn.disabled = true;
+    try {
+      const { listing } = await apiPost('/api/listings', {
+        species, plSize, price, shippingType, shippingAmount, promotion,
+        imageBase64: listingImageBase64 || undefined,
+      });
+      listingModalContentEl.innerHTML = `
+        <div class="auth-head">
+          <div class="auth-icon">✅</div>
+          <h3>ลงประกาศขายสำเร็จ</h3>
+          <p>ประกาศรหัส ${listing.id} เผยแพร่ในตลาดแล้ว</p>
+        </div>
+        <div class="auth-submit-row">
+          <button type="button" class="btn btn-primary" id="closeListingSuccessBtn">ปิด</button>
+        </div>
+      `;
+      document.getElementById('closeListingSuccessBtn').addEventListener('click', closeListingModal);
+    } catch (err) {
+      errEl.textContent = err.message;
+      errEl.classList.add('show');
+    } finally {
+      submitBtn.disabled = false;
+    }
   });
 }
 

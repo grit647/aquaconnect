@@ -4,10 +4,11 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { readUsers, appendUser } = require('./sheets');
+const { readTab, appendRow } = require('./sheets');
 
 const router = express.Router();
 
+const USERS_TAB = 'Users';
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
 const COOKIE_NAME = 'aq_token';
 const PIN_RE = /^\d{6}$/;
@@ -68,7 +69,7 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ error: 'หมวดหมู่ไม่ถูกต้อง' });
     }
 
-    const { headers, users } = await readUsers();
+    const { headers, rows: users } = await readTab(USERS_TAB);
     if (users.some((u) => u.phone === phone)) {
       return res.status(409).json({ error: 'เบอร์นี้มีบัญชีสมาชิกอยู่แล้ว ลองเข้าสู่ระบบแทน' });
     }
@@ -87,7 +88,7 @@ router.post('/register', async (req, res) => {
       registeredDate: new Date().toISOString(),
     };
 
-    await appendUser(headers.length ? headers : USER_HEADERS, userRow);
+    await appendRow(USERS_TAB, headers.length ? headers : USER_HEADERS, userRow);
 
     const token = issueToken({ id, phone, roles, name: userRow.name });
     setAuthCookie(res, token);
@@ -105,7 +106,7 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ error: 'เบอร์โทรศัพท์หรือรหัส PIN ไม่ถูกต้อง' });
     }
 
-    const { users } = await readUsers();
+    const { rows: users } = await readTab(USERS_TAB);
     const user = users.find((u) => u.phone === phone);
     if (!user || !user.pinHash) {
       return res.status(401).json({ error: 'ไม่พบบัญชี หรือรหัส PIN ไม่ถูกต้อง' });
@@ -135,14 +136,28 @@ router.post('/logout', (req, res) => {
 });
 
 router.get('/me', (req, res) => {
-  const token = req.cookies && req.cookies[COOKIE_NAME];
-  if (!token) return res.json({ user: null });
-  try {
-    const payload = jwt.verify(token, JWT_SECRET);
-    res.json({ user: { id: payload.id, phone: payload.phone, roles: payload.roles, name: payload.name } });
-  } catch {
-    res.json({ user: null });
-  }
+  const user = getUserFromReq(req);
+  res.json({ user });
 });
 
-module.exports = router;
+// อ่าน session จากคุกกี้ (ใช้ร่วมกันได้จากไฟล์ route อื่น เช่น listings.js) — คืน null ถ้าไม่ได้ login
+function getUserFromReq(req) {
+  const token = req.cookies && req.cookies[COOKIE_NAME];
+  if (!token) return null;
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    return { id: payload.id, phone: payload.phone, roles: payload.roles, name: payload.name };
+  } catch {
+    return null;
+  }
+}
+
+// Middleware: บังคับต้อง login ก่อนถึงจะเข้าถึง route ได้ (เช่น ลงประกาศขายลูกกุ้ง)
+function requireAuth(req, res, next) {
+  const user = getUserFromReq(req);
+  if (!user) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบก่อน' });
+  req.user = user;
+  next();
+}
+
+module.exports = { router, requireAuth, getUserFromReq };
