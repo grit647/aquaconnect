@@ -40,7 +40,7 @@ const CARD_DETAILS = {
     icon: '🐚', title: 'ขายลูกกุ้ง',
     desc: 'ตลาดซื้อขายลูกพันธุ์กุ้ง เชื่อมฟาร์มอนุบาลกับเกษตรกรโดยตรง',
     buttons: [
-      { text: '➕ เพิ่มข้อมูล', href: '#add-larvae', style: 'ghost' },
+      { text: '➕ ลงขายลูกกุ้ง', action: 'openLarvaeListingForm', style: 'ghost' },
       { text: '🛒 จอง/สั่งซื้อ', href: '#order-larvae', style: 'primary' },
     ],
   },
@@ -91,6 +91,19 @@ function openCardModal(key) {
   const btnRow = document.getElementById('modalButtons');
   btnRow.innerHTML = '';
   (data.buttons || []).forEach((btn) => {
+    if (btn.action) {
+      // ปุ่มที่เปิดฟอร์ม/ลอจิกจริงในหน้าเว็บ (ไม่ใช่แค่ลิงก์ anchor เปล่าๆ)
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = `btn btn-${btn.style} feature-card-btn`;
+      b.textContent = btn.text;
+      b.addEventListener('click', () => {
+        closeCardModal();
+        if (btn.action === 'openLarvaeListingForm') openLarvaeListingForm();
+      });
+      btnRow.appendChild(b);
+      return;
+    }
     const a = document.createElement('a');
     a.href = btn.href;
     a.className = `btn btn-${btn.style} feature-card-btn`;
@@ -629,3 +642,159 @@ if (authModalCloseBtn && authModalEl) {
     }
   } catch (e) { /* ยังไม่ login หรือเช็คไม่ได้ ก็ปล่อยเป็นสถานะ "เข้าสู่ระบบ" ตามปกติ */ }
 })();
+
+// ============================================================
+// ลงขายลูกกุ้ง — ฟอร์มกรอกรายละเอียดประกาศขาย (ยังเป็น UI เท่านั้น ยังไม่บันทึกข้อมูลจริง)
+// ฟิลด์ตามที่ระบุ: 1 ภาพ  2 ราคา  3 ค่าขนส่ง  4 โปรโมชั่น  5 พันธุ์  6 ขนาด PL
+// ============================================================
+
+const SHRIMP_SPECIES = ['กุ้งขาวแวนนาไม', 'กุ้งกุลาดำ', 'กุ้งก้ามกราม', 'อื่นๆ'];
+const PL_SIZES = ['PL8', 'PL10', 'PL12', 'PL15', 'PL20', 'อื่นๆ (ระบุเอง)'];
+const SHIPPING_OPTIONS = [
+  { value: 'free', label: 'ฟรี (ผู้ขายรับผิดชอบ)' },
+  { value: 'distance', label: 'คิดตามระยะทาง (แจ้งราคาทีหลัง)' },
+  { value: 'fixed', label: 'กำหนดราคาคงที่' },
+];
+
+const listingModalEl = document.getElementById('listingModal');
+const listingModalContentEl = document.getElementById('listingModalContent');
+const listingModalCloseBtn = document.getElementById('listingModalCloseBtn');
+
+function openLarvaeListingForm() {
+  if (!listingModalEl) return;
+  if (!authState.loggedInUser) {
+    // ต้อง login ก่อนถึงจะลงขายได้ — เปิดหน้า login แทน พร้อมข้อความอธิบายเหตุผล
+    openAuthModal('login');
+    const noteEl = document.querySelector('#authModalContent .auth-head p');
+    if (noteEl) noteEl.textContent = 'เข้าสู่ระบบก่อน เพื่อลงขายลูกกุ้ง';
+    return;
+  }
+  listingModalEl.style.display = 'flex';
+  renderLarvaeListingForm();
+}
+function closeListingModal() {
+  if (listingModalEl) listingModalEl.style.display = 'none';
+}
+
+function renderLarvaeListingForm() {
+  const speciesOptions = SHRIMP_SPECIES.map((s) => `<option value="${s}">${s}</option>`).join('');
+  const plOptions = PL_SIZES.map((p) => `<option value="${p}">${p}</option>`).join('');
+  const shippingChips = SHIPPING_OPTIONS.map((o, i) => `
+    <label class="checkbox-chip ${i === 0 ? 'checked' : ''}">
+      <input type="radio" name="listingShipping" value="${o.value}" ${i === 0 ? 'checked' : ''}>
+      <span>${o.label}</span>
+    </label>`).join('');
+
+  listingModalContentEl.innerHTML = `
+    <div class="auth-head">
+      <div class="auth-icon">🐚</div>
+      <h3>ลงขายลูกกุ้ง</h3>
+      <p>กรอกรายละเอียดลูกกุ้งที่จะลงขายในตลาด</p>
+    </div>
+    <form class="auth-form" id="listingForm">
+      <div class="form-error" id="listingError"></div>
+
+      <div class="form-group">
+        <label for="listImage">1. รูปภาพ</label>
+        <input type="file" id="listImage" accept="image/*">
+        <img id="listImagePreview" class="listing-image-preview" style="display:none;">
+      </div>
+
+      <div class="form-group">
+        <label for="listSpecies">5. พันธุ์กุ้ง</label>
+        <select id="listSpecies">${speciesOptions}</select>
+        <input type="text" id="listSpeciesOther" class="listing-sub-input" placeholder='ระบุพันธุ์ (ถ้าเลือก "อื่นๆ")' style="display:none;">
+      </div>
+
+      <div class="form-group">
+        <label for="listPl">6. ขนาดลูกกุ้งที่ขาย (PL)</label>
+        <select id="listPl">${plOptions}</select>
+        <input type="text" id="listPlOther" class="listing-sub-input" placeholder="ระบุขนาด PL เอง" style="display:none;">
+      </div>
+
+      <div class="form-row-2">
+        <div class="form-group">
+          <label for="listPrice">2. ราคา</label>
+          <input type="number" id="listPrice" min="0" step="0.01" placeholder="เช่น 150" required>
+        </div>
+        <div class="form-group">
+          <label for="listPriceUnit">หน่วยราคา</label>
+          <input type="text" id="listPriceUnit" placeholder="เช่น บาท/1,000 ตัว" value="บาท / 1,000 ตัว">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>3. ค่าขนส่ง</label>
+        <div class="checkbox-group">${shippingChips}</div>
+        <input type="number" id="listShippingAmount" class="listing-sub-input" min="0" placeholder="ระบุค่าขนส่ง (บาท)" style="display:none;">
+      </div>
+
+      <div class="form-group">
+        <label for="listPromo">4. โปรโมชั่น <span class="field-note">(ไม่บังคับ)</span></label>
+        <input type="text" id="listPromo" placeholder="เช่น ซื้อ 10,000 ตัว แถมฟรี 500 ตัว">
+      </div>
+
+      <div class="auth-submit-row">
+        <button type="submit" class="btn btn-primary">ลงประกาศขาย</button>
+      </div>
+    </form>
+    <p class="auth-mock-note">* หน้าตัวอย่าง UI เท่านั้น ยังไม่บันทึกประกาศจริง</p>
+  `;
+
+  // แสดงพรีวิวรูปที่เลือก (อ่านในเครื่อง ไม่อัปโหลดไปไหน — ตามสเกลของฟอร์มตอนนี้)
+  document.getElementById('listImage').addEventListener('change', (e) => {
+    const file = e.target.files && e.target.files[0];
+    const img = document.getElementById('listImagePreview');
+    if (!file) { img.style.display = 'none'; return; }
+    img.src = URL.createObjectURL(file);
+    img.style.display = 'block';
+  });
+
+  // สลับโชว์ช่องกรอกเอง เมื่อเลือก "อื่นๆ"
+  document.getElementById('listSpecies').addEventListener('change', (e) => {
+    document.getElementById('listSpeciesOther').style.display = e.target.value === 'อื่นๆ' ? 'block' : 'none';
+  });
+  document.getElementById('listPl').addEventListener('change', (e) => {
+    document.getElementById('listPlOther').style.display = e.target.value.startsWith('อื่นๆ') ? 'block' : 'none';
+  });
+  listingModalContentEl.querySelectorAll('input[name="listingShipping"]').forEach((radio) => {
+    radio.addEventListener('change', (e) => {
+      document.getElementById('listShippingAmount').style.display = e.target.value === 'fixed' ? 'block' : 'none';
+      listingModalContentEl.querySelectorAll('.checkbox-chip').forEach((c) => c.classList.remove('checked'));
+      e.target.closest('.checkbox-chip').classList.add('checked');
+    });
+  });
+
+  document.getElementById('listingForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const errEl = document.getElementById('listingError');
+    errEl.classList.remove('show');
+
+    const price = document.getElementById('listPrice').value;
+    if (!price || Number(price) <= 0) {
+      errEl.textContent = 'กรอกราคาให้ถูกต้อง';
+      errEl.classList.add('show');
+      return;
+    }
+
+    // UI เท่านั้น — ยังไม่ส่งข้อมูลไปไหนจริง แค่โชว์หน้าสรุปว่ากรอกสำเร็จ
+    listingModalContentEl.innerHTML = `
+      <div class="auth-head">
+        <div class="auth-icon">✅</div>
+        <h3>บันทึกตัวอย่างสำเร็จ</h3>
+        <p>นี่คือหน้าตัวอย่าง UI — ยังไม่เชื่อมระบบบันทึกประกาศขายจริง</p>
+      </div>
+      <div class="auth-submit-row">
+        <button type="button" class="btn btn-primary" id="closeListingSuccessBtn">ปิด</button>
+      </div>
+    `;
+    document.getElementById('closeListingSuccessBtn').addEventListener('click', closeListingModal);
+  });
+}
+
+if (listingModalCloseBtn && listingModalEl) {
+  listingModalCloseBtn.addEventListener('click', closeListingModal);
+  listingModalEl.addEventListener('click', (e) => {
+    if (e.target.id === 'listingModal') closeListingModal();
+  });
+}
