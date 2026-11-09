@@ -41,7 +41,7 @@ const CARD_DETAILS = {
     desc: 'ตลาดซื้อขายลูกพันธุ์กุ้ง เชื่อมฟาร์มอนุบาลกับเกษตรกรโดยตรง',
     buttons: [
       { text: '➕ ลงขายลูกกุ้ง', action: 'openLarvaeListingForm', style: 'ghost' },
-      { text: '🛒 จอง/สั่งซื้อ', href: '#order-larvae', style: 'primary' },
+      { text: '🛒 ดูประกาศขาย', href: 'market.html', style: 'primary' },
     ],
   },
   suppliers: {
@@ -837,6 +837,7 @@ function renderLarvaeListingForm() {
         species, plSize, price, shippingType, shippingAmount, promotion,
         imageBase64: listingImageBase64 || undefined,
       });
+      if (document.getElementById('marketGrid')) loadMarketListings(); // รีเฟรชรายการถ้ากำลังอยู่หน้าตลาด
       listingModalContentEl.innerHTML = `
         <div class="auth-head">
           <div class="auth-icon">✅</div>
@@ -863,3 +864,90 @@ if (listingModalCloseBtn && listingModalEl) {
     if (e.target.id === 'listingModal') closeListingModal();
   });
 }
+
+// ============================================================
+// ตลาดลูกกุ้ง (market.html) — ดึงรายการประกาศขายจริงจาก backend มาแสดง
+// โค้ดส่วนนี้ no-op อัตโนมัติในหน้าอื่นที่ไม่มี #marketGrid (index.html/community.html)
+// ============================================================
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str == null ? '' : String(str);
+  return div.innerHTML;
+}
+
+function shippingLabel(listing) {
+  if (listing.shippingType === 'free') return '🚚 ส่งฟรี';
+  if (listing.shippingType === 'distance') return '🚚 ค่าส่งคิดตามระยะทาง';
+  if (listing.shippingType === 'fixed') return `🚚 ค่าส่ง ${Number(listing.shippingAmount || 0).toLocaleString('th-TH')} บาท`;
+  return '';
+}
+
+function relativeThaiDate(iso) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const diffMs = Date.now() - d.getTime();
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 1) return 'เมื่อสักครู่';
+  if (diffMin < 60) return `${diffMin} นาทีที่แล้ว`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr} ชั่วโมงที่แล้ว`;
+  const diffDay = Math.floor(diffHr / 24);
+  if (diffDay < 30) return `${diffDay} วันที่แล้ว`;
+  return d.toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+function renderListingCard(listing) {
+  const imgHtml = listing.imageUrl
+    ? `<img class="listing-card-img" src="${escapeHtml(listing.imageUrl)}" alt="${escapeHtml(listing.species)}">`
+    : `<div class="listing-card-img-placeholder">🐚</div>`;
+  const promoHtml = listing.promotion
+    ? `<div class="listing-card-promo">🎁 ${escapeHtml(listing.promotion)}</div>`
+    : '';
+  const phoneDigits = String(listing.sellerPhone || '').replace(/\D/g, '');
+  return `
+    <div class="listing-card">
+      ${imgHtml}
+      <div class="listing-card-body">
+        <span class="listing-card-pl">${escapeHtml(listing.plSize)}</span>
+        <div class="listing-card-species">${escapeHtml(listing.species)}</div>
+        <div class="listing-card-price">${Number(listing.price).toLocaleString('th-TH')} <span>บาท</span></div>
+        <div class="listing-card-shipping">${shippingLabel(listing)}</div>
+        ${promoHtml}
+        <div class="listing-card-seller">
+          <strong>🧑‍🌾 ${escapeHtml(listing.sellerName)}</strong>
+          ${phoneDigits ? `<a href="tel:${phoneDigits}">📞 ${escapeHtml(listing.sellerPhone)}</a>` : ''}
+          <span class="listing-card-date">ลงเมื่อ ${relativeThaiDate(listing.createdAt)}</span>
+        </div>
+      </div>
+    </div>`;
+}
+
+async function loadMarketListings() {
+  const gridEl = document.getElementById('marketGrid');
+  if (!gridEl) return; // หน้านี้ไม่ใช่ market.html ไม่ต้องทำอะไร
+  const loadingEl = document.getElementById('marketLoading');
+  const emptyEl = document.getElementById('marketEmpty');
+  const errorEl = document.getElementById('marketError');
+
+  try {
+    const { listings } = await apiGet('/api/listings');
+    loadingEl.style.display = 'none';
+    if (!listings || listings.length === 0) {
+      emptyEl.style.display = 'block';
+      return;
+    }
+    gridEl.innerHTML = listings.map(renderListingCard).join('');
+  } catch (err) {
+    loadingEl.style.display = 'none';
+    errorEl.textContent = 'โหลดประกาศไม่สำเร็จ ลองรีเฟรชหน้าอีกครั้ง';
+    errorEl.style.display = 'block';
+  }
+}
+
+const openListingFormBtn = document.getElementById('openListingFormBtn');
+if (openListingFormBtn) {
+  openListingFormBtn.addEventListener('click', openLarvaeListingForm);
+}
+
+loadMarketListings();

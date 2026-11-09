@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ตลาดลูกกุ้ง — AquaConnect</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="header-inner">
+    <a href="index.html" class="logo">
+      <span class="logo-icon">🦐</span>
+      <span class="logo-text">AquaConnect</span>
+    </a>
+    <button class="nav-toggle" id="navToggle" aria-label="เปิดเมนู">☰</button>
+    <nav class="main-nav" id="mainNav">
+      <a href="index.html">หน้าแรก</a>
+      <a href="index.html#info">ข้อมูล</a>
+      <a href="index.html#farm">จัดการการเลี้ยง</a>
+      <a href="market.html" class="active">ตลาดลูกกุ้ง</a>
+      <a href="community.html">ชุมชน</a>
+      <button id="loginNavBtn" class="nav-cta">เข้าสู่ระบบ</button>
+    </nav>
+  </div>
+</header>
+
+<nav class="bottom-nav">
+  <a href="index.html">
+    <span class="bottom-nav-icon">🏠</span>
+    <span>หน้าแรก</span>
+  </a>
+  <a href="index.html#info">
+    <span class="bottom-nav-icon">📚</span>
+    <span>ข้อมูล</span>
+  </a>
+  <a href="index.html#farm">
+    <span class="bottom-nav-icon">📊</span>
+    <span>การเลี้ยง</span>
+  </a>
+  <a href="market.html" class="active">
+    <span class="bottom-nav-icon">🐚</span>
+    <span>ตลาด</span>
+  </a>
+  <a href="community.html">
+    <span class="bottom-nav-icon">💬</span>
+    <span>ชุมชน</span>
+  </a>
+</nav>
+
+<section class="market-page">
+  <div class="section-head market-head">
+    <div>
+      <h2>ตลาดลูกกุ้ง</h2>
+      <p>ประกาศขายลูกพันธุ์กุ้งจากฟาร์มอนุบาลจริง ติดต่อผู้ขายได้โดยตรง</p>
+    </div>
+    <button type="button" class="btn btn-primary" id="openListingFormBtn">➕ ลงขายลูกกุ้ง</button>
+  </div>
+
+  <div id="marketGrid" class="market-grid"></div>
+  <p id="marketLoading" class="market-note">กำลังโหลดประกาศ...</p>
+  <p id="marketEmpty" class="market-note" style="display:none;">ยังไม่มีประกาศขายลูกกุ้งในตอนนี้ — เป็นคนแรกที่ลงขายสิครับ!</p>
+  <p id="marketError" class="market-note market-note-error" style="display:none;"></p>
+</section>
+
+<div class="modal-overlay" id="authModal" style="display:none;">
+  <div class="modal-box auth-modal-box">
+    <button class="modal-close" id="authModalCloseBtn" aria-label="ปิด">✕</button>
+    <div id="authModalContent"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="listingModal" style="display:none;">
+  <div class="modal-box auth-modal-box">
+    <button class="modal-close" id="listingModalCloseBtn" aria-label="ปิด">✕</button>
+    <div id="listingModalContent"></div>
+  </div>
+</div>
+
+<footer class="site-footer">
+  <p>🦐 AquaConnect — แพลตฟอร์มสำหรับผู้เลี้ยงสัตว์น้ำ</p>
+  <p class="footer-note">ชื่อเว็บนี้เป็นชื่อชั่วคราว เปลี่ยนได้ภายหลัง</p>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

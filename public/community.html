@@ -20,8 +20,9 @@
       <a href="index.html#info">ข้อมูล</a>
       <a href="index.html#farm">จัดการการเลี้ยง</a>
       <a href="index.html#larvae">ขายลูกกุ้ง</a>
+      <a href="market.html">ตลาดลูกกุ้ง</a>
       <a href="community.html" class="active">ชุมชน</a>
-      <a href="#login" class="nav-cta">เข้าสู่ระบบ</a>
+      <button id="loginNavBtn" class="nav-cta">เข้าสู่ระบบ</button>
     </nav>
   </div>
 </header>
@@ -39,7 +40,7 @@
     <span class="bottom-nav-icon">📊</span>
     <span>การเลี้ยง</span>
   </a>
-  <a href="index.html#larvae">
+  <a href="market.html">
     <span class="bottom-nav-icon">🐚</span>
     <span>ตลาด</span>
   </a>
@@ -114,9 +115,16 @@
       </div>
     </div>
 
-    <p class="community-note">* ตัวอย่างหน้าตาเท่านั้น ยังไม่ใช่ระบบโพสต์จริง — ส่วนระบบจริง (ล็อกอิน/โพสต์/แชท) จะเพิ่มในขั้นถัดไป</p>
+    <p class="community-note">* ตัวอย่างหน้าตาเท่านั้น ยังไม่ใช่ระบบโพสต์จริง — ส่วนระบบจริง (โพสต์/แชท) จะเพิ่มในขั้นถัดไป</p>
   </div>
 </section>
+
+<div class="modal-overlay" id="authModal" style="display:none;">
+  <div class="modal-box auth-modal-box">
+    <button class="modal-close" id="authModalCloseBtn" aria-label="ปิด">✕</button>
+    <div id="authModalContent"></div>
+  </div>
+</div>
 
 <footer class="site-footer">
   <p>🦐 AquaConnect — แพลตฟอร์มสำหรับผู้เลี้ยงสัตว์น้ำ</p>
