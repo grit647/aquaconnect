@@ -951,3 +951,17 @@ if (openListingFormBtn) {
 }
 
 loadMarketListings();
+
+// แสดงจำนวนประกาศขายลูกกุ้งจริงๆ บนการ์ด "ขายลูกกุ้ง" หน้าแรก (ถ้ามีการ์ดนี้อยู่ในหน้า)
+(async function loadLarvaeCountBadge() {
+  const badgeEl = document.getElementById('larvaeCountBadge');
+  if (!badgeEl) return;
+  try {
+    const { listings } = await apiGet('/api/listings');
+    const count = (listings || []).length;
+    if (count > 0) {
+      badgeEl.textContent = `${count.toLocaleString('th-TH')} ประกาศ`;
+      badgeEl.style.display = 'inline-block';
+    }
+  } catch (e) { /* โหลดไม่สำเร็จ ก็แค่ไม่โชว์ป้าย ไม่กระทบอย่างอื่น */ }
+})();

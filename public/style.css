@@ -370,6 +370,17 @@ img { max-width: 100%; }
   padding: 4px 10px;
   border-radius: 20px;
 }
+/* ป้ายจำนวนจริง (เช่น "12 ประกาศ") ต่างจาก .feature-badge ซึ่งใช้บอกสถานะ "ใช้งานหลัก" — ใช้สีฟ้าหลักแทนสีส้ม กันสับสนว่าเป็นคนละความหมายกัน */
+.feature-count-badge {
+  position: absolute;
+  top: 18px; right: 18px;
+  background: var(--primary);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 20px;
+}
 .feature-icon { font-size: 36px; margin-bottom: 14px; }
 .feature-card h3 { font-size: 19px; font-weight: 800; margin-bottom: 8px; }
 .feature-card p { font-size: 14px; color: var(--muted); }
