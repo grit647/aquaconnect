@@ -5,6 +5,7 @@ const { requireAuth } = require('../auth');
 const ai = require('../ai');
 const { buildSystemPrompt, buildTools } = require('../secretary');
 const { getMemoryContext, listCategories } = require('../memory');
+const { pendingCount } = require('../sharing');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -162,7 +163,7 @@ router.post('/conversations/:id/messages', async (req, res) => {
     }
 
     // ข้อมูลผู้ใช้สดจากฐานข้อมูล (ชื่อเลขา/บุคลิก) + ประวัติการคุยล่าสุด + ความจำ
-    const [u, hist, memoryContext] = await Promise.all([
+    const [u, hist, memoryContext, pendingRequests] = await Promise.all([
       query("SELECT name, secretary_name, secretary_persona FROM users WHERE id = $1 AND status = 'active'", [req.user.id]),
       query(
         `SELECT role, content FROM (
@@ -171,6 +172,7 @@ router.post('/conversations/:id/messages', async (req, res) => {
         [conv.id]
       ),
       getMemoryContext(req.user.id),
+      pendingCount(req.user.id),
     ]);
     const user = u.rows[0];
     if (!user) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบก่อน' });
@@ -180,6 +182,7 @@ router.post('/conversations/:id/messages', async (req, res) => {
       persona: user.secretary_persona,
       userName: user.name,
       memoryContext,
+      pendingRequests,
     });
     const history = [...hist.rows.filter((m) => m.role !== 'system'), { role: 'user', content }];
 
