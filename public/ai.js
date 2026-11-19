@@ -203,6 +203,7 @@
     } catch (err) {
       typing.remove();
       addBubble('error', err.message);
+      if (connected && /หมดเวลา|ถอนสิทธิ์|ปิดรับ|ไม่ได้รับอนุมัติ/.test(err.message)) endConnected(true);
       if (source !== 'voice') inputEl.value = text;
     } finally {
       sending = false;
@@ -593,7 +594,12 @@
 
   async function refreshConnectBadge() {
     try {
-      const { incoming, connectEnabled } = await api('GET', '/api/connect/mine');
+      const { incoming, outgoing, connectEnabled } = await api('GET', '/api/connect/mine');
+      if (!connected) {
+        const fresh = outgoing.filter((r) => r.status === 'approved' && !endedRequests.has(r.request_id) && r.decided_at && Date.now() - new Date(r.decided_at).getTime() < 15 * 60 * 1000 && (!r.expires_at || new Date(r.expires_at) > new Date()))
+          .sort((x, y) => new Date(y.decided_at) - new Date(x.decided_at))[0];
+        if (fresh) startConnected(fresh, labelOf(fresh), fresh.expires_at);
+      }
       renderConnToggle(connectEnabled !== false);
       const n = incoming.filter((r) => r.status === 'pending').length;
       $('connectBtn').textContent = '🔗 เชื่อมต่อข้อมูล' + (n ? ' (' + n + ')' : '');
@@ -602,18 +608,68 @@
   }
   setInterval(() => { if (me && !appEl.hidden && document.visibilityState === 'visible') refreshConnectBadge(); }, 60000);
 
-  function startConnected(req, priceLabel) {
-    connected = { requestId: req.request_id || req.my_request_id || req.requestId, owner: req.owner_name || req.owner, category: req.category };
+  const endedRequests = new Set();    // เชื่อมต่อที่ผู้ใช้กด "จบ" หรือหมดเวลาแล้ว — ไม่เชื่อมซ้ำอัตโนมัติ
+  let connTimer = null;
+  function renderConnBar() {
+    if (!connected) return;
+    let t = 'กำลังใช้ข้อมูลของคุณ' + connected.owner + ' · หมวด ' + connected.category + ' · ' + connected.priceLabel;
+    if (connected.expiresAt) {
+      const left = Math.max(0, Math.round((connected.expiresAt - Date.now()) / 1000));
+      t += ' · เหลือ ' + Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0');
+    }
+    $('connText').textContent = t;
+  }
+  function startConnected(req, priceLabel, expiresAt) {
+    const id = req.request_id || req.my_request_id || req.requestId;
+    if (connected && connected.requestId === id) return;
+    connected = { requestId: id, owner: req.owner_name || req.owner, category: req.category, priceLabel, expiresAt: expiresAt ? new Date(expiresAt).getTime() : null };
     closeSheet();
-    $('connText').textContent = 'กำลังใช้ข้อมูลของคุณ' + connected.owner + ' · หมวด ' + connected.category + ' · ' + priceLabel;
     $('connBar').hidden = false;
-    addBubble('hint', 'เริ่มใช้ข้อมูลของคุณ' + connected.owner + ' หมวด "' + connected.category + '" แล้วค่ะ (' + priceLabel + ')\nพิมพ์หรือพูดคำถามได้เลย ค่าบริการจะเริ่มคิดตั้งแต่คำถามแรก');
+    renderConnBar();
+    clearInterval(connTimer);
+    connTimer = setInterval(() => {
+      if (!connected) { clearInterval(connTimer); return; }
+      if (connected.expiresAt && Date.now() >= connected.expiresAt) { expireConnected(); return; }
+      renderConnBar();
+    }, 1000);
+    addBubble('hint', 'เชื่อมต่อข้อมูลของคุณ' + connected.owner + ' หมวด "' + connected.category + '" แล้วค่ะ (' + priceLabel + ')' +
+      (connected.expiresAt ? '\nหมวดฟรีใช้ได้ถึงเวลาที่นับถอยหลังบนแถบสีม่วง ครบแล้วระบบตัดการเชื่อมต่อ ต้องขอใหม่' : '') +
+      '\nพิมพ์หรือพูดคำถามได้เลย' + (connected.expiresAt ? '' : ' ค่าบริการจะเริ่มคิดตั้งแต่คำถามแรก'));
   }
   function endConnected(silent) {
     if (!connected) return;
+    endedRequests.add(connected.requestId);
     connected = null;
+    clearInterval(connTimer);
     $('connBar').hidden = true;
     if (!silent) addBubble('hint', 'จบการใช้ข้อมูลของคนอื่นแล้วค่ะ กลับมาคุยกับเลขาของคุณตามปกติ');
+  }
+  function expireConnected() {
+    const who = connected ? 'คุณ' + connected.owner + ' หมวด "' + connected.category + '"' : '';
+    endConnected(true);
+    addBubble('hint', 'ครบเวลาใช้ข้อมูลฟรี ตัดการเชื่อมต่อ' + who + ' แล้วค่ะ ถ้าจะใช้ต่อ กด "เชื่อมต่อข้อมูล" แล้วขอเข้าใช้ใหม่อีกครั้ง');
+  }
+
+  // เฝ้าคำขอที่ส่งไป: เจ้าของกดอนุญาตเมื่อไหร่ ระบบเชื่อมต่อให้เองทันที (ผู้ขอไม่ต้องกดอะไรเพิ่ม)
+  const watchers = new Map();
+  function labelOf(r) {
+    return priceText({ visibility: r.visibility, price_type: r.price_type, price_credits: r.price_credits === null || r.price_credits === undefined ? null : Number(r.price_credits) }, 5);
+  }
+  function watchRequest(requestId, ownerName, category) {
+    if (watchers.has(requestId)) return;
+    const started = Date.now();
+    const timer = setInterval(async () => {
+      if (!me || Date.now() - started > 10 * 60 * 1000) { clearInterval(timer); watchers.delete(requestId); return; }
+      try {
+        const { outgoing } = await api('GET', '/api/connect/mine');
+        const r = outgoing.find((x) => x.request_id === requestId);
+        if (!r || r.status === 'pending') return;
+        clearInterval(timer); watchers.delete(requestId);
+        if (r.status === 'approved') { if (!connected) startConnected(r, labelOf(r), r.expires_at); }
+        else addBubble('hint', 'คุณ' + ownerName + ' ไม่อนุญาตให้ใช้ข้อมูลหมวด "' + category + '" ค่ะ');
+      } catch (e) { /* ไว้รอบหน้า */ }
+    }, 4000);
+    watchers.set(requestId, timer);
   }
   $('connEnd').addEventListener('click', () => endConnected(false));
 
@@ -658,7 +714,7 @@
         const label = priceText({ visibility: r.visibility, price_type: r.price_type, price_credits: r.price_credits === null ? null : Number(r.price_credits) }, 5);
         const d = pcard(body, 'คุณ' + r.owner_name + ' · ' + r.category, label);
         const row = document.createElement('div'); row.className = 'row2'; d.appendChild(row);
-        miniBtn(row, '💬 เริ่มใช้ข้อมูล', () => startConnected(r, label), 'ok');
+        miniBtn(row, '💬 เริ่มใช้ข้อมูล', () => startConnected(r, label, r.expires_at), 'ok');
       });
     }
 
@@ -712,13 +768,14 @@
       const d = pcard(body, c.name + '  · ' + c.items + ' รายการ', 'ค่าบริการ: ' + label);
       const row = document.createElement('div'); row.className = 'row2'; d.appendChild(row);
       if (c.my_status === 'approved') {
-        miniBtn(row, '💬 เริ่มใช้ข้อมูล', () => startConnected({ my_request_id: c.my_request_id, owner: p.name, category: c.name }, label), 'ok');
+        miniBtn(row, '💬 เริ่มใช้ข้อมูล', () => startConnected({ my_request_id: c.my_request_id, owner: p.name, category: c.name }, label, c.my_expires_at), 'ok');
       } else if (c.my_status === 'pending') {
         miniBtn(row, '⏳ รอเจ้าของอนุญาต', () => {}).disabled = true;
+        watchRequest(c.my_request_id, p.name, c.name);
       } else {
         miniBtn(row, c.my_status ? '🔁 ขอเข้าใช้อีกครั้ง' : '🔑 ขอเข้าใช้', async (e) => {
           e.target.disabled = true;
-          try { await api('POST', '/api/connect/request', { ownerId: p.id, category: c.name }); showUse(p); addBubble('hint', 'ส่งคำขอถึงคุณ' + p.name + ' แล้วค่ะ รออนุญาต เมื่อได้รับอนุญาตจะแจ้งทางไลน์'); }
+          try { const rq = await api('POST', '/api/connect/request', { ownerId: p.id, category: c.name }); watchRequest(rq.requestId, p.name, c.name); showUse(p); addBubble('hint', 'ส่งคำขอถึงคุณ' + p.name + ' แล้วค่ะ รอเจ้าของกดอนุญาต — พออนุญาตแล้วระบบเชื่อมต่อให้อัตโนมัติ ไม่ต้องกดอะไรเพิ่ม'); }
           catch (err) { e.target.disabled = false; note(body, err.message); }
         });
       }

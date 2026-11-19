@@ -16,6 +16,11 @@ async function setting(key, fallback) {
   return r.rows[0] ? r.rows[0].value : fallback;
 }
 
+// หมวดฟรี: สิทธิ์ที่อนุมัติแล้วมีอายุจำกัด (free_access_minutes, ค่าเริ่มต้น 15 นาที) — ครบแล้วเปลี่ยนเป็น expired ต้องขอใหม่
+async function expireOld() {
+  await query("UPDATE access_requests SET status = 'expired' WHERE status = 'approved' AND expires_at IS NOT NULL AND expires_at <= now()");
+}
+
 // ---------- เจ้าของตั้งสถานะหมวด ----------
 async function setCategoryVisibility(userId, categoryName, visibility, priceType, price) {
   if (!['private', 'free', 'paid'].includes(visibility)) throw new Error('สถานะต้องเป็น private, free หรือ paid');
@@ -82,6 +87,7 @@ async function notifyOwnerRequest(ownerId, requestId, text) {
 
 // ---------- ขออนุญาต ----------
 async function requestAccess(userId, ownerId, categoryName, message) {
+  await expireOld();
   if (!UUID_RE.test(String(ownerId || ''))) throw new Error('owner_id ไม่ถูกต้อง (ต้องมาจากผลของ find_shared_categories)');
   const cat = await query(
     `SELECT c.id, c.name, c.visibility, u.name AS owner_name FROM memory_categories c JOIN users u ON u.id = c.owner_id
@@ -108,13 +114,14 @@ async function requestAccess(userId, ownerId, categoryName, message) {
 
 // คำขอที่เข้ามาหาฉัน (รอตอบ + ที่อนุมัติไว้) และคำขอที่ฉันส่งไป
 async function listAccess(userId) {
+  await expireOld();
   const [incoming, outgoing] = await Promise.all([
     query(
-      `SELECT r.id AS request_id, u.name AS requester_name, c.name AS category, r.status, r.message, r.created_at
+      `SELECT r.id AS request_id, u.name AS requester_name, c.name AS category, r.status, r.message, r.created_at, r.expires_at
          FROM access_requests r JOIN users u ON u.id = r.requester_id JOIN memory_categories c ON c.id = r.category_id
         WHERE r.owner_id = $1 AND r.status IN ('pending','approved') ORDER BY r.status = 'pending' DESC, r.created_at DESC LIMIT 30`, [userId]),
     query(
-      `SELECT r.id AS request_id, u.id AS owner_id, u.name AS owner_name, c.name AS category, c.visibility, c.price_type, c.price_credits, r.status, r.created_at
+      `SELECT r.id AS request_id, u.id AS owner_id, u.name AS owner_name, c.name AS category, c.visibility, c.price_type, c.price_credits, r.status, r.created_at, r.decided_at, r.expires_at
          FROM access_requests r JOIN users u ON u.id = r.owner_id JOIN memory_categories c ON c.id = r.category_id
         WHERE r.requester_id = $1 ORDER BY r.created_at DESC LIMIT 30`, [userId]),
   ]);
@@ -131,24 +138,28 @@ async function decideRequest(userId, requestId, decision) {
   const map = { approve: ['approved', ['pending']], deny: ['denied', ['pending']], revoke: ['revoked', ['approved', 'pending']] };
   if (!map[decision]) throw new Error('decision ต้องเป็น approve, deny หรือ revoke');
   const [status, from] = map[decision];
+  const freeMinutes = Math.max(1, Math.round(Number(await setting('free_access_minutes', 15)) || 15));
   const r = await query(
-    `UPDATE access_requests SET status = $3, decided_at = now()
-      WHERE id = $1 AND owner_id = $2 AND status = ANY($4) RETURNING requester_id, category_id`,
-    [requestId, userId, status, from]
+    `UPDATE access_requests SET status = $3, decided_at = now(),
+            expires_at = CASE WHEN $3 = 'approved' AND (SELECT visibility FROM memory_categories WHERE id = category_id) = 'free'
+                              THEN now() + ($5 || ' minutes')::interval ELSE NULL END
+      WHERE id = $1 AND owner_id = $2 AND status = ANY($4) RETURNING requester_id, category_id, expires_at`,
+    [requestId, userId, status, from, String(freeMinutes)]
   );
   if (!r.rows[0]) throw new Error('ไม่พบคำขอนี้ หรือสถานะเปลี่ยนไปแล้ว');
   if (decision !== 'revoke') {
     const info = await query('SELECT c.name AS category, u.name AS owner FROM memory_categories c JOIN users u ON u.id = c.owner_id WHERE c.id = $1', [r.rows[0].category_id]);
     const i = info.rows[0];
     await notifyOwner(r.rows[0].requester_id, decision === 'approve'
-      ? `คุณ${i.owner} อนุมัติให้ถามเรื่องหมวด "${i.category}" แล้วค่ะ บอกเลขาของคุณได้เลยว่าอยากถามอะไร`
+      ? `คุณ${i.owner} อนุมัติให้ใช้ข้อมูลหมวด "${i.category}" แล้วค่ะ${r.rows[0].expires_at ? ` (หมวดฟรี ใช้ได้ ${freeMinutes} นาที)` : ''} เปิดแอปแล้วถามได้เลย`
       : `คุณ${i.owner} ไม่อนุมัติคำขอเรื่องหมวด "${i.category}" ค่ะ`);
   }
-  return { ok: true, status };
+  return { ok: true, status, expiresAt: r.rows[0].expires_at || null };
 }
 
 // ---------- ถามเลขาของเจ้าของข้อมูล ----------
 async function askSharedCategory(userId, requestId, question) {
+  await expireOld();
   if (!UUID_RE.test(String(requestId || ''))) throw new Error('request_id ไม่ถูกต้อง (ดูจาก list_access_requests ฝั่ง outgoing)');
   const q = String(question || '').trim();
   if (!q) throw new Error('ต้องระบุคำถาม');
@@ -162,8 +173,12 @@ async function askSharedCategory(userId, requestId, question) {
     [requestId, userId]
   );
   const a = r.rows[0];
-  if (!a) throw new Error('ยังไม่ได้รับอนุมัติ หรือสิทธิ์ถูกถอนแล้ว');
-  if (a.expires_at && new Date(a.expires_at) < new Date()) throw new Error('สิทธิ์หมดอายุแล้ว');
+  if (!a) {
+    const st = UUID_RE.test(String(requestId)) ? await query('SELECT status FROM access_requests WHERE id = $1 AND requester_id = $2', [requestId, userId]) : { rows: [] };
+    if (st.rows[0] && st.rows[0].status === 'expired') throw new Error('หมดเวลาใช้ข้อมูลฟรีแล้ว ตัดการเชื่อมต่อ — ขอเข้าใช้ใหม่อีกครั้งได้ที่ปุ่ม "เชื่อมต่อข้อมูล"');
+    throw new Error('ยังไม่ได้รับอนุมัติ หรือสิทธิ์ถูกถอนแล้ว');
+  }
+  if (a.expires_at && new Date(a.expires_at) < new Date()) throw new Error('หมดเวลาใช้ข้อมูลฟรีแล้ว ตัดการเชื่อมต่อ — ขอเข้าใช้ใหม่อีกครั้งได้ที่ปุ่ม "เชื่อมต่อข้อมูล"');
   if (a.visibility === 'private') throw new Error('เจ้าของปิดหมวดนี้เป็นส่วนตัวแล้ว');
   if (!a.connect_enabled) throw new Error('เจ้าของปิดรับการเชื่อมต่อข้อมูลไว้ชั่วคราว (เปิดใหม่เมื่อไหร่ใช้ต่อได้ สิทธิ์ที่อนุมัติไว้ยังอยู่)');
 
@@ -227,6 +242,7 @@ async function listPeople(userId) {
 }
 
 async function ownerCategories(userId, ownerId) {
+  await expireOld();
   if (!UUID_RE.test(String(ownerId || ''))) return null;
   const o = await query("SELECT id, name, connect_enabled FROM users WHERE id = $1 AND status = 'active'", [ownerId]);
   if (!o.rows[0]) return null;
@@ -235,7 +251,8 @@ async function ownerCategories(userId, ownerId) {
     `SELECT c.id, c.name, c.description, c.visibility, c.price_type, c.price_credits,
             (SELECT count(*)::int FROM memories m WHERE m.category_id = c.id) AS items,
             (SELECT r.status FROM access_requests r WHERE r.requester_id = $2 AND r.category_id = c.id ORDER BY r.created_at DESC LIMIT 1) AS my_status,
-            (SELECT r.id FROM access_requests r WHERE r.requester_id = $2 AND r.category_id = c.id ORDER BY r.created_at DESC LIMIT 1) AS my_request_id
+            (SELECT r.id FROM access_requests r WHERE r.requester_id = $2 AND r.category_id = c.id ORDER BY r.created_at DESC LIMIT 1) AS my_request_id,
+            (SELECT r.expires_at FROM access_requests r WHERE r.requester_id = $2 AND r.category_id = c.id ORDER BY r.created_at DESC LIMIT 1) AS my_expires_at
        FROM memory_categories c WHERE c.owner_id = $1 AND c.visibility <> 'private' ORDER BY c.name`,
     [ownerId, userId]
   );

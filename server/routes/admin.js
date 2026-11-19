@@ -15,6 +15,7 @@ const SETTINGS = {
   idle_timeout_min: { label: 'เงียบเกินกี่นาทีถือว่าจบรอบคุยที่คิดเงิน', min: 1, max: 60 },
   chat_daily_limit: { label: 'โควตาข้อความต่อคนต่อวัน', min: 10, max: 2000 },
   credit_per_baht:  { label: 'เครดิต 1 = กี่บาท', min: 0.01, max: 100 },
+  free_access_minutes: { label: 'หมวดฟรี: ใช้ข้อมูลได้กี่นาทีต่อการอนุญาต 1 ครั้ง', min: 1, max: 240 },
   topup_min:        { label: 'เติมเครดิตขั้นต่ำต่อครั้ง (บาท)', min: 1, max: 10000 },
   topup_max:        { label: 'เติมเครดิตสูงสุดต่อครั้ง (บาท)', min: 100, max: 100000 },
 };

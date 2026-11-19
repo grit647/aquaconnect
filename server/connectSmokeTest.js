@@ -137,6 +137,32 @@ async function cleanup() {
   const steal = await call('POST', `/api/chat/conversations/${(await call('POST', '/api/chat/conversations', {}, otherC)).json.conversation.id}/messages`, { content: 'ขโมย', askRequestId: rq.json.requestId }, otherC);
   check('คนอื่นเอา request ของผู้ขอไปใช้ไม่ได้', steal.status === 400);
 
+  // --- หมวดฟรี: ใช้ได้ 15 นาทีแล้วตัด ต้องขอใหม่ ---
+  const fr = await call('POST', '/api/connect/request', { ownerId: owner, category: 'ฟาร์ม' }, askerC);
+  check('ขอหมวดฟรี → pending (ต้องรอเจ้าของกดอนุญาต)', fr.status === 200 && fr.json.status === 'pending');
+  const frNoAsk = await call('POST', `/api/chat/conversations/${conv}/messages`, { content: 'ถามก่อนอนุญาต', askRequestId: fr.json.requestId }, askerC);
+  check('ยังไม่อนุญาต → ใช้หมวดฟรีไม่ได้', frNoAsk.status === 400);
+  const frAp = await call('POST', '/api/connect/decide', { requestId: fr.json.requestId, decision: 'approve' }, ownerC);
+  const frRow = (await query('SELECT status, expires_at, decided_at FROM access_requests WHERE id = $1', [fr.json.requestId])).rows[0];
+  const mins = (new Date(frRow.expires_at) - new Date(frRow.decided_at)) / 60000;
+  check('เจ้าของอนุญาตหมวดฟรี → ตั้งเวลาหมดอายุ 15 นาทีให้เอง', frAp.status === 200 && frRow.status === 'approved' && Math.abs(mins - 15) < 0.1, mins + ' นาที');
+  check('คำตอบอนุญาตบอกเวลาหมดอายุ (หน้าจอใช้นับถอยหลัง)', !!frAp.json.expiresAt);
+  const frMine = (await call('GET', '/api/connect/mine', null, askerC)).json.outgoing.find((r) => r.request_id === fr.json.requestId);
+  check('ผู้ขอเห็นสถานะ approved + เวลาหมดอายุ (ให้หน้าจอเชื่อมต่ออัตโนมัติ)', frMine && frMine.status === 'approved' && !!frMine.expires_at && !!frMine.decided_at);
+  const frUse = await call('POST', `/api/chat/conversations/${conv}/messages`, { content: 'ถามหมวดฟรี', askRequestId: fr.json.requestId }, askerC);
+  check('ในเวลา 15 นาที → ใช้หมวดฟรีได้ ไม่หักเงิน', frUse.status === 200 && !frUse.json.creditsCharged);
+  await query("UPDATE access_requests SET expires_at = now() - interval '1 minute' WHERE id = $1", [fr.json.requestId]);
+  const frLate = await call('POST', `/api/chat/conversations/${conv}/messages`, { content: 'ถามหลังหมดเวลา', askRequestId: fr.json.requestId }, askerC);
+  check('ครบ 15 นาที → ตัดการเชื่อมต่อ ใช้ไม่ได้', frLate.status === 400 && frLate.json.error.includes('หมดเวลา'), frLate.json.error);
+  check('สถานะกลายเป็น expired', (await call('GET', '/api/connect/mine', null, askerC)).json.outgoing.find((r) => r.request_id === fr.json.requestId).status === 'expired');
+  const fr2 = await call('POST', '/api/connect/request', { ownerId: owner, category: 'ฟาร์ม' }, askerC);
+  check('ขอใหม่หลังหมดเวลา → ได้คำขอใหม่ pending (ต้องให้เจ้าของอนุญาตอีกครั้ง)', fr2.status === 200 && fr2.json.status === 'pending' && fr2.json.requestId !== fr.json.requestId);
+  await call('POST', '/api/connect/decide', { requestId: fr2.json.requestId, decision: 'approve' }, ownerC);
+  const frUse2 = await call('POST', `/api/chat/conversations/${conv}/messages`, { content: 'ถามรอบใหม่', askRequestId: fr2.json.requestId }, askerC);
+  check('เจ้าของอนุญาตรอบใหม่ → ใช้ได้อีก 15 นาที', frUse2.status === 200);
+  const paidRow = (await query("SELECT expires_at FROM access_requests WHERE id = $1", [rq.json.requestId])).rows[0];
+  check('หมวดเสียเงินไม่ถูกจำกัด 15 นาที (ไม่มีวันหมดอายุ)', paidRow.expires_at === null);
+
   // --- ถอนสิทธิ์จากหน้าจอ ---
   check('เจ้าของถอนสิทธิ์ผ่านปุ่มได้', (await call('POST', '/api/connect/decide', { requestId: rq.json.requestId, decision: 'revoke' }, ownerC)).status === 200);
   const after = await call('POST', `/api/chat/conversations/${conv}/messages`, { content: 'ถามอีก', askRequestId: rq.json.requestId }, askerC);
