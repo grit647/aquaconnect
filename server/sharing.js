@@ -123,7 +123,7 @@ async function listAccess(userId) {
     query(
       `SELECT r.id AS request_id, u.id AS owner_id, u.name AS owner_name, c.name AS category, c.visibility, c.price_type, c.price_credits, r.status, r.created_at, r.decided_at, r.expires_at
          FROM access_requests r JOIN users u ON u.id = r.owner_id JOIN memory_categories c ON c.id = r.category_id
-        WHERE r.requester_id = $1 ORDER BY r.created_at DESC LIMIT 30`, [userId]),
+        WHERE r.requester_id = $1 AND c.visibility <> 'private' AND u.status = 'active' ORDER BY r.created_at DESC LIMIT 30`, [userId]),
   ]);
   return { incoming: incoming.rows, outgoing: outgoing.rows };
 }

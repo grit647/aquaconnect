@@ -95,6 +95,9 @@ const cleanup = async () => {
   await sharing.decideRequest(owner, req2.requestId, 'approve');
   await sharing.setCategoryVisibility(owner, 'วิชาการ', 'private');
   check('ปิดเป็นส่วนตัว → ตัดสิทธิ์ที่อนุมัติไว้ทันที', !!(await rejects(() => sharing.askSharedCategory(asker, req2.requestId, 'q'))));
+  const hist = await sharing.listAccess(asker);
+  check('หมวดที่เป็นส่วนตัวแล้ว ไม่โผล่ในประวัติคำขอของผู้ขออีก (ไม่แสดงชื่อหมวดให้คนอื่นเห็น)', hist.outgoing.every((r) => r.category !== 'วิชาการ'));
+  check('หมวดส่วนตัวไม่โผล่ในรายชื่อหมวดที่เปิดแชร์ และเจ้าของไม่มีหมวดแชร์เหลือ', (await sharing.findSharedCategories(asker, 'เจ้าของ ทดสอบ')).length === 0 && (await sharing.listPeople(asker)).find((p) => p.name === 'เจ้าของ ทดสอบ').categories === 0);
   check('ไม่มีข้อความไลน์หลุดออกไปตอนทดสอบ', sent.length === 0);
 
   await cleanup();
