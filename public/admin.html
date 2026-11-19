@@ -26,6 +26,11 @@ table { width:100%; border-collapse:collapse; font-size:14px; }
 th, td { text-align:left; padding:8px 6px; border-bottom:1px solid var(--line); vertical-align:middle; }
 th { color:var(--muted); font-size:12px; font-weight:600; }
 .tablewrap { overflow-x:auto; }
+#alertbar { background:rgba(251,113,133,.12); border:1px solid var(--danger); color:var(--danger); border-radius:14px; padding:11px 14px; margin-bottom:6px; font-weight:700; cursor:pointer; }
+.chips { display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap; }
+.chip { border:1px solid var(--line); background:var(--panel2); color:var(--text); border-radius:999px; padding:5px 14px; font:inherit; font-size:13px; cursor:pointer; }
+.chip.on { border-color:var(--neon); color:var(--neon); }
+.warn { color:var(--danger); font-weight:700; }
 .muted { color:var(--muted); font-size:13px; margin-bottom:8px; }
 .box input[type=file] { color:var(--muted); font-size:13px; margin-right:8px; }
 .pill { display:inline-block; padding:1px 9px; border-radius:999px; font-size:12px; border:1px solid var(--line); }
@@ -54,14 +59,15 @@ button.act.danger { color:var(--danger); border-color:var(--danger); }
 <div id="admin" hidden>
   <header><b>🦐 AquaConnect หลังบ้าน</b><span class="grow"></span><a href="/">← หน้าเลขา</a></header>
   <main>
+    <div id="alertbar" hidden></div>
     <h2>ภาพรวม</h2>
     <div class="cards" id="cards"></div>
     <h2>ข้อความต่อวัน (7 วันล่าสุด)</h2>
     <div class="box"><div class="bars" id="bars"></div></div>
     <h2>การแชร์ข้อมูล</h2>
     <div class="box" id="share"></div>
-    <h2>เติมเครดิตรอตรวจสลิป</h2>
-    <div class="box" id="topups"></div>
+    <h2>ตรวจสลิปเติมเครดิต</h2>
+    <div class="box"><div class="chips" id="topupTabs"></div><div id="topups"></div></div>
     <h2>QR รับเงิน</h2>
     <div class="box" id="qrbox"></div>
     <h2>ค่าตั้งระบบ</h2>
@@ -155,30 +161,85 @@ button.act.danger { color:var(--danger); border-color:var(--danger); }
     });
   }
 
+  let topupStatus = 'pending';
+  const TOPUP_TABS = [['pending', 'รอตรวจ'], ['approved', 'อนุมัติแล้ว'], ['rejected', 'ปฏิเสธแล้ว']];
+
+  function drawTabs() {
+    const tabs = $('topupTabs'); tabs.textContent = '';
+    TOPUP_TABS.forEach(([k, label]) => {
+      const c = el('button', label, 'chip' + (k === topupStatus ? ' on' : ''));
+      c.addEventListener('click', () => { topupStatus = k; loadTopups(); });
+      tabs.appendChild(c);
+    });
+  }
+
+  // แถบเตือนด้านบน + ตัวเลขในชื่อแท็บ: มีสลิปรอตรวจกี่รายการ
+  function showPending(n) {
+    const bar = $('alertbar');
+    bar.hidden = !n;
+    bar.textContent = n ? '🔔 มีสลิปเติมเครดิตรอตรวจ ' + n + ' รายการ — แตะเพื่อไปตรวจ' : '';
+    document.title = (n ? '(' + n + ') ' : '') + 'AquaConnect — หลังบ้าน';
+  }
+  $('alertbar').addEventListener('click', () => { topupStatus = 'pending'; loadTopups(); $('topups').scrollIntoView({ behavior: 'smooth' }); });
+
+  let lastPending = -1;
+  async function pollPending() {
+    try {
+      const { topups } = await api('GET', '/api/admin/topups?status=pending');
+      showPending(topups.length);
+      // มีรายการใหม่เข้ามาระหว่างเปิดหน้าอยู่ → รีเฟรชรายการให้เอง (ถ้ากำลังดูแท็บรอตรวจ)
+      if (lastPending !== -1 && topups.length !== lastPending && topupStatus === 'pending') { loadTopups(); if (topups.length > lastPending) toast('มีสลิปใหม่เข้ามา'); }
+      lastPending = topups.length;
+    } catch (e) { /* ครั้งนี้เช็กไม่ได้ ไว้รอบหน้า */ }
+  }
+
   async function loadTopups() {
-    const { topups } = await api('GET', '/api/admin/topups?status=pending');
+    drawTabs();
+    const { topups } = await api('GET', '/api/admin/topups?status=' + topupStatus);
+    if (topupStatus === 'pending') { showPending(topups.length); lastPending = topups.length; }
     const box = $('topups'); box.textContent = '';
-    if (!topups.length) { box.appendChild(el('div', 'ไม่มีรายการรอตรวจ', 'muted')); return; }
+    if (!topups.length) { box.appendChild(el('div', 'ไม่มีรายการ', 'muted')); return; }
     topups.forEach((t) => {
       const row = el('div', undefined, 'set');
       const info = el('div', undefined, 't');
       info.appendChild(document.createTextNode(t.user_name + ' (' + t.phone + ') แจ้งโอน ' + t.amount_claimed + ' บาท'));
-      info.appendChild(el('small', 'AI อ่านยอดจากสลิปได้: ' + (t.slip_amount_read === null ? 'อ่านไม่ได้' : t.slip_amount_read + ' บาท') + ' • ' + new Date(t.created_at).toLocaleString('th-TH')));
+      const mismatch = t.slip_amount_read !== null && t.slip_amount_read !== t.amount_claimed;
+      const sm = el('small', 'AI อ่านยอดจากสลิปได้: ' + (t.slip_amount_read === null ? 'อ่านไม่ได้' : t.slip_amount_read + ' บาท') + ' • ' + new Date(t.created_at).toLocaleString('th-TH'));
+      info.appendChild(sm);
+      if (mismatch) info.appendChild(el('small', '⚠️ ยอดที่แจ้งไม่ตรงกับยอดที่ AI อ่านจากสลิป — ตรวจสลิปและยอดเข้าบัญชีให้ดี', 'warn'));
+      if (t.slip_amount_read === null && topupStatus === 'pending') info.appendChild(el('small', '⚠️ AI อ่านยอดไม่ได้ — ต้องดูสลิปเองทุกตัวอักษร', 'warn'));
       const view = el('a', 'ดูสลิป'); view.href = '/api/admin/topups/' + t.id + '/slip'; view.target = '_blank'; view.rel = 'noopener';
-      const inp = el('input'); inp.type = 'number'; inp.step = 'any'; inp.value = t.slip_amount_read === null ? t.amount_claimed : t.slip_amount_read;
-      const ok = el('button', 'อนุมัติ', 'act');
-      ok.addEventListener('click', async () => {
-        if (!confirm('ยืนยันให้เครดิต ' + inp.value + ' แก่ ' + t.user_name + ' ? (ตรวจสลิปกับยอดเข้าบัญชีจริงแล้ว)')) return;
-        try { await api('POST', '/api/admin/topups/' + t.id + '/approve', { amount: inp.value }); toast('เติมเครดิตแล้ว'); loadTopups(); }
-        catch (e) { toast(e.message); }
-      });
-      const no = el('button', 'ปฏิเสธ', 'act danger');
-      no.addEventListener('click', async () => {
-        const note = prompt('เหตุผล (ไม่บังคับ)'); if (note === null) return;
-        try { await api('POST', '/api/admin/topups/' + t.id + '/reject', { note }); toast('ปฏิเสธแล้ว'); loadTopups(); }
-        catch (e) { toast(e.message); }
-      });
-      row.append(info, view, inp, ok, no); box.appendChild(row);
+      row.append(info, view);
+
+      if (topupStatus === 'pending') {
+        const inp = el('input'); inp.type = 'number'; inp.step = 'any'; inp.value = t.slip_amount_read === null ? t.amount_claimed : t.slip_amount_read;
+        const ok = el('button', 'อนุมัติ', 'act');
+        ok.addEventListener('click', async () => {
+          const lines = [
+            'ยืนยันให้เครดิตแก่ ' + t.user_name,
+            '',
+            'ยอดที่ผู้ใช้แจ้ง:   ' + t.amount_claimed + ' บาท',
+            'ยอดที่ AI อ่านสลิป: ' + (t.slip_amount_read === null ? 'อ่านไม่ได้' : t.slip_amount_read + ' บาท'),
+            'ยอดที่คุณจะให้:     ' + inp.value + ' บาท  →  ได้ ' + inp.value + ' เครดิต',
+            '',
+          ];
+          if (Number(inp.value) !== t.amount_claimed || mismatch) lines.push('⚠️ ตัวเลขไม่ตรงกันทุกที่ — แน่ใจว่าตรวจยอดเข้าบัญชีจริงแล้ว?', '');
+          lines.push('กด OK เมื่อตรวจสลิปกับยอดเงินเข้าบัญชีจริงแล้ว (ย้อนกลับไม่ได้)');
+          if (!confirm(lines.join('\n'))) return;
+          try { await api('POST', '/api/admin/topups/' + t.id + '/approve', { amount: inp.value }); toast('เติมเครดิตแล้ว'); loadTopups(); }
+          catch (e) { toast(e.message); }
+        });
+        const no = el('button', 'ปฏิเสธ', 'act danger');
+        no.addEventListener('click', async () => {
+          const note = prompt('เหตุผล (ไม่บังคับ)'); if (note === null) return;
+          try { await api('POST', '/api/admin/topups/' + t.id + '/reject', { note }); toast('ปฏิเสธแล้ว'); loadTopups(); }
+          catch (e) { toast(e.message); }
+        });
+        row.append(inp, ok, no);
+      } else {
+        row.appendChild(el('span', topupStatus === 'approved' ? 'ให้เครดิต ' + t.approved_amount + ' บาท' : 'เหตุผล: ' + (t.note || '-'), 'pill ' + (topupStatus === 'approved' ? 'ok' : 'bad')));
+      }
+      box.appendChild(row);
     });
   }
 
@@ -201,6 +262,7 @@ button.act.danger { color:var(--danger); border-color:var(--danger); }
       await loadOverview();
       $('admin').hidden = false;
       loadSettings(); loadUsers(); loadTopups(); loadQr();
+      setInterval(pollPending, 30000);
     } catch (e) {
       $('denied').hidden = false;
       $('deniedText').textContent = e.status === 401 ? 'ยังไม่ได้เข้าสู่ระบบ — เข้าสู่ระบบด้วยบัญชีแอดมินที่หน้าแรกก่อน แล้วกลับมาที่หน้านี้' : e.status === 403 ? 'บัญชีนี้ไม่ใช่แอดมิน' : e.message;

@@ -21,17 +21,18 @@ const SETTINGS = {
 
 router.get('/overview', async (req, res) => {
   try {
-    const [users, today, totals, cats, reqs, days] = await Promise.all([
+    const [users, today, totals, cats, reqs, days, pend] = await Promise.all([
       query("SELECT count(*)::int AS total, count(*) FILTER (WHERE status = 'active')::int AS active, count(*) FILTER (WHERE line_user_id IS NOT NULL)::int AS line FROM users"),
       query("SELECT count(*)::int AS messages, count(DISTINCT user_id)::int AS users FROM messages WHERE role = 'user' AND created_at > now() - interval '24 hours'"),
       query('SELECT (SELECT count(*) FROM conversations)::int AS conversations, (SELECT count(*) FROM memories)::int AS memories, (SELECT count(*) FROM memory_categories)::int AS categories'),
       query('SELECT visibility, count(*)::int AS n FROM memory_categories GROUP BY visibility'),
       query('SELECT status, count(*)::int AS n FROM access_requests GROUP BY status'),
       query("SELECT to_char(d::date, 'YYYY-MM-DD') AS day, count(m.id)::int AS messages FROM generate_series(current_date - 6, current_date, '1 day') d LEFT JOIN messages m ON m.role = 'user' AND m.created_at::date = d::date GROUP BY d ORDER BY d"),
+      query("SELECT count(*)::int AS n FROM topups WHERE status = 'pending'"),
     ]);
     res.json({
       users: users.rows[0], last24h: today.rows[0], totals: totals.rows[0],
-      categories: cats.rows, accessRequests: reqs.rows, messagesPerDay: days.rows,
+      categories: cats.rows, accessRequests: reqs.rows, messagesPerDay: days.rows, pendingTopups: pend.rows[0].n,
     });
   } catch (err) {
     console.error('admin overview error:', err);

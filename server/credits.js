@@ -54,6 +54,15 @@ async function notifyUser(userId, text) {
   } catch (err) { console.error('credits notify failed:', err.message); }
 }
 
+// แจ้งแอดมินทุกคนที่ผูกไลน์ไว้ (ส่งข้อความเดียวต่อสลิป — โควตา push ของไลน์แผนฟรีมีจำกัด)
+async function notifyAdmins(text) {
+  try {
+    if (!line.isConfigured()) return;
+    const r = await query("SELECT line_user_id FROM users WHERE is_admin = true AND status = 'active' AND line_user_id IS NOT NULL");
+    for (const row of r.rows) await line.pushText(row.line_user_id, text).catch((e) => console.error('admin notify failed:', e.message));
+  } catch (err) { console.error('notifyAdmins failed:', err.message); }
+}
+
 // ---------- ภาพรวมของฉัน ----------
 async function myCredits(userId) {
   const [balance, ledger, pending, qr] = await Promise.all([
@@ -95,6 +104,8 @@ async function createTopup(userId, amountClaimed, slipBase64, mime) {
      VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
     [userId, amount, read, slipBase64, mime, hash]
   );
+  const who = await query('SELECT name FROM users WHERE id = $1', [userId]);
+  await notifyAdmins(`มีสลิปเติมเครดิตใหม่รอตรวจ: คุณ${who.rows[0] ? who.rows[0].name : ''} แจ้งโอน ${amount} บาท${read !== null ? ` (AI อ่านจากสลิปได้ ${read} บาท)` : ' (AI อ่านยอดไม่ได้)'} — ตรวจและอนุมัติที่หลังบ้าน /admin`);
   return { topupId: r.rows[0].id, slipAmountRead: read, amountClaimed: amount };
 }
 

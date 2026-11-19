@@ -2,6 +2,7 @@
 //   node server/creditsSmokeTest.js
 // ใช้ผู้ใช้ทดสอบเบอร์ 09999000.. แล้วลบทิ้งเมื่อจบ (รวมสมุดบัญชี/คำขอเติม/รอบถามของพวกเขา) • ไม่เรียก AI จริง ไม่ส่งไลน์จริง
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
+process.env.LINE_CHANNEL_ACCESS_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN || 'test-token';   // ให้ line.isConfigured() เป็นจริง (ตัวส่งเป็นตัวจำลอง ไม่ยิงจริง)
 const crypto = require('crypto');
 const app = require('./index');
 const ai = require('./ai');
@@ -46,6 +47,7 @@ async function setSetting(key, v) { await query("INSERT INTO app_settings (key, 
 
 (async () => {
   await cleanup();                                                     // เผื่อค้างจากรอบที่พังกลางทาง
+  const adminLineIds = (await query("SELECT line_user_id FROM users WHERE is_admin = true AND status = 'active' AND line_user_id IS NOT NULL AND phone <> ALL($1)", [PHONES])).rows.map((r) => r.line_user_id);
   const baseUsers = (await query('SELECT count(*)::int AS n FROM users')).rows[0].n;
   const oldSettings = {};
   for (const k of ['commission_rate', 'idle_timeout_min']) oldSettings[k] = (await query('SELECT value FROM app_settings WHERE key = $1', [k])).rows[0];
@@ -56,7 +58,7 @@ async function setSetting(key, v) { await query("INSERT INTO app_settings (key, 
   const owner = await mk('เจ้าของ เครดิต', PHONES[0]);
   const asker = await mk('ผู้ถาม เครดิต', PHONES[1]);
   const admin = await mk('แอดมิน เครดิต', PHONES[2]);
-  await query('UPDATE users SET is_admin = true WHERE id = $1', [admin]);
+  await query("UPDATE users SET is_admin = true, line_user_id = 'Utest-credits-admin' WHERE id = $1", [admin]);
 
   // ---------- เติมเงิน ----------
   check('เติมต่ำกว่าขั้นต่ำ → ปฏิเสธ', !!(await rejects(() => credits.createTopup(asker, 1, slip(), 'image/jpeg'))));
@@ -67,6 +69,7 @@ async function setSetting(key, v) { await query("INSERT INTO app_settings (key, 
   const s1 = slip();
   const t1 = await credits.createTopup(asker, 100, s1, 'image/jpeg');
   check('ส่งสลิปได้ + AI อ่านยอดมาด้วย', !!t1.topupId && t1.slipAmountRead === 100);
+  check('แอดมินที่ผูกไลน์ได้รับแจ้งเตือนสลิปใหม่ (รวมแอดมินจริงทุกคน — ตัวส่งเป็นตัวจำลอง ไม่ยิงจริง)', sent.length === adminLineIds.length + 1 && sent.some((m) => m.body.to === 'Utest-credits-admin' && m.body.messages[0].text.includes('100')));
   check('สลิปใบเดิมส่งซ้ำไม่ได้', !!(await rejects(() => credits.createTopup(asker, 100, s1, 'image/jpeg'))));
   check('ยังไม่อนุมัติ → ยอดยังเป็น 0', (await credits.getBalance(asker)) === 0);
 
@@ -154,7 +157,9 @@ async function setSetting(key, v) { await query("INSERT INTO app_settings (key, 
   for (const [name, uid] of [['ผู้ถาม', asker], ['เจ้าของ', owner]]) {
     check(`สมุดบัญชีรวม = ยอดคงเหลือ (${name})`, near(await sumLedger(uid), await credits.getBalance(uid)), `${await sumLedger(uid)} vs ${await credits.getBalance(uid)}`);
   }
-  check('ไม่มีข้อความไลน์จริงหลุดออกไป (ผู้ใช้ทดสอบไม่มีไลน์)', sent.length === 0);
+  check('ข้อความไลน์ทั้งหมดไปที่แอดมินทดสอบเท่านั้น (ไม่หลุดไปหาผู้ใช้ทั่วไป)', sent.length > 0 && sent.every((m) => m.body.to === 'Utest-credits-admin' || adminLineIds.includes(m.body.to)));
+  const ov = await call('GET', '/api/admin/overview', null, adminCookie);
+  check('ภาพรวมแอดมินมีจำนวนสลิปรอตรวจ', ov.status === 200 && typeof ov.json.pendingTopups === 'number');
 
   // ---------- คืนค่า + เก็บกวาด ----------
   for (const k of Object.keys(oldSettings)) if (oldSettings[k]) await setSetting(k, oldSettings[k].value);
