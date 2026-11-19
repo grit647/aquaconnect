@@ -5,7 +5,8 @@ const { requireAuth } = require('../auth');
 const ai = require('../ai');
 const { buildSystemPrompt, buildTools } = require('../secretary');
 const { getMemoryContext, listCategories } = require('../memory');
-const { pendingCount } = require('../sharing');
+const sharing = require('../sharing');
+const { pendingCount } = sharing;
 
 const router = express.Router();
 router.use(requireAuth);
@@ -160,6 +161,26 @@ router.post('/conversations/:id/messages', async (req, res) => {
     );
     if (today.rows[0].n >= (await dailyLimit())) {
       return res.status(429).json({ error: 'วันนี้ใช้ครบโควตาข้อความแล้ว พรุ่งนี้ค่อยคุยกันใหม่นะครับ' });
+    }
+
+    // โหมด "ใช้ข้อมูลของคนอื่น" (กดจากปุ่มเชื่อมต่อข้อมูล): ส่งคำถามตรงไปให้เลขาของเจ้าของข้อมูลตอบ แล้วคิดค่าบริการตามที่เจ้าของตั้งไว้
+    // ทำที่เซิร์ฟเวอร์ตรงๆ ไม่ผ่านการตัดสินใจของโมเดล เพื่อให้การหักเงินแน่นอนและตรวจสอบได้
+    const askRequestId = typeof req.body?.askRequestId === 'string' ? req.body.askRequestId : '';
+    if (askRequestId) {
+      let r;
+      try {
+        r = await sharing.askSharedCategory(req.user.id, askRequestId, content);
+      } catch (err) {
+        return res.status(400).json({ error: err.message });
+      }
+      let reply = `[ข้อมูลจากคุณ${r.from} · หมวด ${r.category}]\n${r.answer}`;
+      if (r.creditsCharged) reply += `\n(หักค่าบริการ ${r.creditsCharged} เครดิต คงเหลือ ${r.balanceLeft} เครดิต)`;
+      await withTransaction(async (c) => {
+        await c.query('INSERT INTO messages (conversation_id, user_id, role, content, source) VALUES ($1, $2, $3, $4, $5)', [conv.id, req.user.id, 'user', content, source]);
+        await c.query('INSERT INTO messages (conversation_id, user_id, role, content, source) VALUES ($1, $2, $3, $4, $5)', [conv.id, req.user.id, 'assistant', reply, 'text']);
+        await c.query('UPDATE conversations SET last_message_at = now(), title = COALESCE(title, $2) WHERE id = $1', [conv.id, content.slice(0, 50)]);
+      });
+      return res.json({ reply, savedMemories: [], creditsCharged: r.creditsCharged || 0, balanceLeft: r.balanceLeft === undefined ? null : r.balanceLeft });
     }
 
     // ข้อมูลผู้ใช้สดจากฐานข้อมูล (ชื่อเลขา/บุคลิก) + ประวัติการคุยล่าสุด + ความจำ

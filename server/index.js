@@ -8,6 +8,7 @@ const chatRouter = require('./routes/chat');
 const lineRouter = require('./routes/line');
 const adminRouter = require('./routes/admin');
 const creditsRouter = require('./routes/credits');
+const connectRouter = require('./routes/connect');
 const { query } = require('./db');
 // หมายเหตุ: ตลาดลูกกุ้ง (server/listings.js, ฐานข้อมูล Google Sheets) เลิกใช้แล้วตอนเปลี่ยนเป็นแอป AI เลขา
 // ไฟล์ยังอยู่ใน git เผื่อย้อนกลับ แต่ไม่ถูกเรียกใช้อีก
@@ -28,6 +29,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/chat', chatRouter);
 app.use('/api/line', lineRouter);
 app.use('/api/credits', creditsRouter);
+app.use('/api/connect', connectRouter);
 app.use('/api/admin', adminRouter);
 
 // เช็คสุขภาพระบบ (ใช้กับ UptimeRobot ได้) — แตะฐานข้อมูลเบาๆ ด้วย ช่วยกันโปรเจกต์ Supabase แผนฟรีโดนพักจากไม่มีการใช้งาน

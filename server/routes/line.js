@@ -1,6 +1,8 @@
 // webhook ของ LINE OA + ค่าตั้งสาธารณะสำหรับหน้าเว็บ (LIFF ID)
 const express = require('express');
 const line = require('../line');
+const { query } = require('../db');
+const sharing = require('../sharing');
 
 const router = express.Router();
 
@@ -26,6 +28,22 @@ async function handleEvent(ev) {
   if (!ev.replyToken) return;
 
   if (ev.type === 'follow') return line.replyText(ev.replyToken, WELCOME);
+
+  // ปุ่ม "อนุญาต/ไม่อนุญาต" ในข้อความแจ้งคำขอเข้าใช้ข้อมูล — ตัวตนมาจากบัญชีไลน์ที่กดจริง (ผูกกับผู้ใช้ไว้แล้ว) ไม่ใช่จากข้อมูลในปุ่ม
+  if (ev.type === 'postback' && ev.postback && ev.postback.data) {
+    const d = new URLSearchParams(ev.postback.data);
+    if (d.get('act') !== 'access') return;
+    const lineUserId = ev.source && ev.source.userId;
+    const u = lineUserId ? await query("SELECT id FROM users WHERE line_user_id = $1 AND status = 'active'", [lineUserId]) : { rows: [] };
+    if (!u.rows[0]) return line.replyText(ev.replyToken, 'ยังไม่พบบัญชีที่ผูกกับไลน์นี้ค่ะ เปิดแอปผ่านปุ่ม "คุยกับเลขา" ก่อนนะคะ');
+    try {
+      const decision = d.get('d') === 'approve' ? 'approve' : 'deny';
+      await sharing.decideRequest(u.rows[0].id, d.get('id'), decision);
+      return line.replyText(ev.replyToken, decision === 'approve' ? 'อนุญาตแล้วค่ะ ผู้ขอเริ่มใช้ข้อมูลได้เลย (ถอนสิทธิ์ได้ภายหลังในเมนู "เชื่อมต่อข้อมูล")' : 'ปฏิเสธคำขอแล้วค่ะ');
+    } catch (err) {
+      return line.replyText(ev.replyToken, 'ทำรายการไม่ได้: ' + err.message);
+    }
+  }
 
   if (ev.type === 'message' && ev.message && ev.message.type === 'text') {
     const text = String(ev.message.text || '').trim();

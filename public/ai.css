@@ -108,7 +108,7 @@ body {
 }
 .typing { align-self: flex-start; color: var(--muted); font-size: 14px; padding: 4px 8px; }
 
-#micModeBar { display: flex; gap: 8px; padding: 6px 12px; justify-content: center; }
+#micModeBar { display: flex; gap: 8px; padding: 6px 12px; justify-content: center; flex-wrap: wrap; }
 #micModeBar button {
   border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 999px;
   padding: 6px 14px; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer;
@@ -164,3 +164,14 @@ body {
 #sheetBody .sub { font-weight: 800; margin-top: 8px; }
 #sheetBody .ledger { font-size: 13px; color: var(--muted); }
 #sheetBody input[type=file] { color: var(--muted); font-size: 14px; }
+
+#connBar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: rgba(167, 139, 250, 0.14); border-bottom: 1px solid var(--neon2); font-size: 13px; }
+#connBar span { flex: 1; min-width: 0; }
+#connBar button { border: 1px solid var(--neon2); background: transparent; color: var(--neon2); border-radius: 999px; padding: 4px 12px; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; flex-shrink: 0; }
+#sheetBody .pcard { border: 1px solid var(--line); background: var(--panel2); border-radius: 12px; padding: 10px 12px; font-size: 14px; }
+#sheetBody .pcard b { color: var(--neon); }
+#sheetBody .pcard small { display: block; color: var(--muted); }
+#sheetBody .row2 { display: flex; gap: 8px; margin-top: 8px; }
+#sheetBody .row2 button { flex: 1; text-align: center; padding: 8px; }
+#sheetBody button.ok { border-color: var(--ok); color: var(--ok); }
+#sheetBody button:disabled { opacity: 0.5; }

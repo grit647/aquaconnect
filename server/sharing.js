@@ -65,6 +65,21 @@ async function notifyOwner(ownerId, text) {
   }
 }
 
+// แจ้งเจ้าของพร้อมปุ่ม "อนุญาต / ไม่อนุญาต" (กดในไลน์ได้เลย ไม่ต้องเปิดแอป)
+async function notifyOwnerRequest(ownerId, requestId, text) {
+  try {
+    if (!line.isConfigured()) return;
+    const u = await query('SELECT line_user_id FROM users WHERE id = $1', [ownerId]);
+    if (!u.rows[0] || !u.rows[0].line_user_id) return;
+    await line.pushButtons(u.rows[0].line_user_id, text, text, [
+      { label: 'อนุญาต', data: `act=access&d=approve&id=${requestId}` },
+      { label: 'ไม่อนุญาต', data: `act=access&d=deny&id=${requestId}` },
+    ]);
+  } catch (err) {
+    console.error('notifyOwnerRequest failed:', err.message);
+  }
+}
+
 // ---------- ขออนุญาต ----------
 async function requestAccess(userId, ownerId, categoryName, message) {
   if (!UUID_RE.test(String(ownerId || ''))) throw new Error('owner_id ไม่ถูกต้อง (ต้องมาจากผลของ find_shared_categories)');
@@ -87,7 +102,7 @@ async function requestAccess(userId, ownerId, categoryName, message) {
     `INSERT INTO access_requests (requester_id, owner_id, category_id, message) VALUES ($1, $2, $3, $4) RETURNING id`,
     [userId, ownerId, cat.rows[0].id, String(message || '').slice(0, 300) || null]
   );
-  await notifyOwner(ownerId, `คุณ${me.rows[0].name} ขอสิทธิ์ถามเลขาของคุณเรื่องหมวด "${cat.rows[0].name}" เปิดแอปคุยกับเลขาแล้วบอกว่า "ดูคำขอ" เพื่ออนุมัติหรือปฏิเสธได้เลยค่ะ`);
+  await notifyOwnerRequest(ownerId, r.rows[0].id, `คุณ${me.rows[0].name} ขอเข้าใช้ข้อมูลหมวด "${cat.rows[0].name}" ของคุณ กดอนุญาตเพื่อให้เริ่มใช้ได้ค่ะ`);
   return { requestId: r.rows[0].id, status: 'pending', alreadyExisted: false, ownerName: cat.rows[0].owner_name };
 }
 
@@ -99,7 +114,7 @@ async function listAccess(userId) {
          FROM access_requests r JOIN users u ON u.id = r.requester_id JOIN memory_categories c ON c.id = r.category_id
         WHERE r.owner_id = $1 AND r.status IN ('pending','approved') ORDER BY r.status = 'pending' DESC, r.created_at DESC LIMIT 30`, [userId]),
     query(
-      `SELECT r.id AS request_id, u.name AS owner_name, c.name AS category, c.visibility, r.status, r.created_at
+      `SELECT r.id AS request_id, u.id AS owner_id, u.name AS owner_name, c.name AS category, c.visibility, c.price_type, c.price_credits, r.status, r.created_at
          FROM access_requests r JOIN users u ON u.id = r.owner_id JOIN memory_categories c ON c.id = r.category_id
         WHERE r.requester_id = $1 ORDER BY r.created_at DESC LIMIT 30`, [userId]),
   ]);
@@ -196,4 +211,31 @@ ${data}`;
   return res;
 }
 
-module.exports = { setCategoryVisibility, findSharedCategories, requestAccess, listAccess, pendingCount, decideRequest, askSharedCategory };
+// ---------- หน้า "เชื่อมต่อข้อมูล" ----------
+async function listPeople(userId) {
+  const r = await query(
+    `SELECT u.id, u.name, count(c.id)::int AS categories
+       FROM users u JOIN memory_categories c ON c.owner_id = u.id AND c.visibility <> 'private'
+      WHERE u.status = 'active' AND u.id <> $1 GROUP BY u.id ORDER BY u.name LIMIT 200`,
+    [userId]
+  );
+  return r.rows;
+}
+
+async function ownerCategories(userId, ownerId) {
+  if (!UUID_RE.test(String(ownerId || ''))) return null;
+  const o = await query("SELECT id, name FROM users WHERE id = $1 AND status = 'active'", [ownerId]);
+  if (!o.rows[0]) return null;
+  const c = await query(
+    `SELECT c.id, c.name, c.description, c.visibility, c.price_type, c.price_credits,
+            (SELECT count(*)::int FROM memories m WHERE m.category_id = c.id) AS items,
+            (SELECT r.status FROM access_requests r WHERE r.requester_id = $2 AND r.category_id = c.id ORDER BY r.created_at DESC LIMIT 1) AS my_status,
+            (SELECT r.id FROM access_requests r WHERE r.requester_id = $2 AND r.category_id = c.id ORDER BY r.created_at DESC LIMIT 1) AS my_request_id
+       FROM memory_categories c WHERE c.owner_id = $1 AND c.visibility <> 'private' ORDER BY c.name`,
+    [ownerId, userId]
+  );
+  const idle = Number(await setting('idle_timeout_min', 5)) || 5;
+  return { owner: o.rows[0], blockMinutes: idle, categories: c.rows.map((x) => ({ ...x, price_credits: x.price_credits === null ? null : Number(x.price_credits) })) };
+}
+
+module.exports = { listPeople, ownerCategories, setCategoryVisibility, findSharedCategories, requestAccess, listAccess, pendingCount, decideRequest, askSharedCategory };

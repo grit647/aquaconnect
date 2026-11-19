@@ -48,6 +48,17 @@ function pushText(lineUserId, text) {
   return sender('/message/push', { to: lineUserId, messages: [{ type: 'text', text }] });
 }
 
+// ส่งข้อความพร้อมปุ่มกด (ปุ่ม postback — กดแล้วไลน์ส่งเหตุการณ์กลับมาที่ webhook) text ยาวได้ไม่เกิน 160, label ไม่เกิน 20
+function pushButtons(lineUserId, altText, text, actions) {
+  return sender('/message/push', {
+    to: lineUserId,
+    messages: [{
+      type: 'template', altText: String(altText).slice(0, 400),
+      template: { type: 'buttons', text: String(text).slice(0, 160), actions: actions.map((a) => ({ type: 'postback', label: String(a.label).slice(0, 20), data: a.data, displayText: a.label })) },
+    }],
+  });
+}
+
 // ตรวจ ID token ที่ LIFF ให้มา กับ LINE โดยตรง (ปลอมไม่ได้) — คืน { lineUserId, name }
 async function realVerifyIdToken(idToken) {
   const clientId = process.env.LINE_LOGIN_CHANNEL_ID;
@@ -67,4 +78,4 @@ let verifyIdTokenImpl = realVerifyIdToken;
 function verifyIdToken(idToken) { return verifyIdTokenImpl(idToken); }
 function setVerifyIdTokenForTests(fn) { verifyIdTokenImpl = fn || realVerifyIdToken; } // ทดสอบโดยไม่ต้องคุยกับ LINE จริง
 
-module.exports = { isConfigured, verifySignature, replyText, pushText, verifyIdToken, setVerifyIdTokenForTests, setSenderForTests };
+module.exports = { isConfigured, verifySignature, replyText, pushText, pushButtons, verifyIdToken, setVerifyIdTokenForTests, setSenderForTests };

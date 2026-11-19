@@ -60,11 +60,14 @@
       interaction-prompt="none" disable-zoom exposure="1.1" shadow-intensity="0"></model-viewer>
   </div>
 
+  <div id="connBar" hidden><span id="connText"></span><button id="connEnd" type="button">จบการใช้ข้อมูล</button></div>
+
   <div id="chatLog" aria-live="polite"></div>
 
   <div id="micModeBar">
     <button id="realtimeMicToggle" type="button">🎙️ โหมดปกติ</button>
     <button id="saveMemoryBtn" type="button">💾 จำไว้ให้เลขา</button>
+    <button id="connectBtn" type="button">🔗 เชื่อมต่อข้อมูล</button>
   </div>
 
   <form id="inputBar" autocomplete="off">
