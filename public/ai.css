@@ -108,10 +108,10 @@ body {
 }
 .typing { align-self: flex-start; color: var(--muted); font-size: 14px; padding: 4px 8px; }
 
-#micModeBar { display: flex; gap: 8px; padding: 6px 12px; justify-content: center; flex-wrap: wrap; }
+#micModeBar { display: flex; gap: 6px; padding: 6px 8px; justify-content: center; flex-wrap: nowrap; }
 #micModeBar button {
   border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 999px;
-  padding: 6px 14px; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer;
+  padding: 6px 10px; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap; min-width: 0;
 }
 #micModeBar button.on { color: var(--neon); border-color: var(--neon); box-shadow: 0 0 10px rgba(34, 211, 238, 0.4); }
 
@@ -175,3 +175,5 @@ body {
 #sheetBody .row2 button { flex: 1; text-align: center; padding: 8px; }
 #sheetBody button.ok { border-color: var(--ok); color: var(--ok); }
 #sheetBody button:disabled { opacity: 0.5; }
+
+#sheetBody button.dim { opacity: 0.55; }

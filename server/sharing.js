@@ -213,10 +213,12 @@ ${data}`;
 
 // ---------- หน้า "เชื่อมต่อข้อมูล" ----------
 async function listPeople(userId) {
+  // แสดงชื่อผู้ใช้ทุกคน (ไม่แสดงเบอร์/ไลน์) — คนที่เปิดหมวดให้เชื่อมต่อแล้วขึ้นก่อน คนที่ยังไม่เปิดมี categories = 0
   const r = await query(
     `SELECT u.id, u.name, count(c.id)::int AS categories
-       FROM users u JOIN memory_categories c ON c.owner_id = u.id AND c.visibility <> 'private'
-      WHERE u.status = 'active' AND u.id <> $1 GROUP BY u.id ORDER BY u.name LIMIT 200`,
+       FROM users u LEFT JOIN memory_categories c ON c.owner_id = u.id AND c.visibility <> 'private'
+      WHERE u.status = 'active' AND u.id <> $1 GROUP BY u.id
+      ORDER BY (count(c.id) > 0) DESC, u.name LIMIT 300`,
     [userId]
   );
   return r.rows;

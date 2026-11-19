@@ -654,9 +654,12 @@
       });
     }
 
-    note(body, 'เลือกคนที่จะเชื่อมต่อ', 'sub');
-    if (!people.people.length) note(body, 'ตอนนี้ยังไม่มีใครเปิดข้อมูลให้เชื่อมต่อ');
-    people.people.forEach((p) => sheetButton(body, '👤 ' + p.name + '  · เปิดให้ ' + p.categories + ' หมวด', () => showPerson(p)));
+    note(body, 'รายชื่อสมาชิก — เลือกคนที่จะเชื่อมต่อ', 'sub');
+    if (!people.people.length) note(body, 'ตอนนี้ยังไม่มีสมาชิกคนอื่นในระบบ');
+    people.people.forEach((p) => {
+      if (p.categories > 0) sheetButton(body, '👤 ' + p.name + '  · เปิดให้ ' + p.categories + ' หมวด', () => showPerson(p));
+      else sheetButton(body, '👤 ' + p.name + '  · ยังไม่ได้เปิดข้อมูล', () => { note(body, 'คุณ' + p.name + ' ยังไม่ได้เปิดหมวดข้อมูลให้เชื่อมต่อ — เมื่อเปิดแล้วจะเข้าใช้ได้ค่ะ'); }, 'dim');
+    });
   }
 
   function backButton(body, to) { sheetButton(body, '← กลับ', to); }

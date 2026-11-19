@@ -66,7 +66,9 @@ async function cleanup() {
   const ppl = await call('GET', '/api/connect/people', null, askerC);
   const me1 = ppl.json.people.find((p) => p.id === owner);
   check('รายชื่อมีเจ้าของที่เปิดหมวดแชร์ (2 หมวด)', !!me1 && me1.categories === 2);
-  check('รายชื่อไม่มีตัวเอง และไม่มีคนที่ไม่ได้เปิดอะไร', !ppl.json.people.some((p) => p.id === asker || p.id === other));
+  const oth = ppl.json.people.find((p) => p.id === other);
+  check('รายชื่อมีสมาชิกทุกคน (คนที่ยังไม่เปิดข้อมูลมี categories = 0) แต่ไม่มีตัวเอง', !!oth && oth.categories === 0 && !ppl.json.people.some((p) => p.id === asker));
+  check('คนที่เปิดข้อมูลแล้วขึ้นก่อนคนที่ยังไม่เปิด', ppl.json.people.findIndex((p) => p.id === owner) < ppl.json.people.findIndex((p) => p.id === other));
   check('รายชื่อไม่เปิดเผยเบอร์โทร/ไลน์', !JSON.stringify(ppl.json).includes(PHONES[0]) && !JSON.stringify(ppl.json).includes(OWNER_LINE));
   const det = await call('GET', `/api/connect/people/${owner}`, null, askerC);
   const cats = det.json.categories || [];
