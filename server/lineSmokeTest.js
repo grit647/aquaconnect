@@ -82,6 +82,19 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const me = await call('GET', '/api/auth/me', null, again.cookie);
   check('session ที่ได้จาก LINE ใช้งานได้จริง', me.json.user && me.json.user.phone === '0999900011');
 
+  // ลิงก์เข้าสู่ระบบครั้งเดียว (เปิดใน Chrome จากไลน์)
+  check('ขอลิงก์โดยไม่ล็อกอิน → 401', (await call('POST', '/api/auth/login-link')).status === 401);
+  const ll = await call('POST', '/api/auth/login-link', null, again.cookie);
+  check('ล็อกอินอยู่ → ได้ลิงก์', ll.status === 200 && ll.json.ok && ll.json.url.includes('/api/auth/link?t='));
+  const linkPath = ll.json.url.slice(ll.json.url.indexOf('/api/auth/link'));
+  const use1 = await fetch(BASE + linkPath, { redirect: 'manual' });
+  const ck = (use1.headers.get('set-cookie') || '').split(';')[0];
+  check('เปิดลิงก์ → ตั้งคุกกี้แล้วพาไปหน้าแรก', use1.status === 302 && ck.startsWith('aq_token='));
+  const me2 = await call('GET', '/api/auth/me', null, ck);
+  check('คุกกี้จากลิงก์ใช้งานได้ (บัญชีเดียวกัน)', me2.json.user && me2.json.user.phone === '0999900011');
+  check('ลิงก์ใช้ซ้ำไม่ได้', (await fetch(BASE + linkPath, { redirect: 'manual' })).status === 400);
+  check('ลิงก์มั่ว → 400', (await fetch(BASE + '/api/auth/link?t=abc', { redirect: 'manual' })).status === 400);
+
   // บัญชีอื่นพยายามผูก LINE เดียวกัน
   const regB = await call('POST', '/api/auth/register', { name: 'ทดสอบ บี', phone: '0999900012', pin: '343434' });
   const loginB = await call('POST', '/api/auth/login', { phone: '0999900012', pin: '343434', idToken: 'good-A' });

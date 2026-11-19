@@ -118,9 +118,12 @@
     scrollToBottom();
   }
   // ปุ่ม "เปิดในเบราว์เซอร์" — ใช้เมื่อฟีเจอร์เสียง/ไมค์ใช้ในเบราว์เซอร์ของไลน์ไม่ได้
-  function openExternal() {
-    try { window.liff.openWindow({ url: location.origin + '/', external: true }); }
-    catch (e) { addBubble('error', 'เปิดอัตโนมัติไม่ได้ — คัดลอกลิงก์ ' + location.origin + ' ไปวางใน Chrome เองได้ค่ะ'); }
+  async function openExternal() {
+    try {
+      // ขอลิงก์เข้าสู่ระบบครั้งเดียว (อายุ 2 นาที) เพื่อให้ Chrome เข้าบัญชีเดียวกันทันที ไม่ต้องกรอก PIN ซ้ำ
+      const { url } = await api('POST', '/api/auth/login-link');
+      window.liff.openWindow({ url, external: true });
+    } catch (e) { addBubble('error', 'เปิดอัตโนมัติไม่ได้ — คัดลอกลิงก์ ' + location.origin + ' ไปวางใน Chrome เองได้ค่ะ'); }
   }
   function addBrowserButton() {
     if (!inLine) return;

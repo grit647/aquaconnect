@@ -240,6 +240,38 @@ router.post('/line', async (req, res) => {
   }
 });
 
+// ลิงก์เข้าสู่ระบบครั้งเดียว (ใช้ตอนกด "เปิดในเบราว์เซอร์" จากไลน์ ให้เข้า Chrome ได้ทันทีโดยไม่ต้องกรอกเบอร์+PIN ซ้ำ)
+// อายุ 2 นาที ใช้ได้ครั้งเดียว ขอได้เฉพาะคนที่ล็อกอินอยู่แล้ว
+const usedLinkIds = new Map();   // jti -> หมดอายุเมื่อ (ms) — เก็บไว้กันใช้ซ้ำ
+const linkIssued = new Map();    // userId -> [เวลาที่ขอ]
+router.post('/login-link', requireAuth, (req, res) => {
+  const now = Date.now();
+  const list = (linkIssued.get(req.user.id) || []).filter((t) => now - t < 10 * 60 * 1000);
+  if (list.length >= 10) return res.status(429).json({ error: 'ขอลิงก์ถี่เกินไป รอสักครู่แล้วลองใหม่' });
+  list.push(now);
+  linkIssued.set(req.user.id, list);
+  const jti = require('crypto').randomBytes(16).toString('hex');
+  const t = jwt.sign({ id: req.user.id, purpose: 'link', jti }, JWT_SECRET, { expiresIn: '2m' });
+  res.json({ ok: true, url: `${req.protocol}://${req.get('host')}/api/auth/link?t=${encodeURIComponent(t)}` });
+});
+
+router.get('/link', async (req, res) => {
+  try {
+    const p = jwt.verify(String(req.query.t || ''), JWT_SECRET);
+    if (p.purpose !== 'link' || !UUID_RE.test(String(p.id)) || !p.jti) throw new Error('bad');
+    const now = Date.now();
+    for (const [k, exp] of usedLinkIds) if (exp < now) usedLinkIds.delete(k);
+    if (usedLinkIds.has(p.jti)) throw new Error('used');
+    usedLinkIds.set(p.jti, now + 5 * 60 * 1000);
+    const r = await query("SELECT * FROM users WHERE id = $1 AND status = 'active'", [p.id]);
+    if (!r.rows[0]) throw new Error('nouser');
+    setAuthCookie(req, res, issueToken(r.rows[0]));
+    res.redirect('/');
+  } catch {
+    res.status(400).send('<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><body style="font-family:sans-serif;background:#0b0f1e;color:#e8ecff;padding:30px"><h3>ลิงก์หมดอายุหรือถูกใช้ไปแล้ว</h3><p>กลับไปที่แอปในไลน์แล้วกดปุ่ม "เปิดในเบราว์เซอร์" ใหม่อีกครั้ง หรือ <a style="color:#22d3ee" href="/">เข้าสู่ระบบด้วยเบอร์ + PIN</a></p></body>');
+  }
+});
+
 router.post('/logout', (req, res) => {
   res.clearCookie(COOKIE_NAME);
   res.json({ ok: true });
