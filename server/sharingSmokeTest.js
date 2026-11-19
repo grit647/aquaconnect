@@ -71,7 +71,7 @@ const cleanup = async () => {
   check('ได้คำตอบจากเลขาเจ้าของ', ans.answer === 'ตอบจากข้อมูลจำลอง' && ans.from === 'เจ้าของ ทดสอบ');
   check('เลขาเจ้าของเห็นเฉพาะหมวดที่แชร์ (ไม่เห็นหมวดส่วนตัว)', lastPrompt.includes('80 ตัวต่อตารางเมตร') && !lastPrompt.includes('รหัสตู้เซฟ'));
   await sharing.askSharedCategory(asker, req1.requestId, 'ถามต่ออีกข้อ');
-  const sess = await query('SELECT count(*)::int AS n, sum(units_billed)::int AS u FROM access_sessions WHERE requester_id = $1', [asker]);
+  const sess = await query('SELECT count(*)::int AS n, sum(ask_count)::int AS u FROM access_sessions WHERE requester_id = $1', [asker]);
   check('ถามต่อเนื่องรวมเป็นรอบเดียว นับ 2 คำถาม', sess.rows[0].n === 1 && sess.rows[0].u === 2, JSON.stringify(sess.rows[0]));
 
   // --- เครื่องมือของเลขา ผูกกับผู้ใช้เท่านั้น ---
@@ -80,9 +80,10 @@ const cleanup = async () => {
   check('เครื่องมือ list: ผู้ถามเห็น outgoing approved', out.outgoing.length === 1 && out.outgoing[0].status === 'approved' && out.incoming.length === 0);
   check('เครื่องมือ decide: ผู้ถามอนุมัติไม่ได้', !!(await rejects(() => tools.decide_access_request.run({ request_id: req1.requestId, decision: 'approve' }))));
 
-  // --- หมวดเสียเงิน: ขอ/อนุมัติได้ แต่ถามไม่ได้จนกว่าจะมีเครดิต ---
-  await sharing.setCategoryVisibility(owner, 'วิชาการ', 'paid', 'hour', 150);
-  check('หมวดเสียเงิน → ยังถามไม่ได้ (รอระบบเครดิต)', (await rejects(() => sharing.askSharedCategory(asker, req1.requestId, 'x'))).includes('เครดิต'));
+  // --- หมวดเสียเงิน: เครดิตไม่พอ = ถามไม่ได้ ไม่หักอะไร ---
+  await sharing.setCategoryVisibility(owner, 'วิชาการ', 'paid', 'question', 10);
+  const brokeMsg = await rejects(() => sharing.askSharedCategory(asker, req1.requestId, 'x'));
+  check('หมวดเสียเงิน + เครดิตไม่พอ → ถามไม่ได้', !!brokeMsg && brokeMsg.includes('เครดิตไม่พอ'), brokeMsg);
 
   // --- ถอนสิทธิ์ / กลับเป็นส่วนตัว ---
   await sharing.setCategoryVisibility(owner, 'วิชาการ', 'free');

@@ -495,6 +495,7 @@
     const body = openSheet(me ? me.name + ' · ' + me.secretaryName : 'เมนู');
     sheetButton(body, '➕ เริ่มหัวข้อใหม่', async () => { try { await newConversation(); } catch (err) { addBubble('error', err.message); } });
     sheetButton(body, '🗂️ หัวข้อที่เคยคุย', showTopics);
+    sheetButton(body, '💰 เครดิต / เติมเงิน', showCredits);
     if (inLine) sheetButton(body, '🌐 เปิดในเบราว์เซอร์ (ใช้เสียงได้ครบ)', () => { closeSheet(); openExternal(); });
     if (me && me.isAdmin) sheetButton(body, '🛠️ หลังบ้านแอดมิน', () => { location.href = '/admin'; });
     sheetButton(body, '🚪 ออกจากระบบ', async () => {
@@ -503,6 +504,61 @@
       showAuth();
     }, 'danger');
   });
+
+  // ---------- เครดิต ----------
+  const LEDGER_LABEL = { topup: 'เติมเครดิต', spend: 'ใช้ถามเลขาคนอื่น', earn: 'รายได้จากการตอบ', refund: 'คืนเครดิต', adjust: 'ปรับยอด' };
+
+  // ย่อรูปสลิปก่อนส่ง (ไม่ให้ใหญ่เกินเพดาน และประหยัดเน็ตมือถือ) — คืน base64 ของ JPEG
+  function fileToJpegBase64(file, maxDim) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        const k = Math.min(1, maxDim / Math.max(img.width, img.height));
+        const c = document.createElement('canvas');
+        c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url);
+        resolve(c.toDataURL('image/jpeg', 0.8).split(',')[1]);
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('เปิดรูปไม่ได้ ลองเลือกรูปสลิปใหม่')); };
+      img.src = url;
+    });
+  }
+
+  function note(body, text, cls) { const d = document.createElement('div'); d.className = cls || 'empty'; d.textContent = text; body.appendChild(d); return d; }
+
+  async function showCredits() {
+    const body = openSheet('เครดิตของฉัน');
+    let info;
+    try { info = await api('GET', '/api/credits/me'); } catch (err) { note(body, err.message); return; }
+    note(body, info.balance.toLocaleString('th-TH') + ' เครดิต', 'bal');
+    note(body, 'เครดิต 1 = 1 บาท' + (info.pendingTopups ? ' • มี ' + info.pendingTopups + ' รายการรอแอดมินตรวจสลิป' : ''));
+    info.ledger.slice(0, 5).forEach((l) => note(body, (l.amount > 0 ? '+' : '') + l.amount + '  ' + (LEDGER_LABEL[l.type] || l.type) + (l.note ? ' (' + l.note + ')' : ''), 'ledger'));
+
+    note(body, 'เติมเครดิต', 'sub');
+    if (!info.qrAvailable) { note(body, 'ยังไม่ได้ตั้งค่า QR รับเงิน — แจ้งแอดมิน'); return; }
+    try {
+      const r = await fetch('/api/credits/payment-qr', { credentials: 'same-origin' });
+      if (r.ok) { const im = document.createElement('img'); im.alt = 'QR รับเงิน'; im.src = URL.createObjectURL(await r.blob()); body.appendChild(im); }
+    } catch (e) { /* โหลดรูปไม่ได้ก็ยังส่งสลิปได้ถ้าเคยโอนแล้ว */ }
+    note(body, '1) สแกน QR โอนผ่านแอปธนาคาร  2) กรอกยอดที่โอน  3) แนบรูปสลิป แล้วกดส่ง — แอดมินตรวจแล้วเครดิตจะเข้า');
+    const amt = document.createElement('input'); amt.type = 'number'; amt.inputMode = 'decimal'; amt.placeholder = 'ยอดที่โอน (บาท)'; body.appendChild(amt);
+    const file = document.createElement('input'); file.type = 'file'; file.accept = 'image/*'; body.appendChild(file);
+    const status = note(body, '');
+    sheetButton(body, '📤 ส่งสลิปขอเติมเครดิต', async () => {
+      const amount = Number(amt.value);
+      if (!(amount > 0)) { status.textContent = 'กรอกยอดที่โอนก่อน'; return; }
+      if (!file.files[0]) { status.textContent = 'เลือกรูปสลิปก่อน'; return; }
+      status.textContent = 'กำลังส่ง...';
+      try {
+        const slip = await fileToJpegBase64(file.files[0], 1100);
+        await api('POST', '/api/credits/topups', { amount, slip, mimeType: 'image/jpeg' });
+        closeSheet();
+        addBubble('hint', 'ส่งสลิปแล้วค่ะ รอแอดมินตรวจสอบ เครดิตจะเข้าและแจ้งเตือนทางไลน์');
+      } catch (err) { status.textContent = err.message; }
+    });
+  }
 
   // ปุ่ม "จำไว้ให้เลขา": เลือกหมวด (หรือพิมพ์ชื่อหมวดใหม่) แล้วสั่งให้เลขาสรุปบทสนทนานี้เก็บเข้าความจำ
   $('saveMemoryBtn').addEventListener('click', async () => {

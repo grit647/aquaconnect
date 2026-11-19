@@ -1,9 +1,10 @@
 // แชร์ความจำให้คนอื่น: ตั้งหมวดเป็น ส่วนตัว/ฟรี/เสียเงิน, ขออนุญาตเข้าถึง, ให้เลขาของเจ้าของตอบแทน (ไม่ส่งข้อมูลดิบ)
 // ทุกฟังก์ชันรับ userId จากฝั่งเซิร์ฟเวอร์เสมอ — AI ไม่มีช่องระบุตัวตนเองได้
-// หมายเหตุ: หมวดเสียเงินขอ/อนุมัติได้ แต่ยังถามไม่ได้จนกว่าจะเปิดระบบเครดิต (Phase 3)
+// หมวดเสียเงิน: หักเครดิตผู้ถามก่อนถามทุกครั้ง (ดู credits.js chargeAsk) แล้วแบ่งเข้าเจ้าของหลังหักส่วนแบ่งแพลตฟอร์ม
 const { query } = require('./db');
 const ai = require('./ai');
 const line = require('./line');
+const credits = require('./credits');
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_MEMORY_CHARS = 12000;   // ความจำที่ให้เลขาเจ้าของอ่านตอบต่อครั้ง (คุมค่า token)
@@ -149,11 +150,10 @@ async function askSharedCategory(userId, requestId, question) {
   if (!a) throw new Error('ยังไม่ได้รับอนุมัติ หรือสิทธิ์ถูกถอนแล้ว');
   if (a.expires_at && new Date(a.expires_at) < new Date()) throw new Error('สิทธิ์หมดอายุแล้ว');
   if (a.visibility === 'private') throw new Error('เจ้าของปิดหมวดนี้เป็นส่วนตัวแล้ว');
-  if (a.visibility === 'paid') throw new Error('หมวดนี้เป็นแบบเสียเงิน ระบบเครดิตยังไม่เปิดให้ใช้ — ยังถามไม่ได้ในตอนนี้');
 
   // กันใช้เกินเพดานรายวัน (ใช้จำนวนรอบที่บันทึกไว้ใน access_sessions)
   const used = await query(
-    "SELECT COALESCE(sum(units_billed), 0)::int AS n FROM access_sessions WHERE requester_id = $1 AND started_at > now() - interval '24 hours'",
+    "SELECT COALESCE(sum(ask_count), 0)::int AS n FROM access_sessions WHERE requester_id = $1 AND started_at > now() - interval '24 hours'",
     [userId]
   );
   if (used.rows[0].n >= ASK_DAILY_MAX) throw new Error('วันนี้ถามเลขาคนอื่นครบโควตาแล้ว');
@@ -178,25 +178,22 @@ async function askSharedCategory(userId, requestId, question) {
 
 ข้อมูลในหมวด "${a.category}" (ล่าสุดก่อน):
 ${data}`;
-  const out = await ai.runAgent({ systemPrompt, history: [{ role: 'user', content: q }], tools: {}, maxSteps: 1 });
-
-  // บันทึกรอบการถาม (ไว้คิดเงินใน Phase 3 และคุมโควตา) — รวมเป็นรอบเดียวถ้าถามต่อเนื่องภายในเวลา idle
-  const idleMin = Number(await setting('idle_timeout_min', 5)) || 5;
-  const upd = await query(
-    `UPDATE access_sessions SET units_billed = units_billed + 1, last_activity_at = now()
-      WHERE id = (SELECT id FROM access_sessions WHERE requester_id = $1 AND category_id = $2 AND ended_at IS NULL
-                    AND last_activity_at > now() - ($3 || ' minutes')::interval ORDER BY started_at DESC LIMIT 1)
-      RETURNING id`,
-    [userId, a.category_id, String(idleMin)]
-  );
-  if (!upd.rows[0]) {
-    await query(
-      `INSERT INTO access_sessions (requester_id, owner_id, category_id, price_type, unit_price, units_billed)
-       VALUES ($1, $2, $3, NULL, 0, 1)`,
-      [userId, a.owner_id, a.category_id]
-    );
+  // หักเครดิต/บันทึกรอบก่อนถาม (หมวดฟรี = ไม่หัก แต่บันทึกรอบไว้คุมโควตา) — เครดิตไม่พอ = โยน error ให้เลขาบอกผู้ใช้ ไม่ถามต่อ
+  const charge = await credits.chargeAsk({
+    requesterId: userId, ownerId: a.owner_id, categoryId: a.category_id,
+    priceType: a.visibility === 'paid' ? a.price_type : null,
+    unitPrice: a.visibility === 'paid' ? Number(a.price_credits) : 0,
+  });
+  let out;
+  try {
+    out = await ai.runAgent({ systemPrompt, history: [{ role: 'user', content: q }], tools: {}, maxSteps: 1 });
+  } catch (err) {
+    await credits.refundAsk(userId, a.owner_id, charge).catch((e) => console.error('refund failed:', e.message));
+    throw err;
   }
-  return { answer: out.text, from: a.owner_name, category: a.category };
+  const res = { answer: out.text, from: a.owner_name, category: a.category };
+  if (charge.cost > 0) { res.creditsCharged = charge.cost; res.balanceLeft = charge.balanceAfter; }
+  return res;
 }
 
 module.exports = { setCategoryVisibility, findSharedCategories, requestAccess, listAccess, pendingCount, decideRequest, askSharedCategory };

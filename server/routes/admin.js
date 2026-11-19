@@ -2,6 +2,7 @@
 const express = require('express');
 const { query } = require('../db');
 const { requireAdmin } = require('../auth');
+const credits = require('../credits');
 
 const router = express.Router();
 router.use(requireAdmin);
@@ -14,6 +15,8 @@ const SETTINGS = {
   idle_timeout_min: { label: 'เงียบเกินกี่นาทีถือว่าจบรอบคุยที่คิดเงิน', min: 1, max: 60 },
   chat_daily_limit: { label: 'โควตาข้อความต่อคนต่อวัน', min: 10, max: 2000 },
   credit_per_baht:  { label: 'เครดิต 1 = กี่บาท', min: 0.01, max: 100 },
+  topup_min:        { label: 'เติมเครดิตขั้นต่ำต่อครั้ง (บาท)', min: 1, max: 10000 },
+  topup_max:        { label: 'เติมเครดิตสูงสุดต่อครั้ง (บาท)', min: 100, max: 100000 },
 };
 
 router.get('/overview', async (req, res) => {
@@ -91,6 +94,72 @@ router.patch('/settings/:key', async (req, res) => {
     res.json({ ok: true, key: req.params.key, value: n });
   } catch (err) {
     console.error('admin setting save error:', err);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดฝั่งเซิร์ฟเวอร์' });
+  }
+});
+
+// ---------- เติมเครดิต: คิวรอตรวจสลิป ----------
+router.get('/topups', async (req, res) => {
+  try {
+    const status = ['pending', 'approved', 'rejected'].includes(req.query.status) ? req.query.status : 'pending';
+    const r = await query(
+      `SELECT t.id, t.status, t.amount_claimed, t.slip_amount_read, t.approved_amount, t.created_at, t.note, u.name AS user_name, u.phone
+         FROM topups t JOIN users u ON u.id = t.user_id WHERE t.status = $1 ORDER BY t.created_at DESC LIMIT 100`,
+      [status]
+    );
+    res.json({ topups: r.rows.map((x) => ({ ...x, amount_claimed: Number(x.amount_claimed), slip_amount_read: x.slip_amount_read === null ? null : Number(x.slip_amount_read), approved_amount: x.approved_amount === null ? null : Number(x.approved_amount) })) });
+  } catch (err) {
+    console.error('admin topups error:', err);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดฝั่งเซิร์ฟเวอร์' });
+  }
+});
+
+router.get('/topups/:id/slip', async (req, res) => {
+  try {
+    if (!UUID_RE.test(req.params.id)) return res.status(404).end();
+    const r = await query('SELECT slip_data, slip_mime FROM topups WHERE id = $1', [req.params.id]);
+    if (!r.rows[0] || !r.rows[0].slip_data) return res.status(404).end();
+    res.set('Content-Type', r.rows[0].slip_mime || 'image/jpeg');
+    res.set('Cache-Control', 'private, max-age=300');
+    res.send(Buffer.from(r.rows[0].slip_data, 'base64'));
+  } catch (err) {
+    console.error('admin slip error:', err);
+    res.status(500).end();
+  }
+});
+
+router.post('/topups/:id/approve', async (req, res) => {
+  try {
+    if (!UUID_RE.test(req.params.id)) return res.status(404).json({ error: 'ไม่พบรายการ' });
+    res.json({ ok: true, ...(await credits.approveTopup(req.user.id, req.params.id, req.body && req.body.amount)) });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.post('/topups/:id/reject', async (req, res) => {
+  try {
+    if (!UUID_RE.test(req.params.id)) return res.status(404).json({ error: 'ไม่พบรายการ' });
+    res.json(await credits.rejectTopup(req.user.id, req.params.id, req.body && req.body.note));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// อัปโหลดรูป QR รับเงิน (เก็บใน app_settings ไม่ขึ้น GitHub)
+router.put('/payment-qr', async (req, res) => {
+  try {
+    const { mimeType, data } = req.body || {};
+    if (!/^image\/(jpeg|png|webp)$/.test(String(mimeType))) return res.status(400).json({ error: 'ต้องเป็นรูป JPG, PNG หรือ WEBP' });
+    if (typeof data !== 'string' || !data || data.length > 2 * 1024 * 1024) return res.status(400).json({ error: 'ไฟล์ไม่ถูกต้องหรือใหญ่เกินไป' });
+    await query(
+      `INSERT INTO app_settings (key, value, note) VALUES ('payment_qr', $1::jsonb, 'รูป QR PromptPay รับเงินเติมเครดิต')
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+      [JSON.stringify({ mime: mimeType, data })]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('admin qr error:', err);
     res.status(500).json({ error: 'เกิดข้อผิดพลาดฝั่งเซิร์ฟเวอร์' });
   }
 });

@@ -114,6 +114,44 @@ let transcribeImpl = realTranscribe;
 function transcribeAudio(base64Audio, mimeType) { return transcribeImpl(base64Audio, mimeType); }
 function setTranscribeForTests(fn) { transcribeImpl = fn || realTranscribe; }
 
+// อ่านยอดเงินจากรูปสลิปโอนเงิน (Gemini อ่านรูป) — คืนตัวเลขบาท หรือ null ถ้าอ่านไม่ได้/ไม่ใช่สลิป
+// ใช้ช่วยแอดมินเท่านั้น ไม่ใช่ตัวตัดสิน: แอดมินต้องกดยืนยันยอดเองทุกครั้งก่อนเครดิตเข้า
+async function realReadSlip(base64Image, mimeType) {
+  const projectId = getVertexProjectId();
+  const token = await getAccessToken();
+  const url = `https://${VERTEX_LOCATION}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${VERTEX_LOCATION}/publishers/google/models/${VERTEX_MODEL}:generateContent`;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        contents: [{
+          role: 'user',
+          parts: [
+            { text: 'This image may be a Thai bank transfer slip. Reply with JSON only: {"isSlip": boolean, "amount": number or null}. amount = the transferred amount in baht as a plain number (no commas). If it is not a transfer slip or the amount is unreadable, use isSlip=false and amount=null.' },
+            { inlineData: { mimeType: mimeType || 'image/jpeg', data: base64Image } },
+          ],
+        }],
+        generationConfig: { maxOutputTokens: 200, responseMimeType: 'application/json', thinkingConfig: { thinkingBudget: 0 } },
+      }),
+      signal: ctrl.signal,
+    });
+    if (!res.ok) throw new Error(`Vertex AI (slip) error (${res.status})`);
+    const data = await res.json();
+    const raw = (data.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('');
+    const j = JSON.parse(raw);
+    const n = Number(j.amount);
+    return j.isSlip && Number.isFinite(n) && n > 0 && n < 10000000 ? n : null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+let readSlipImpl = realReadSlip;
+function readSlipAmount(base64Image, mimeType) { return readSlipImpl(base64Image, mimeType); }
+function setReadSlipForTests(fn) { readSlipImpl = fn || realReadSlip; }
+
 /**
  * วงจรเอเจนต์: ถามโมเดล → ถ้าโมเดลสั่งเรียกเครื่องมือ ก็รันจริงแล้วส่งผลกลับ → วนจนได้คำตอบเป็นข้อความ
  * history: [{ role: 'user'|'assistant', content }]
@@ -159,4 +197,4 @@ async function runAgent({ systemPrompt, history, tools, maxSteps = 4 }) {
   return { text: '(เลขาทำงานหลายขั้นตอนเกินไป ลองบอกใหม่ให้สั้นลงนะคะ)', executed, usage };
 }
 
-module.exports = { isConfigured, runAgent, setCallModelForTests, transcribeAudio, setTranscribeForTests };
+module.exports = { isConfigured, runAgent, setCallModelForTests, transcribeAudio, setTranscribeForTests, readSlipAmount, setReadSlipForTests };

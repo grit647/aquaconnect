@@ -7,6 +7,7 @@ const { router: authRouter } = require('./auth');
 const chatRouter = require('./routes/chat');
 const lineRouter = require('./routes/line');
 const adminRouter = require('./routes/admin');
+const creditsRouter = require('./routes/credits');
 const { query } = require('./db');
 // หมายเหตุ: ตลาดลูกกุ้ง (server/listings.js, ฐานข้อมูล Google Sheets) เลิกใช้แล้วตอนเปลี่ยนเป็นแอป AI เลขา
 // ไฟล์ยังอยู่ใน git เผื่อย้อนกลับ แต่ไม่ถูกเรียกใช้อีก
@@ -16,6 +17,9 @@ app.set('trust proxy', 1); // อยู่หลังพร็อกซีข�
 // ไฟล์เสียงที่ส่งมาถอดเป็นข้อความมีขนาดใหญ่กว่า JSON ทั่วไป — ขยายเพดานเฉพาะเส้นทางนี้ (ต้องประกาศก่อนตัวอ่าน JSON ทั่วไปด้านล่าง
 // ไม่งั้นตัวทั่วไปจะตัดทิ้งที่ 1MB ก่อน) ส่วนเพดานที่แท้จริง (5MB + จำนวนครั้ง) ตรวจซ้ำอีกชั้นใน routes/chat.js
 app.use('/api/chat/transcribe', express.json({ limit: '7mb' }));
+// รูปสลิป/รูป QR เป็น base64 ขนาดเกิน 1MB — ขยายเฉพาะสองเส้นทางนี้ (เพดานจริงตรวจซ้ำในโค้ดแต่ละเส้นทาง)
+app.use('/api/credits/topups', express.json({ limit: '3mb' }));
+app.use('/api/admin/payment-qr', express.json({ limit: '3mb' }));
 // เก็บ body ดิบไว้ด้วย (req.rawBody) เพราะการตรวจลายเซ็น webhook ของ LINE ต้องใช้ข้อความดิบก่อนถูกแปลงเป็น JSON
 app.use(express.json({ limit: '1mb', verify: (req, res, buf) => { req.rawBody = buf; } }));
 app.use(cookieParser());
@@ -23,6 +27,7 @@ app.use(cookieParser());
 app.use('/api/auth', authRouter);
 app.use('/api/chat', chatRouter);
 app.use('/api/line', lineRouter);
+app.use('/api/credits', creditsRouter);
 app.use('/api/admin', adminRouter);
 
 // เช็คสุขภาพระบบ (ใช้กับ UptimeRobot ได้) — แตะฐานข้อมูลเบาๆ ด้วย ช่วยกันโปรเจกต์ Supabase แผนฟรีโดนพักจากไม่มีการใช้งาน

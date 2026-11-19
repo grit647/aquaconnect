@@ -26,6 +26,8 @@ table { width:100%; border-collapse:collapse; font-size:14px; }
 th, td { text-align:left; padding:8px 6px; border-bottom:1px solid var(--line); vertical-align:middle; }
 th { color:var(--muted); font-size:12px; font-weight:600; }
 .tablewrap { overflow-x:auto; }
+.muted { color:var(--muted); font-size:13px; margin-bottom:8px; }
+.box input[type=file] { color:var(--muted); font-size:13px; margin-right:8px; }
 .pill { display:inline-block; padding:1px 9px; border-radius:999px; font-size:12px; border:1px solid var(--line); }
 .pill.ok { color:var(--ok); border-color:var(--ok); } .pill.bad { color:var(--danger); border-color:var(--danger); }
 button.act { border:1px solid var(--line); background:var(--panel2); color:var(--text); border-radius:999px; padding:5px 12px; font:inherit; font-size:13px; cursor:pointer; }
@@ -58,6 +60,10 @@ button.act.danger { color:var(--danger); border-color:var(--danger); }
     <div class="box"><div class="bars" id="bars"></div></div>
     <h2>การแชร์ข้อมูล</h2>
     <div class="box" id="share"></div>
+    <h2>เติมเครดิตรอตรวจสลิป</h2>
+    <div class="box" id="topups"></div>
+    <h2>QR รับเงิน</h2>
+    <div class="box" id="qrbox"></div>
     <h2>ค่าตั้งระบบ</h2>
     <div class="box" id="settings"></div>
     <h2>ผู้ใช้ทั้งหมด</h2>
@@ -149,11 +155,52 @@ button.act.danger { color:var(--danger); border-color:var(--danger); }
     });
   }
 
+  async function loadTopups() {
+    const { topups } = await api('GET', '/api/admin/topups?status=pending');
+    const box = $('topups'); box.textContent = '';
+    if (!topups.length) { box.appendChild(el('div', 'ไม่มีรายการรอตรวจ', 'muted')); return; }
+    topups.forEach((t) => {
+      const row = el('div', undefined, 'set');
+      const info = el('div', undefined, 't');
+      info.appendChild(document.createTextNode(t.user_name + ' (' + t.phone + ') แจ้งโอน ' + t.amount_claimed + ' บาท'));
+      info.appendChild(el('small', 'AI อ่านยอดจากสลิปได้: ' + (t.slip_amount_read === null ? 'อ่านไม่ได้' : t.slip_amount_read + ' บาท') + ' • ' + new Date(t.created_at).toLocaleString('th-TH')));
+      const view = el('a', 'ดูสลิป'); view.href = '/api/admin/topups/' + t.id + '/slip'; view.target = '_blank'; view.rel = 'noopener';
+      const inp = el('input'); inp.type = 'number'; inp.step = 'any'; inp.value = t.slip_amount_read === null ? t.amount_claimed : t.slip_amount_read;
+      const ok = el('button', 'อนุมัติ', 'act');
+      ok.addEventListener('click', async () => {
+        if (!confirm('ยืนยันให้เครดิต ' + inp.value + ' แก่ ' + t.user_name + ' ? (ตรวจสลิปกับยอดเข้าบัญชีจริงแล้ว)')) return;
+        try { await api('POST', '/api/admin/topups/' + t.id + '/approve', { amount: inp.value }); toast('เติมเครดิตแล้ว'); loadTopups(); }
+        catch (e) { toast(e.message); }
+      });
+      const no = el('button', 'ปฏิเสธ', 'act danger');
+      no.addEventListener('click', async () => {
+        const note = prompt('เหตุผล (ไม่บังคับ)'); if (note === null) return;
+        try { await api('POST', '/api/admin/topups/' + t.id + '/reject', { note }); toast('ปฏิเสธแล้ว'); loadTopups(); }
+        catch (e) { toast(e.message); }
+      });
+      row.append(info, view, inp, ok, no); box.appendChild(row);
+    });
+  }
+
+  function loadQr() {
+    const box = $('qrbox'); box.textContent = '';
+    box.appendChild(el('div', 'รูป QR PromptPay ที่ผู้ใช้เห็นตอนเติมเครดิต (เก็บในฐานข้อมูล ไม่ขึ้น GitHub)', 'muted'));
+    const f = el('input'); f.type = 'file'; f.accept = 'image/*';
+    const b = el('button', 'อัปโหลดรูป QR ใหม่', 'act');
+    b.addEventListener('click', async () => {
+      const file = f.files[0]; if (!file) { toast('เลือกรูปก่อน'); return; }
+      const data = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = rej; r.readAsDataURL(file); });
+      try { await api('PUT', '/api/admin/payment-qr', { mimeType: file.type, data }); toast('อัปโหลดแล้ว'); }
+      catch (e) { toast(e.message); }
+    });
+    box.append(f, b);
+  }
+
   (async function init() {
     try {
       await loadOverview();
       $('admin').hidden = false;
-      loadSettings(); loadUsers();
+      loadSettings(); loadUsers(); loadTopups(); loadQr();
     } catch (e) {
       $('denied').hidden = false;
       $('deniedText').textContent = e.status === 401 ? 'ยังไม่ได้เข้าสู่ระบบ — เข้าสู่ระบบด้วยบัญชีแอดมินที่หน้าแรกก่อน แล้วกลับมาที่หน้านี้' : e.status === 403 ? 'บัญชีนี้ไม่ใช่แอดมิน' : e.message;
