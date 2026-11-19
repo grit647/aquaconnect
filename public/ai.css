@@ -79,6 +79,7 @@ body {
   position: absolute; top: 8px; z-index: 4; border: 1px solid var(--line); background: rgba(19, 26, 48, 0.85);
   color: var(--text); border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer;
 }
+.stage-btn { touch-action: manipulation; }
 .stage-btn.left { left: 8px; }
 .stage-btn.right { right: 8px; }
 .stage-btn.on { color: var(--ok); border-color: var(--ok); box-shadow: 0 0 10px rgba(52, 211, 153, 0.4); }
@@ -152,3 +153,8 @@ body {
 }
 #sheetBody .empty { color: var(--muted); font-size: 14px; padding: 6px 2px; }
 #sheetClose { margin-top: 10px; text-align: center; color: var(--muted); }
+
+.open-ext {
+  align-self: center; border: 1px solid var(--neon); background: rgba(34, 211, 238, 0.12); color: var(--neon);
+  border-radius: 999px; padding: 9px 18px; font: inherit; font-size: 14px; font-weight: 700; cursor: pointer;
+}

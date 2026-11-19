@@ -15,6 +15,7 @@
   let conversationId = null;
   let sending = false;
   let lineIdToken = null;        // ID token จาก LIFF (มีเฉพาะตอนเปิดในไลน์)
+  let inLine = false;            // เปิดอยู่ในเบราว์เซอร์ของไลน์หรือไม่
 
   async function api(method, path, body) {
     const res = await fetch(path, {
@@ -116,6 +117,21 @@
     logEl.appendChild(chip);
     scrollToBottom();
   }
+  // ปุ่ม "เปิดในเบราว์เซอร์" — ใช้เมื่อฟีเจอร์เสียง/ไมค์ใช้ในเบราว์เซอร์ของไลน์ไม่ได้
+  function openExternal() {
+    try { window.liff.openWindow({ url: location.origin + '/', external: true }); }
+    catch (e) { addBubble('error', 'เปิดอัตโนมัติไม่ได้ — คัดลอกลิงก์ ' + location.origin + ' ไปวางใน Chrome เองได้ค่ะ'); }
+  }
+  function addBrowserButton() {
+    if (!inLine) return;
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'open-ext';
+    b.textContent = '🌐 เปิดในเบราว์เซอร์ (Chrome)';
+    b.addEventListener('click', openExternal);
+    logEl.appendChild(b);
+    scrollToBottom();
+  }
   function scrollToBottom() { logEl.scrollTop = logEl.scrollHeight; }
 
   function showHint() {
@@ -213,12 +229,18 @@
     b.classList.toggle('on', ttsOn);
   }
   $('ttsToggle').addEventListener('click', () => {
-    if (!ttsSupported) { addBubble('error', 'เครื่องนี้ไม่รองรับเสียงอ่านออกเสียง'); return; }
+    if (!ttsSupported) {
+      addBubble('error', 'เบราว์เซอร์ในไลน์ไม่รองรับเสียงอ่านออกเสียง — กดปุ่มด้านล่างเพื่อเปิดในเบราว์เซอร์ปกติ (ต้องเข้าสู่ระบบด้วยเบอร์ + PIN อีกครั้ง) จะใช้เสียงได้ค่ะ');
+      addBrowserButton();
+      return;
+    }
     ttsOn = !ttsOn;
     try { localStorage.setItem('aq_tts', ttsOn ? '1' : '0'); } catch (e) { /* ignore */ }
-    if (!ttsOn) cancelSpeech();
-    else unlockSpeech();
     renderTts();
+    if (!ttsOn) { cancelSpeech(); addBubble('hint', 'ปิดเสียงเลขาแล้วค่ะ'); return; }
+    // ลองพูดทดสอบเลย ให้ผู้ใช้รู้ทันทีว่าเครื่องมีเสียงไทยและเปิดเสียงมีเดียอยู่หรือไม่
+    addBubble('hint', 'เปิดเสียงเลขาแล้วค่ะ (ถ้าไม่ได้ยิน ลองเพิ่มเสียงมีเดียของเครื่อง หรือเปิดในเบราว์เซอร์ปกติ)');
+    try { speak('เปิดเสียงเลขาแล้วค่ะ', () => setBotState('idle')); } catch (e) { /* ignore */ }
   });
   renderTts();
 
@@ -325,7 +347,8 @@
   async function startListening() {
     if (rec || sending) return;
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
-      addBubble('error', 'เบราว์เซอร์นี้ยังอัดเสียงไม่ได้ — ถ้าเปิดในไลน์ ลองแตะเมนู ⋮ แล้วเลือก "เปิดในเบราว์เซอร์" หรือพิมพ์แทนได้ค่ะ');
+      addBubble('error', 'เบราว์เซอร์นี้ยังอัดเสียงไม่ได้ — เปิดในเบราว์เซอร์ปกติ หรือพิมพ์แทนได้ค่ะ');
+      addBrowserButton();
       realtime = false; renderMic();
       return;
     }
@@ -334,6 +357,7 @@
       stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
     } catch (e) {
       addBubble('error', 'เปิดไมโครโฟนไม่ได้ (ยังไม่ได้อนุญาต หรือเบราว์เซอร์ในไลน์ไม่รองรับ) — ลองเปิดในเบราว์เซอร์ปกติ หรือพิมพ์แทนได้ค่ะ');
+      addBrowserButton();
       realtime = false; unlockScreen(); renderMic();
       return;
     }
@@ -468,6 +492,7 @@
     const body = openSheet(me ? me.name + ' · ' + me.secretaryName : 'เมนู');
     sheetButton(body, '➕ เริ่มหัวข้อใหม่', async () => { try { await newConversation(); } catch (err) { addBubble('error', err.message); } });
     sheetButton(body, '🗂️ หัวข้อที่เคยคุย', showTopics);
+    if (inLine) sheetButton(body, '🌐 เปิดในเบราว์เซอร์ (ใช้เสียงได้ครบ)', () => { closeSheet(); openExternal(); });
     sheetButton(body, '🚪 ออกจากระบบ', async () => {
       closeSheet();
       try { await api('POST', '/api/auth/logout'); } catch (e) { /* ออกต่อได้แม้เรียกไม่สำเร็จ */ }
@@ -503,7 +528,8 @@
       const cfg = await api('GET', '/api/line/config');
       if (!cfg.liffId || !window.liff) return null;
       await window.liff.init({ liffId: cfg.liffId });
-      if (!window.liff.isInClient()) return null;
+      inLine = window.liff.isInClient();
+      if (!inLine) return null;
       if (!window.liff.isLoggedIn()) { window.liff.login(); return 'redirect'; }
       return window.liff.getIDToken() || null;
     } catch (e) {
