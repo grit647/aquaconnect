@@ -1,0 +1,98 @@
+// หลังบ้านสำหรับแอดมิน: ภาพรวม / ผู้ใช้ (ระงับ-เปิด) / ค่าตั้งระบบ — ทุกเส้นทางต้องเป็นแอดมินที่ยังใช้งานอยู่ (เช็คกับฐานข้อมูลสดทุกครั้ง)
+const express = require('express');
+const { query } = require('../db');
+const { requireAdmin } = require('../auth');
+
+const router = express.Router();
+router.use(requireAdmin);
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// ค่าตั้งที่แก้ได้ + ช่วงที่ยอมรับ (กันตั้งค่าเพี้ยนจนระบบพัง)
+const SETTINGS = {
+  commission_rate:  { label: 'ส่วนแบ่งแพลตฟอร์ม (%)', min: 10, max: 30 },
+  idle_timeout_min: { label: 'เงียบเกินกี่นาทีถือว่าจบรอบคุยที่คิดเงิน', min: 1, max: 60 },
+  chat_daily_limit: { label: 'โควตาข้อความต่อคนต่อวัน', min: 10, max: 2000 },
+  credit_per_baht:  { label: 'เครดิต 1 = กี่บาท', min: 0.01, max: 100 },
+};
+
+router.get('/overview', async (req, res) => {
+  try {
+    const [users, today, totals, cats, reqs, days] = await Promise.all([
+      query("SELECT count(*)::int AS total, count(*) FILTER (WHERE status = 'active')::int AS active, count(*) FILTER (WHERE line_user_id IS NOT NULL)::int AS line FROM users"),
+      query("SELECT count(*)::int AS messages, count(DISTINCT user_id)::int AS users FROM messages WHERE role = 'user' AND created_at > now() - interval '24 hours'"),
+      query('SELECT (SELECT count(*) FROM conversations)::int AS conversations, (SELECT count(*) FROM memories)::int AS memories, (SELECT count(*) FROM memory_categories)::int AS categories'),
+      query('SELECT visibility, count(*)::int AS n FROM memory_categories GROUP BY visibility'),
+      query('SELECT status, count(*)::int AS n FROM access_requests GROUP BY status'),
+      query("SELECT to_char(d::date, 'YYYY-MM-DD') AS day, count(m.id)::int AS messages FROM generate_series(current_date - 6, current_date, '1 day') d LEFT JOIN messages m ON m.role = 'user' AND m.created_at::date = d::date GROUP BY d ORDER BY d"),
+    ]);
+    res.json({
+      users: users.rows[0], last24h: today.rows[0], totals: totals.rows[0],
+      categories: cats.rows, accessRequests: reqs.rows, messagesPerDay: days.rows,
+    });
+  } catch (err) {
+    console.error('admin overview error:', err);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดฝั่งเซิร์ฟเวอร์' });
+  }
+});
+
+router.get('/users', async (req, res) => {
+  try {
+    const r = await query(
+      `SELECT u.id, u.name, u.phone, u.is_admin, u.status, (u.line_user_id IS NOT NULL) AS line_linked, u.created_at,
+              (SELECT count(*)::int FROM messages m WHERE m.user_id = u.id AND m.role = 'user') AS messages,
+              (SELECT count(*)::int FROM memories x WHERE x.owner_id = u.id) AS memories
+         FROM users u ORDER BY u.created_at DESC LIMIT 500`
+    );
+    res.json({ users: r.rows });
+  } catch (err) {
+    console.error('admin users error:', err);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดฝั่งเซิร์ฟเวอร์' });
+  }
+});
+
+router.patch('/users/:id/status', async (req, res) => {
+  try {
+    const { status } = req.body || {};
+    if (!UUID_RE.test(req.params.id)) return res.status(404).json({ error: 'ไม่พบผู้ใช้' });
+    if (!['active', 'suspended'].includes(status)) return res.status(400).json({ error: 'สถานะไม่ถูกต้อง' });
+    if (req.params.id === req.user.id) return res.status(400).json({ error: 'ระงับบัญชีตัวเองไม่ได้' });
+    const r = await query('UPDATE users SET status = $2 WHERE id = $1 AND is_admin = false RETURNING id, status', [req.params.id, status]);
+    if (!r.rows[0]) return res.status(404).json({ error: 'ไม่พบผู้ใช้ หรือเป็นแอดมิน (ระงับแอดมินไม่ได้)' });
+    res.json({ ok: true, user: r.rows[0] });
+  } catch (err) {
+    console.error('admin status error:', err);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดฝั่งเซิร์ฟเวอร์' });
+  }
+});
+
+router.get('/settings', async (req, res) => {
+  try {
+    const r = await query('SELECT key, value FROM app_settings WHERE key = ANY($1)', [Object.keys(SETTINGS)]);
+    const vals = Object.fromEntries(r.rows.map((x) => [x.key, x.value]));
+    res.json({ settings: Object.entries(SETTINGS).map(([key, s]) => ({ key, label: s.label, min: s.min, max: s.max, value: vals[key] ?? null })) });
+  } catch (err) {
+    console.error('admin settings error:', err);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดฝั่งเซิร์ฟเวอร์' });
+  }
+});
+
+router.patch('/settings/:key', async (req, res) => {
+  try {
+    const s = SETTINGS[req.params.key];
+    if (!s) return res.status(404).json({ error: 'ไม่มีค่าตั้งนี้' });
+    const n = Number(req.body && req.body.value);
+    if (!Number.isFinite(n) || n < s.min || n > s.max) return res.status(400).json({ error: `ค่าต้องอยู่ระหว่าง ${s.min} ถึง ${s.max}` });
+    await query(
+      `INSERT INTO app_settings (key, value) VALUES ($1, $2::jsonb)
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+      [req.params.key, JSON.stringify(n)]
+    );
+    res.json({ ok: true, key: req.params.key, value: n });
+  } catch (err) {
+    console.error('admin setting save error:', err);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดฝั่งเซิร์ฟเวอร์' });
+  }
+});
+
+module.exports = router;

@@ -6,6 +6,7 @@ const cookieParser = require('cookie-parser');
 const { router: authRouter } = require('./auth');
 const chatRouter = require('./routes/chat');
 const lineRouter = require('./routes/line');
+const adminRouter = require('./routes/admin');
 const { query } = require('./db');
 // หมายเหตุ: ตลาดลูกกุ้ง (server/listings.js, ฐานข้อมูล Google Sheets) เลิกใช้แล้วตอนเปลี่ยนเป็นแอป AI เลขา
 // ไฟล์ยังอยู่ใน git เผื่อย้อนกลับ แต่ไม่ถูกเรียกใช้อีก
@@ -22,6 +23,7 @@ app.use(cookieParser());
 app.use('/api/auth', authRouter);
 app.use('/api/chat', chatRouter);
 app.use('/api/line', lineRouter);
+app.use('/api/admin', adminRouter);
 
 // เช็คสุขภาพระบบ (ใช้กับ UptimeRobot ได้) — แตะฐานข้อมูลเบาๆ ด้วย ช่วยกันโปรเจกต์ Supabase แผนฟรีโดนพักจากไม่มีการใช้งาน
 app.get('/api/health', async (req, res) => {
@@ -37,6 +39,7 @@ app.get('/api/health', async (req, res) => {
 // หน้าหลักของเว็บคือหน้า AI เลขา (ai.html) — หน้าเว็บเก่าย้ายไปเก็บที่ legacy-site/ ไม่ถูกเสิร์ฟอีก
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 app.use(express.static(PUBLIC_DIR, { index: 'ai.html' }));
+app.get('/admin', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'admin.html')));
 
 // เส้นทางที่ไม่ใช่ /api/* และไม่ตรงไฟล์ static ให้ส่งหน้า AI เลขา
 app.get('*', (req, res) => {

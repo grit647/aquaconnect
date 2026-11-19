@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0b0f1e">
+<meta name="robots" content="noindex">
+<title>AquaConnect — หลังบ้าน</title>
+<style>
+:root { --bg:#0b0f1e; --panel:#131a30; --panel2:#1b2442; --line:#27345c; --text:#e8ecff; --muted:#8d98c4; --neon:#22d3ee; --neon2:#a78bfa; --danger:#fb7185; --ok:#34d399; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+[hidden] { display: none !important; }
+body { font-family: 'Segoe UI','Noto Sans Thai',system-ui,sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; }
+header { display:flex; align-items:center; gap:12px; padding:14px 18px; background:var(--panel); border-bottom:1px solid var(--line); position:sticky; top:0; z-index:5; }
+header b { color: var(--neon); font-size:18px; }
+header .grow { flex:1; }
+a, .link { color: var(--neon); text-decoration:none; font-size:14px; cursor:pointer; background:none; border:none; font:inherit; }
+main { max-width: 980px; margin: 0 auto; padding: 18px 14px 60px; }
+h2 { font-size:16px; margin: 22px 0 10px; color: var(--neon); }
+.cards { display:grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap:10px; }
+.card { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:12px 14px; }
+.card .n { font-size:26px; font-weight:800; }
+.card .l { font-size:12px; color:var(--muted); }
+.box { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:12px 14px; }
+table { width:100%; border-collapse:collapse; font-size:14px; }
+th, td { text-align:left; padding:8px 6px; border-bottom:1px solid var(--line); vertical-align:middle; }
+th { color:var(--muted); font-size:12px; font-weight:600; }
+.tablewrap { overflow-x:auto; }
+.pill { display:inline-block; padding:1px 9px; border-radius:999px; font-size:12px; border:1px solid var(--line); }
+.pill.ok { color:var(--ok); border-color:var(--ok); } .pill.bad { color:var(--danger); border-color:var(--danger); }
+button.act { border:1px solid var(--line); background:var(--panel2); color:var(--text); border-radius:999px; padding:5px 12px; font:inherit; font-size:13px; cursor:pointer; }
+button.act.danger { color:var(--danger); border-color:var(--danger); }
+.bars { display:flex; align-items:flex-end; gap:8px; height:110px; }
+.bar { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; font-size:11px; color:var(--muted); height:100%; }
+.bar i { display:block; width:100%; background:linear-gradient(var(--neon), var(--neon2)); border-radius:6px 6px 0 0; min-height:2px; }
+.set { display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+.set:last-child { border:none; }
+.set .t { flex:1; min-width:180px; font-size:14px; } .set small { color:var(--muted); display:block; font-size:12px; }
+.set input { width:100px; padding:8px 10px; border:1px solid var(--line); border-radius:10px; background:var(--bg); color:var(--text); font:inherit; font-size:15px; }
+#msg { position:fixed; left:50%; bottom:20px; transform:translateX(-50%); background:var(--panel2); border:1px solid var(--neon); border-radius:999px; padding:9px 18px; font-size:14px; z-index:9; }
+.center { max-width:420px; margin:80px auto; padding:0 20px; text-align:center; }
+</style>
+</head>
+<body>
+
+<div id="denied" class="center" hidden>
+  <h2 id="deniedTitle" style="font-size:20px">หลังบ้านสำหรับแอดมินเท่านั้น</h2>
+  <p id="deniedText" style="color:var(--muted);margin:10px 0 18px"></p>
+  <a href="/">ไปหน้าเข้าสู่ระบบ</a>
+</div>
+
+<div id="admin" hidden>
+  <header><b>🦐 AquaConnect หลังบ้าน</b><span class="grow"></span><a href="/">← หน้าเลขา</a></header>
+  <main>
+    <h2>ภาพรวม</h2>
+    <div class="cards" id="cards"></div>
+    <h2>ข้อความต่อวัน (7 วันล่าสุด)</h2>
+    <div class="box"><div class="bars" id="bars"></div></div>
+    <h2>การแชร์ข้อมูล</h2>
+    <div class="box" id="share"></div>
+    <h2>ค่าตั้งระบบ</h2>
+    <div class="box" id="settings"></div>
+    <h2>ผู้ใช้ทั้งหมด</h2>
+    <div class="box tablewrap"><table id="users"></table></div>
+  </main>
+</div>
+<div id="msg" hidden></div>
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  // ทุกข้อความจากฐานข้อมูลใส่ด้วย textContent เสมอ (กัน XSS)
+  const el = (tag, text, cls) => { const e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (cls) e.className = cls; return e; };
+  async function api(method, path, body) {
+    const res = await fetch(path, { method, credentials: 'same-origin', headers: body ? { 'Content-Type': 'application/json' } : undefined, body: body ? JSON.stringify(body) : undefined });
+    let data = {}; try { data = await res.json(); } catch (e) { /* ไม่มี body */ }
+    if (!res.ok) { const err = new Error(data.error || 'เกิดข้อผิดพลาด'); err.status = res.status; throw err; }
+    return data;
+  }
+  function toast(t) { const m = $('msg'); m.textContent = t; m.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => { m.hidden = true; }, 2500); }
+
+  const VIS = { private: 'ส่วนตัว', free: 'ฟรี', paid: 'เสียเงิน' };
+  const REQ = { pending: 'รออนุมัติ', approved: 'อนุมัติแล้ว', denied: 'ปฏิเสธ', revoked: 'ถอนสิทธิ์', expired: 'หมดอายุ' };
+
+  function card(n, l) { const c = el('div', undefined, 'card'); c.appendChild(el('div', String(n), 'n')); c.appendChild(el('div', l, 'l')); return c; }
+
+  async function loadOverview() {
+    const o = await api('GET', '/api/admin/overview');
+    const cards = $('cards'); cards.textContent = '';
+    cards.append(
+      card(o.users.total, 'ผู้ใช้ทั้งหมด'), card(o.users.line, 'ผูกไลน์แล้ว'),
+      card(o.last24h.users, 'ผู้ใช้ที่คุย (24 ชม.)'), card(o.last24h.messages, 'ข้อความ (24 ชม.)'),
+      card(o.totals.conversations, 'หัวข้อคุยทั้งหมด'), card(o.totals.memories, 'ความจำทั้งหมด'), card(o.totals.categories, 'หมวดทั้งหมด')
+    );
+    const max = Math.max(1, ...o.messagesPerDay.map((d) => d.messages));
+    const bars = $('bars'); bars.textContent = '';
+    o.messagesPerDay.forEach((d) => {
+      const b = el('div', undefined, 'bar');
+      b.appendChild(el('span', String(d.messages)));
+      const i = el('i'); i.style.height = Math.max(2, Math.round((d.messages / max) * 80)) + 'px';
+      b.appendChild(i); b.appendChild(el('span', d.day.slice(5)));
+      bars.appendChild(b);
+    });
+    const sh = $('share'); sh.textContent = '';
+    const cat = (k) => (o.categories.find((c) => c.visibility === k) || { n: 0 }).n;
+    sh.appendChild(el('div', 'หมวด — ส่วนตัว ' + cat('private') + ' · ฟรี ' + cat('free') + ' · เสียเงิน ' + cat('paid')));
+    sh.appendChild(el('div', 'คำขอเข้าถึง — ' + (o.accessRequests.length ? o.accessRequests.map((r) => (REQ[r.status] || r.status) + ' ' + r.n).join(' · ') : 'ยังไม่มี')));
+  }
+
+  async function loadSettings() {
+    const { settings } = await api('GET', '/api/admin/settings');
+    const box = $('settings'); box.textContent = '';
+    settings.forEach((s) => {
+      const row = el('div', undefined, 'set');
+      const t = el('div', undefined, 't'); t.appendChild(document.createTextNode(s.label)); t.appendChild(el('small', 'ช่วงที่ตั้งได้ ' + s.min + ' – ' + s.max));
+      const inp = el('input'); inp.type = 'number'; inp.step = 'any'; inp.value = s.value === null ? '' : s.value;
+      const btn = el('button', 'บันทึก', 'act');
+      btn.addEventListener('click', async () => {
+        try { await api('PATCH', '/api/admin/settings/' + encodeURIComponent(s.key), { value: inp.value }); toast('บันทึกแล้ว'); }
+        catch (e) { toast(e.message); }
+      });
+      row.append(t, inp, btn); box.appendChild(row);
+    });
+  }
+
+  async function loadUsers() {
+    const { users } = await api('GET', '/api/admin/users');
+    const t = $('users'); t.textContent = '';
+    const head = el('tr'); ['ชื่อ', 'เบอร์', 'ไลน์', 'ข้อความ', 'ความจำ', 'สถานะ', ''].forEach((h) => head.appendChild(el('th', h))); t.appendChild(head);
+    users.forEach((u) => {
+      const tr = el('tr');
+      tr.appendChild(el('td', u.name + (u.is_admin ? ' (แอดมิน)' : '')));
+      tr.appendChild(el('td', u.phone));
+      tr.appendChild(el('td', u.line_linked ? '✓' : '-'));
+      tr.appendChild(el('td', String(u.messages)));
+      tr.appendChild(el('td', String(u.memories)));
+      const st = el('td'); st.appendChild(el('span', u.status === 'active' ? 'ใช้งาน' : 'ถูกระงับ', 'pill ' + (u.status === 'active' ? 'ok' : 'bad'))); tr.appendChild(st);
+      const act = el('td');
+      if (!u.is_admin) {
+        const next = u.status === 'active' ? 'suspended' : 'active';
+        const b = el('button', next === 'suspended' ? 'ระงับ' : 'เปิดใช้งาน', 'act' + (next === 'suspended' ? ' danger' : ''));
+        b.addEventListener('click', async () => {
+          if (next === 'suspended' && !confirm('ระงับบัญชี ' + u.name + ' ?')) return;
+          try { await api('PATCH', '/api/admin/users/' + u.id + '/status', { status: next }); toast('เรียบร้อย'); loadUsers(); }
+          catch (e) { toast(e.message); }
+        });
+        act.appendChild(b);
+      }
+      tr.appendChild(act); t.appendChild(tr);
+    });
+  }
+
+  (async function init() {
+    try {
+      await loadOverview();
+      $('admin').hidden = false;
+      loadSettings(); loadUsers();
+    } catch (e) {
+      $('denied').hidden = false;
+      $('deniedText').textContent = e.status === 401 ? 'ยังไม่ได้เข้าสู่ระบบ — เข้าสู่ระบบด้วยบัญชีแอดมินที่หน้าแรกก่อน แล้วกลับมาที่หน้านี้' : e.status === 403 ? 'บัญชีนี้ไม่ใช่แอดมิน' : e.message;
+    }
+  })();
+})();
+</script>
+</body>
+</html>
