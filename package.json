@@ -6,7 +6,9 @@
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
-    "seed:admin": "node server/seedAdmin.js"
+    "seed:admin": "node server/seedAdmin.js",
+    "db:migrate": "node server/migrate.js",
+    "line:richmenu": "node server/setupRichMenu.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -15,6 +17,7 @@
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "googleapis": "^144.0.0",
-    "jsonwebtoken": "^9.0.2"
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.23.1"
   }
 }

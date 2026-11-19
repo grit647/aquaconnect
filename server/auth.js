@@ -1,40 +1,56 @@
-// ลงทะเบียน / เข้าสู่ระบบ — เก็บผู้ใช้ไว้ในแท็บ Users ของ Google Sheet
-// หมวดหมู่ที่สมัครเองได้: เกษตรกร/ผู้ค้าปัจจัย/ทั่วไป/ผู้ลงข้อมูล/นักวิชาการ (สูงสุด 2 หมวด)
-// "แอดมิน" ไม่เปิดให้สมัครเอง — มีให้เฉพาะบัญชีที่ seed ไว้ล่วงหน้าเท่านั้น (ดู server/seedAdmin.js)
+// สมัครสมาชิก / เข้าสู่ระบบ — เก็บผู้ใช้ในฐานข้อมูล Postgres (ตาราง users)
+// ผู้ใช้ทุกคนมี AI เลขาของตัวเอง; "แอดมิน" ไม่เปิดให้สมัครเอง (is_admin ตั้งผ่านสคริปต์เท่านั้น)
+// session = JWT ในคุกกี้ httpOnly, PIN เก็บเฉพาะค่า hash (bcrypt)
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { readTab, appendRow } = require('./sheets');
+const { query, withTransaction } = require('./db');
+const line = require('./line');
 
 const router = express.Router();
 
-const USERS_TAB = 'Users';
+if (!process.env.JWT_SECRET) {
+  console.warn('[auth] ⚠️ ไม่ได้ตั้ง JWT_SECRET — ใช้ค่าชั่วคราวสำหรับเครื่องพัฒนาเท่านั้น ห้ามใช้บนเว็บจริง');
+}
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
 const COOKIE_NAME = 'aq_token';
 const PIN_RE = /^\d{6}$/;
 const PHONE_RE = /^\d{9,10}$/;
-const ALLOWED_ROLES = ['farmer', 'supplier', 'general', 'reporter', 'academic'];
-const MAX_ROLES = 2;
 
-const USER_HEADERS = ['id', 'phone', 'pinHash', 'name', 'province', 'roles', 'roleDetails', 'status', 'registeredDate'];
+// ---------- กันเดา PIN / กันสมัครรัว (เก็บในหน่วยความจำ — รีสตาร์ทเซิร์ฟเวอร์แล้วเริ่มนับใหม่) ----------
+const LOGIN_MAX_FAILS = 5;                 // ผิดได้กี่ครั้งต่อเบอร์
+const LOGIN_IP_MAX_FAILS = 20;             // ผิดได้กี่ครั้งต่อ IP (กันไล่เดาหลายเบอร์)
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;    // ภายใน 15 นาที
+const REGISTER_IP_MAX = 10;                // สมัครได้กี่บัญชีต่อ IP
+const REGISTER_WINDOW_MS = 60 * 60 * 1000; // ภายใน 1 ชั่วโมง
+const LINE_LOGIN_IP_MAX = 200;             // เข้าด้วย LINE ได้กี่ครั้งต่อ IP ใน 15 นาที (เผื่อเครือข่ายมือถือที่หลายคนใช้ IP เดียวกัน)
 
-function nextUserId(users) {
-  const nums = users
-    .map((u) => parseInt(String(u.id || '').replace(/\D/g, ''), 10))
-    .filter((n) => !Number.isNaN(n));
-  const max = nums.length ? Math.max(...nums) : 0;
-  return `U${String(max + 1).padStart(5, '0')}`;
+const hits = new Map(); // key -> [timestamp, ...]
+function recent(key, windowMs) {
+  const now = Date.now();
+  const list = (hits.get(key) || []).filter((t) => now - t < windowMs);
+  if (list.length) hits.set(key, list); else hits.delete(key);
+  return list;
+}
+function noteHit(key, windowMs) {
+  const list = recent(key, windowMs);
+  list.push(Date.now());
+  hits.set(key, list);
 }
 
-function issueToken(payload) {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: '30d' });
+function issueToken(user) {
+  return jwt.sign(
+    { id: user.id, phone: user.phone, name: user.name, isAdmin: !!user.is_admin },
+    JWT_SECRET,
+    { expiresIn: '30d' }
+  );
 }
 
-function setAuthCookie(res, token) {
+function setAuthCookie(req, res, token) {
   res.cookie(COOKIE_NAME, token, {
     httpOnly: true,
     sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+    secure: req.secure, // ผ่านพร็อกซีของ Render ต้องตั้ง app.set('trust proxy', 1) ไว้แล้ว
     maxAge: 30 * 24 * 60 * 60 * 1000,
   });
 }
@@ -44,17 +60,72 @@ function publicUser(u) {
     id: u.id,
     name: u.name,
     phone: u.phone,
-    province: u.province || '',
-    roles: Array.isArray(u.roles) ? u.roles : String(u.roles || '').split(',').filter(Boolean),
+    isAdmin: !!u.is_admin,
+    secretaryName: u.secretary_name,
   };
+}
+
+// ผูกบัญชี LINE กับผู้ใช้ — เรียกหลังสมัคร/เข้าสู่ระบบด้วย PIN สำเร็จ เมื่อหน้าเว็บส่ง ID token ของ LIFF มาด้วย
+// (ผูกได้เฉพาะคนที่พิสูจน์ตัวตนด้วย PIN แล้วเท่านั้น และ ID token ตรวจกับ LINE โดยตรง ปลอมไม่ได้)
+async function tryBindLine(userId, idToken) {
+  if (!idToken) return null;
+  try {
+    const { lineUserId } = await line.verifyIdToken(idToken);
+    await query('UPDATE users SET line_user_id = $2 WHERE id = $1', [userId, lineUserId]);
+    return { linked: true };
+  } catch (err) {
+    if (err.code === '23505') return { linked: false, error: 'บัญชี LINE นี้ผูกกับบัญชีอื่นอยู่แล้ว' };
+    console.error('[auth] ผูก LINE ไม่สำเร็จ:', err.message);
+    return { linked: false, error: 'ผูกบัญชี LINE ไม่สำเร็จ ลองเปิดจากเมนูไลน์อีกครั้ง' };
+  }
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// อ่าน session จากคุกกี้ (ไม่แตะฐานข้อมูล) — คืน null ถ้าไม่ได้ login
+function getUserFromReq(req) {
+  const token = req.cookies && req.cookies[COOKIE_NAME];
+  if (!token) return null;
+  try {
+    const p = jwt.verify(token, JWT_SECRET);
+    // คุกกี้จากระบบเก่า (สมัยใช้ Google Sheet) มีรหัสผู้ใช้เป็น "U00001" ไม่ใช่ UUID — ถือว่ายังไม่ได้ login (ให้เข้าสู่ระบบใหม่)
+    // ไม่งั้นเอาไปค้นฐานข้อมูลแล้ว error 500
+    if (!UUID_RE.test(String(p.id))) return null;
+    return { id: p.id, phone: p.phone, name: p.name, isAdmin: !!p.isAdmin };
+  } catch {
+    return null;
+  }
+}
+
+// Middleware: บังคับ login
+function requireAuth(req, res, next) {
+  const user = getUserFromReq(req);
+  if (!user) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบก่อน' });
+  req.user = user;
+  next();
+}
+
+// Middleware: เฉพาะแอดมิน (เช็คจากฐานข้อมูลสด ไม่เชื่อค่าใน token อย่างเดียว กันกรณีถูกถอนสิทธิ์ทีหลัง)
+async function requireAdmin(req, res, next) {
+  const user = getUserFromReq(req);
+  if (!user) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบก่อน' });
+  try {
+    const r = await query("SELECT is_admin FROM users WHERE id = $1 AND status = 'active'", [user.id]);
+    if (!r.rows[0] || !r.rows[0].is_admin) return res.status(403).json({ error: 'เฉพาะแอดมินเท่านั้น' });
+    req.user = user;
+    next();
+  } catch (err) {
+    console.error('requireAdmin error:', err);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดฝั่งเซิร์ฟเวอร์ ลองใหม่อีกครั้ง' });
+  }
 }
 
 router.post('/register', async (req, res) => {
   try {
-    const { name, phone, pin, province, roles, roleDetails } = req.body || {};
+    const { name, phone, pin } = req.body || {};
 
-    if (!name || typeof name !== 'string' || !name.trim()) {
-      return res.status(400).json({ error: 'กรอกชื่อ-นามสกุล' });
+    if (typeof name !== 'string' || !name.trim() || name.trim().length > 100) {
+      return res.status(400).json({ error: 'กรอกชื่อ-นามสกุล (ไม่เกิน 100 ตัวอักษร)' });
     }
     if (!PHONE_RE.test(phone || '')) {
       return res.status(400).json({ error: 'กรอกเบอร์โทรศัพท์ให้ถูกต้อง' });
@@ -62,38 +133,31 @@ router.post('/register', async (req, res) => {
     if (!PIN_RE.test(pin || '')) {
       return res.status(400).json({ error: 'รหัส PIN ต้องเป็นตัวเลข 6 หลัก' });
     }
-    if (!Array.isArray(roles) || roles.length === 0 || roles.length > MAX_ROLES) {
-      return res.status(400).json({ error: `เลือกหมวดหมู่ 1-${MAX_ROLES} หมวด` });
-    }
-    if (roles.some((r) => !ALLOWED_ROLES.includes(r))) {
-      return res.status(400).json({ error: 'หมวดหมู่ไม่ถูกต้อง' });
-    }
 
-    const { headers, rows: users } = await readTab(USERS_TAB);
-    if (users.some((u) => u.phone === phone)) {
-      return res.status(409).json({ error: 'เบอร์นี้มีบัญชีสมาชิกอยู่แล้ว ลองเข้าสู่ระบบแทน' });
+    const ipKey = `reg|${req.ip}`;
+    if (recent(ipKey, REGISTER_WINDOW_MS).length >= REGISTER_IP_MAX) {
+      return res.status(429).json({ error: 'สมัครบ่อยเกินไป ลองใหม่ภายหลัง' });
     }
 
     const pinHash = await bcrypt.hash(pin, 10);
-    const id = nextUserId(users);
-    const userRow = {
-      id,
-      phone,
-      pinHash,
-      name: name.trim(),
-      province: province || '',
-      roles: roles.join(','),
-      roleDetails: JSON.stringify(roleDetails || {}),
-      status: 'active',
-      registeredDate: new Date().toISOString(),
-    };
+    // สร้างบัญชี + กระเป๋าเครดิต (ยอด 0) เป็นก้อนเดียว ถ้าพังกลางทางย้อนกลับทั้งหมด
+    const user = await withTransaction(async (c) => {
+      const r = await c.query(
+        'INSERT INTO users (phone, pin_hash, name) VALUES ($1, $2, $3) RETURNING id, phone, name, is_admin, secretary_name',
+        [phone, pinHash, name.trim()]
+      );
+      await c.query('INSERT INTO credit_balances (user_id) VALUES ($1)', [r.rows[0].id]);
+      return r.rows[0];
+    });
 
-    await appendRow(USERS_TAB, headers.length ? headers : USER_HEADERS, userRow);
-
-    const token = issueToken({ id, phone, roles, name: userRow.name });
-    setAuthCookie(res, token);
-    res.json({ ok: true, user: publicUser({ ...userRow, roles }) });
+    noteHit(ipKey, REGISTER_WINDOW_MS);
+    const lineResult = await tryBindLine(user.id, req.body.idToken);
+    setAuthCookie(req, res, issueToken(user));
+    res.json({ ok: true, user: publicUser(user), line: lineResult });
   } catch (err) {
+    if (err.code === '23505') { // เบอร์ซ้ำ
+      return res.status(409).json({ error: 'เบอร์นี้มีบัญชีอยู่แล้ว ลองเข้าสู่ระบบแทน' });
+    }
     console.error('POST /api/auth/register error:', err);
     res.status(500).json({ error: 'เกิดข้อผิดพลาดฝั่งเซิร์ฟเวอร์ ลองใหม่อีกครั้ง' });
   }
@@ -106,26 +170,72 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ error: 'เบอร์โทรศัพท์หรือรหัส PIN ไม่ถูกต้อง' });
     }
 
-    const { rows: users } = await readTab(USERS_TAB);
-    const user = users.find((u) => u.phone === phone);
-    if (!user || !user.pinHash) {
-      return res.status(401).json({ error: 'ไม่พบบัญชี หรือรหัส PIN ไม่ถูกต้อง' });
+    const phoneKey = `login|phone|${phone}`;
+    const ipKey = `login|ip|${req.ip}`;
+    if (recent(phoneKey, LOGIN_WINDOW_MS).length >= LOGIN_MAX_FAILS
+        || recent(ipKey, LOGIN_WINDOW_MS).length >= LOGIN_IP_MAX_FAILS) {
+      return res.status(429).json({ error: 'ลองผิดหลายครั้งเกินไป กรุณารอ 15 นาทีแล้วลองใหม่' });
     }
 
-    const match = await bcrypt.compare(pin, user.pinHash);
-    if (!match) {
+    const r = await query(
+      'SELECT id, phone, name, pin_hash, is_admin, status, secretary_name FROM users WHERE phone = $1',
+      [phone]
+    );
+    const user = r.rows[0];
+    // ข้อความเดียวกันทั้งกรณีไม่พบเบอร์/PIN ผิด (ไม่บอกใบ้ว่าเบอร์ไหนมีบัญชี)
+    const ok = user ? await bcrypt.compare(pin, user.pin_hash) : (await bcrypt.compare(pin, '$2a$10$invalidinvalidinvalidinvalidinvalidinvalidinvalidinvalidi'), false);
+    if (!ok) {
+      noteHit(phoneKey, LOGIN_WINDOW_MS);
+      noteHit(ipKey, LOGIN_WINDOW_MS);
       return res.status(401).json({ error: 'ไม่พบบัญชี หรือรหัส PIN ไม่ถูกต้อง' });
     }
-    if (user.status && user.status !== 'active') {
+    if (user.status !== 'active') {
       return res.status(403).json({ error: 'บัญชีนี้ถูกระงับการใช้งาน ติดต่อแอดมิน' });
     }
 
-    const roles = String(user.roles || '').split(',').filter(Boolean);
-    const token = issueToken({ id: user.id, phone: user.phone, roles, name: user.name });
-    setAuthCookie(res, token);
-    res.json({ ok: true, user: publicUser({ ...user, roles }) });
+    hits.delete(phoneKey); // เข้าสำเร็จ ล้างตัวนับของเบอร์นี้
+    const lineResult = await tryBindLine(user.id, req.body.idToken);
+    setAuthCookie(req, res, issueToken(user));
+    res.json({ ok: true, user: publicUser(user), line: lineResult });
   } catch (err) {
     console.error('POST /api/auth/login error:', err);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดฝั่งเซิร์ฟเวอร์ ลองใหม่อีกครั้ง' });
+  }
+});
+
+// เข้าสู่ระบบอัตโนมัติด้วย LINE (LIFF) — ถ้าบัญชี LINE นี้เคยผูกไว้ เข้าได้เลยไม่ต้องกรอก PIN
+// ถ้ายังไม่เคยผูก ตอบ needsLink ให้หน้าเว็บพาไปสมัคร/เข้าด้วย PIN ครั้งแรก (แล้วระบบผูกให้เอง)
+router.post('/line', async (req, res) => {
+  try {
+    const { idToken } = req.body || {};
+    if (typeof idToken !== 'string' || !idToken) {
+      return res.status(400).json({ error: 'ไม่พบข้อมูลยืนยันตัวตนจาก LINE' });
+    }
+    const ipKey = `line|ip|${req.ip}`;
+    if (recent(ipKey, LOGIN_WINDOW_MS).length >= LINE_LOGIN_IP_MAX) {
+      return res.status(429).json({ error: 'ลองบ่อยเกินไป กรุณารอสักครู่แล้วลองใหม่' });
+    }
+    noteHit(ipKey, LOGIN_WINDOW_MS); // นับทุกครั้ง เพราะแต่ละครั้งต้องยิงตรวจกับ LINE
+
+    let info;
+    try {
+      info = await line.verifyIdToken(idToken);
+    } catch {
+      return res.status(401).json({ error: 'ยืนยันตัวตนกับ LINE ไม่สำเร็จ ลองเปิดจากเมนูไลน์อีกครั้ง' });
+    }
+
+    const r = await query(
+      'SELECT id, phone, name, is_admin, status, secretary_name FROM users WHERE line_user_id = $1',
+      [info.lineUserId]
+    );
+    const user = r.rows[0];
+    if (!user) return res.json({ ok: false, needsLink: true, lineName: info.name });
+    if (user.status !== 'active') return res.status(403).json({ error: 'บัญชีนี้ถูกระงับการใช้งาน ติดต่อแอดมิน' });
+
+    setAuthCookie(req, res, issueToken(user));
+    res.json({ ok: true, user: publicUser(user) });
+  } catch (err) {
+    console.error('POST /api/auth/line error:', err);
     res.status(500).json({ error: 'เกิดข้อผิดพลาดฝั่งเซิร์ฟเวอร์ ลองใหม่อีกครั้ง' });
   }
 });
@@ -135,29 +245,20 @@ router.post('/logout', (req, res) => {
   res.json({ ok: true });
 });
 
-router.get('/me', (req, res) => {
-  const user = getUserFromReq(req);
-  res.json({ user });
+// ข้อมูลผู้ใช้ปัจจุบัน — เช็คจากฐานข้อมูลสด (บัญชีที่ถูกระงับ/ลบจะหลุดทันที ไม่ต้องรอ token หมดอายุ)
+router.get('/me', async (req, res) => {
+  const session = getUserFromReq(req);
+  if (!session) return res.json({ user: null });
+  try {
+    const r = await query(
+      "SELECT id, phone, name, is_admin, secretary_name FROM users WHERE id = $1 AND status = 'active'",
+      [session.id]
+    );
+    res.json({ user: r.rows[0] ? publicUser(r.rows[0]) : null });
+  } catch (err) {
+    console.error('GET /api/auth/me error:', err);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดฝั่งเซิร์ฟเวอร์ ลองใหม่อีกครั้ง' });
+  }
 });
 
-// อ่าน session จากคุกกี้ (ใช้ร่วมกันได้จากไฟล์ route อื่น เช่น listings.js) — คืน null ถ้าไม่ได้ login
-function getUserFromReq(req) {
-  const token = req.cookies && req.cookies[COOKIE_NAME];
-  if (!token) return null;
-  try {
-    const payload = jwt.verify(token, JWT_SECRET);
-    return { id: payload.id, phone: payload.phone, roles: payload.roles, name: payload.name };
-  } catch {
-    return null;
-  }
-}
-
-// Middleware: บังคับต้อง login ก่อนถึงจะเข้าถึง route ได้ (เช่น ลงประกาศขายลูกกุ้ง)
-function requireAuth(req, res, next) {
-  const user = getUserFromReq(req);
-  if (!user) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบก่อน' });
-  req.user = user;
-  next();
-}
-
-module.exports = { router, requireAuth, getUserFromReq };
+module.exports = { router, requireAuth, requireAdmin, getUserFromReq };

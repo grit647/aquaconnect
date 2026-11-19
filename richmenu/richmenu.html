@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<style>
+  /* ภาพเมนูไลน์ขนาด 2500x843 (ขนาดที่ LINE กำหนดสำหรับเมนูแถวเดียว) — เรนเดอร์เป็น PNG ด้วย Edge: ดู server/setupRichMenu.js */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 2500px; height: 843px; overflow: hidden; }
+  body {
+    font-family: 'Leelawadee UI', 'Segoe UI', 'Noto Sans Thai', Tahoma, sans-serif;
+    display: flex;
+    background: linear-gradient(135deg, #0e7490 0%, #0891b2 100%);
+    color: #fff;
+  }
+  .btn { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 40px; }
+  .main { width: 1667px; }
+  .side { width: 833px; background: rgba(255, 255, 255, 0.14); border-left: 6px solid rgba(255, 255, 255, 0.55); }
+  .icon { font-size: 230px; line-height: 1; margin-bottom: 18px; }
+  .main .title { font-size: 190px; font-weight: 800; line-height: 1.15; }
+  .main .sub { font-size: 80px; opacity: 0.92; margin-top: 8px; }
+  .side .icon { font-size: 170px; margin-bottom: 55px; }
+  .side .title { font-size: 130px; font-weight: 800; line-height: 1.15; }
+</style>
+</head>
+<body>
+  <div class="btn main">
+    <div class="icon">💬</div>
+    <div class="title">คุยกับเลขา</div>
+    <div class="sub">พูดหรือพิมพ์ เลขาจำให้</div>
+  </div>
+  <div class="btn side">
+    <div class="icon">❓</div>
+    <div class="title">วิธีใช้</div>
+  </div>
+</body>
+</html>

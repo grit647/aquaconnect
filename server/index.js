@@ -1,24 +1,49 @@
-require('dotenv').config();
+// โหลด .env จากโฟลเดอร์โปรเจกต์เสมอ (ไม่ขึ้นกับว่ารันคำสั่งจากโฟลเดอร์ไหน)
+require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 const path = require('path');
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const { router: authRouter } = require('./auth');
-const listingsRouter = require('./listings');
+const chatRouter = require('./routes/chat');
+const lineRouter = require('./routes/line');
+const { query } = require('./db');
+// หมายเหตุ: ตลาดลูกกุ้ง (server/listings.js, ฐานข้อมูล Google Sheets) เลิกใช้แล้วตอนเปลี่ยนเป็นแอป AI เลขา
+// ไฟล์ยังอยู่ใน git เผื่อย้อนกลับ แต่ไม่ถูกเรียกใช้อีก
 
 const app = express();
-app.use(express.json({ limit: '10mb' })); // รองรับรูปภาพ base64 ที่ฟอร์มลงขายลูกกุ้งส่งมา
+app.set('trust proxy', 1); // อยู่หลังพร็อกซีของ Render — ให้ req.ip / req.secure ถูกต้อง (ใช้กันเดา PIN และตั้งคุกกี้ secure)
+// เก็บ body ดิบไว้ด้วย (req.rawBody) เพราะการตรวจลายเซ็น webhook ของ LINE ต้องใช้ข้อความดิบก่อนถูกแปลงเป็น JSON
+app.use(express.json({ limit: '1mb', verify: (req, res, buf) => { req.rawBody = buf; } }));
 app.use(cookieParser());
 
 app.use('/api/auth', authRouter);
-app.use('/api/listings', listingsRouter);
+app.use('/api/chat', chatRouter);
+app.use('/api/line', lineRouter);
 
-const PUBLIC_DIR = path.join(__dirname, '..', 'public');
-app.use(express.static(PUBLIC_DIR));
-
-// SPA-style fallback: เส้นทางที่ไม่ใช่ /api/* และไม่ตรงไฟล์ static ให้ส่ง index.html
-app.get('*', (req, res) => {
-  res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
+// เช็คสุขภาพระบบ (ใช้กับ UptimeRobot ได้) — แตะฐานข้อมูลเบาๆ ด้วย ช่วยกันโปรเจกต์ Supabase แผนฟรีโดนพักจากไม่มีการใช้งาน
+app.get('/api/health', async (req, res) => {
+  try {
+    await query('SELECT 1');
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('health check failed:', err.message);
+    res.status(503).json({ ok: false });
+  }
 });
 
-const PORT = process.env.PORT || 8787;
-app.listen(PORT, () => console.log(`AquaConnect server running on port ${PORT}`));
+// หน้าหลักของเว็บคือหน้า AI เลขา (ai.html) — หน้าเว็บเก่าย้ายไปเก็บที่ legacy-site/ ไม่ถูกเสิร์ฟอีก
+const PUBLIC_DIR = path.join(__dirname, '..', 'public');
+app.use(express.static(PUBLIC_DIR, { index: 'ai.html' }));
+
+// เส้นทางที่ไม่ใช่ /api/* และไม่ตรงไฟล์ static ให้ส่งหน้า AI เลขา
+app.get('*', (req, res) => {
+  res.sendFile(path.join(PUBLIC_DIR, 'ai.html'));
+});
+
+// รันตรงๆ (npm start) = เปิดเซิร์ฟเวอร์ / ถูก require จากสคริปต์ทดสอบ = ส่ง app ให้ใช้โดยไม่เปิดพอร์ตเอง
+if (require.main === module) {
+  const PORT = process.env.PORT || 8787;
+  app.listen(PORT, () => console.log(`AquaConnect server running on port ${PORT}`));
+}
+
+module.exports = app;

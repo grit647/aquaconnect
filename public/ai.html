@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AquaConnect — AI เลขา</title>
+<link rel="stylesheet" href="ai.css">
+</head>
+<body>
+
+<div class="topbar"><span>🦐</span><span>AquaConnect</span></div>
+
+<!-- ยังไม่ได้เข้าสู่ระบบ -->
+<main class="page" id="authPage">
+  <section id="authView" class="card" hidden>
+    <h1>AI เลขาของคุณ</h1>
+    <p class="sub">เข้าสู่ระบบหรือสมัครสมาชิกด้วยเบอร์โทรศัพท์ + PIN 6 หลัก</p>
+
+    <div class="tabs" role="tablist">
+      <button type="button" class="tab active" id="tabLogin" role="tab">เข้าสู่ระบบ</button>
+      <button type="button" class="tab" id="tabRegister" role="tab">สมัครสมาชิก</button>
+    </div>
+
+    <p id="lineNote" class="line-note" hidden>เปิดผ่านไลน์ครั้งแรก: สมัครหรือเข้าสู่ระบบด้วยเบอร์ + PIN เพียงครั้งเดียว ระบบจะผูกบัญชีไลน์นี้ให้เอง ครั้งต่อไปเข้าอัตโนมัติไม่ต้องกรอกอีก</p>
+
+    <form id="authForm" novalidate>
+      <div id="authError" class="error" role="alert"></div>
+
+      <div class="field" id="nameField" hidden>
+        <label for="name">ชื่อ-นามสกุล</label>
+        <input id="name" type="text" maxlength="100" autocomplete="name">
+      </div>
+      <div class="field">
+        <label for="phone">เบอร์โทรศัพท์</label>
+        <input id="phone" type="tel" inputmode="numeric" maxlength="10" placeholder="08XXXXXXXX" autocomplete="tel">
+      </div>
+      <div class="field">
+        <label for="pin">รหัส PIN 6 หลัก</label>
+        <input id="pin" type="password" inputmode="numeric" maxlength="6" placeholder="••••••" autocomplete="current-password">
+        <span class="hint" id="pinHint" hidden>ตั้ง PIN ตัวเลข 6 หลักที่จำง่ายสำหรับคุณ อย่าบอกใคร</span>
+      </div>
+
+      <button type="submit" class="btn" id="submitBtn">เข้าสู่ระบบ</button>
+    </form>
+  </section>
+</main>
+
+<!-- เข้าสู่ระบบแล้ว: แชทกับเลขา -->
+<section id="chatView" class="chat" hidden>
+  <div class="chat-head">
+    <div class="chat-title">
+      <span class="avatar-sm">🤖</span>
+      <div>
+        <strong id="chatSecretary"></strong>
+        <small id="chatTopic"></small>
+      </div>
+    </div>
+    <div class="chat-actions">
+      <button type="button" class="mini" id="newTopicBtn">＋ หัวข้อใหม่</button>
+      <button type="button" class="mini" id="topicsBtn">หัวข้อ</button>
+      <button type="button" class="mini" id="logoutBtn">ออก</button>
+    </div>
+  </div>
+
+  <div id="topicsPanel" class="topics" hidden></div>
+
+  <div id="messages" class="messages" aria-live="polite"></div>
+
+  <form id="composer" class="composer">
+    <button type="button" id="micBtn" class="icon-btn" disabled title="คุยด้วยเสียง: เร็วๆ นี้">🎤</button>
+    <textarea id="input" rows="1" maxlength="4000" placeholder="พิมพ์คุยกับเลขา..."></textarea>
+    <button type="submit" id="sendBtn" class="send-btn">ส่ง</button>
+  </form>
+</section>
+
+<!-- LIFF SDK ของ LINE: ทำให้หน้าเว็บที่เปิดในไลน์รู้ว่าใครกำลังเปิดอยู่ (เข้าสู่ระบบอัตโนมัติ) — นอกไลน์ไม่ทำอะไร -->
+<script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<script src="ai.js"></script>
+</body>
+</html>
