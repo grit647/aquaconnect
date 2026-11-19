@@ -47,7 +47,7 @@ async function findSharedCategories(userId, who) {
     `SELECT u.id AS owner_id, u.name AS owner_name, c.id AS category_id, c.name AS category, c.description,
             c.visibility, c.price_type, c.price_credits
        FROM users u JOIN memory_categories c ON c.owner_id = u.id
-      WHERE u.status = 'active' AND u.id <> $1 AND c.visibility <> 'private'
+      WHERE u.status = 'active' AND u.connect_enabled AND u.id <> $1 AND c.visibility <> 'private'
         AND (u.phone = $2 OR u.name ILIKE $3)
       ORDER BY u.name, c.name LIMIT 20`,
     [userId, q, '%' + q.replace(/[%_\\]/g, '') + '%']
@@ -85,10 +85,10 @@ async function requestAccess(userId, ownerId, categoryName, message) {
   if (!UUID_RE.test(String(ownerId || ''))) throw new Error('owner_id ไม่ถูกต้อง (ต้องมาจากผลของ find_shared_categories)');
   const cat = await query(
     `SELECT c.id, c.name, c.visibility, u.name AS owner_name FROM memory_categories c JOIN users u ON u.id = c.owner_id
-      WHERE c.owner_id = $1 AND lower(c.name) = lower($2) AND c.visibility <> 'private' AND u.status = 'active'`,
+      WHERE c.owner_id = $1 AND lower(c.name) = lower($2) AND c.visibility <> 'private' AND u.status = 'active' AND u.connect_enabled`,
     [ownerId, String(categoryName || '').trim()]
   );
-  if (!cat.rows[0]) throw new Error('ไม่พบหมวดนี้ หรือเจ้าของไม่ได้เปิดให้ขอเข้าถึง');
+  if (!cat.rows[0]) throw new Error('ไม่พบหมวดนี้ เจ้าของไม่ได้เปิดให้ขอเข้าถึง หรือปิดรับการเชื่อมต่อไว้ชั่วคราว');
   if (ownerId === userId) throw new Error('นี่คือหมวดของคุณเอง');
 
   const existing = await query(
@@ -156,7 +156,7 @@ async function askSharedCategory(userId, requestId, question) {
 
   const r = await query(
     `SELECT r.id, r.owner_id, r.category_id, r.expires_at, c.name AS category, c.visibility, c.price_type, c.price_credits,
-            u.name AS owner_name, u.secretary_name
+            u.name AS owner_name, u.secretary_name, u.connect_enabled
        FROM access_requests r JOIN memory_categories c ON c.id = r.category_id JOIN users u ON u.id = r.owner_id
       WHERE r.id = $1 AND r.requester_id = $2 AND r.status = 'approved' AND u.status = 'active'`,
     [requestId, userId]
@@ -165,6 +165,7 @@ async function askSharedCategory(userId, requestId, question) {
   if (!a) throw new Error('ยังไม่ได้รับอนุมัติ หรือสิทธิ์ถูกถอนแล้ว');
   if (a.expires_at && new Date(a.expires_at) < new Date()) throw new Error('สิทธิ์หมดอายุแล้ว');
   if (a.visibility === 'private') throw new Error('เจ้าของปิดหมวดนี้เป็นส่วนตัวแล้ว');
+  if (!a.connect_enabled) throw new Error('เจ้าของปิดรับการเชื่อมต่อข้อมูลไว้ชั่วคราว (เปิดใหม่เมื่อไหร่ใช้ต่อได้ สิทธิ์ที่อนุมัติไว้ยังอยู่)');
 
   // กันใช้เกินเพดานรายวัน (ใช้จำนวนรอบที่บันทึกไว้ใน access_sessions)
   const used = await query(
@@ -213,12 +214,13 @@ ${data}`;
 
 // ---------- หน้า "เชื่อมต่อข้อมูล" ----------
 async function listPeople(userId) {
-  // แสดงชื่อผู้ใช้ทุกคน (ไม่แสดงเบอร์/ไลน์) — คนที่เปิดหมวดให้เชื่อมต่อแล้วขึ้นก่อน คนที่ยังไม่เปิดมี categories = 0
+  // แสดงชื่อผู้ใช้ทุกคน (ไม่แสดงเบอร์/ไลน์) — คนที่เปิดรับเชื่อมต่อและมีหมวดแชร์ขึ้นก่อน; ปิดรับเชื่อมต่อ = closed (ไม่นับหมวด)
   const r = await query(
-    `SELECT u.id, u.name, count(c.id)::int AS categories
+    `SELECT u.id, u.name, u.connect_enabled AS open,
+            CASE WHEN u.connect_enabled THEN count(c.id) ELSE 0 END::int AS categories
        FROM users u LEFT JOIN memory_categories c ON c.owner_id = u.id AND c.visibility <> 'private'
       WHERE u.status = 'active' AND u.id <> $1 GROUP BY u.id
-      ORDER BY (count(c.id) > 0) DESC, u.name LIMIT 300`,
+      ORDER BY (u.connect_enabled AND count(c.id) > 0) DESC, u.name LIMIT 300`,
     [userId]
   );
   return r.rows;
@@ -226,8 +228,9 @@ async function listPeople(userId) {
 
 async function ownerCategories(userId, ownerId) {
   if (!UUID_RE.test(String(ownerId || ''))) return null;
-  const o = await query("SELECT id, name FROM users WHERE id = $1 AND status = 'active'", [ownerId]);
+  const o = await query("SELECT id, name, connect_enabled FROM users WHERE id = $1 AND status = 'active'", [ownerId]);
   if (!o.rows[0]) return null;
+  if (!o.rows[0].connect_enabled) return { owner: { id: o.rows[0].id, name: o.rows[0].name }, closed: true, blockMinutes: 5, categories: [] };
   const c = await query(
     `SELECT c.id, c.name, c.description, c.visibility, c.price_type, c.price_credits,
             (SELECT count(*)::int FROM memories m WHERE m.category_id = c.id) AS items,
@@ -240,4 +243,13 @@ async function ownerCategories(userId, ownerId) {
   return { owner: o.rows[0], blockMinutes: idle, categories: c.rows.map((x) => ({ ...x, price_credits: x.price_credits === null ? null : Number(x.price_credits) })) };
 }
 
-module.exports = { listPeople, ownerCategories, setCategoryVisibility, findSharedCategories, requestAccess, listAccess, pendingCount, decideRequest, askSharedCategory };
+async function getConnectEnabled(userId) {
+  const r = await query('SELECT connect_enabled FROM users WHERE id = $1', [userId]);
+  return r.rows[0] ? r.rows[0].connect_enabled : true;
+}
+async function setConnectEnabled(userId, enabled) {
+  await query('UPDATE users SET connect_enabled = $2 WHERE id = $1', [userId, !!enabled]);
+  return !!enabled;
+}
+
+module.exports = { getConnectEnabled, setConnectEnabled, listPeople, ownerCategories, setCategoryVisibility, findSharedCategories, requestAccess, listAccess, pendingCount, decideRequest, askSharedCategory };

@@ -571,9 +571,30 @@
     return c.price_credits + ' เครดิต/ชั่วโมง (คิดเป็นก้อนละ ' + block + ' นาที ก้อนละ ' + per + ' เครดิต)';
   }
 
+  let connectOpen = true;
+  function renderConnToggle(open) {
+    connectOpen = open;
+    const b = $('connToggle');
+    b.textContent = '🔗 เชื่อมต่อ: ' + (open ? 'เปิด' : 'ปิด');
+    b.classList.toggle('on', open);
+    b.classList.toggle('off', !open);
+  }
+  $('connToggle').addEventListener('click', async () => {
+    const next = !connectOpen;
+    if (!next && !confirm('ปิดรับการเชื่อมต่อข้อมูลชั่วคราว?\nจะไม่มีใครขอหรือใช้ข้อมูลของคุณได้ (สิทธิ์ที่เคยอนุญาตไว้ยังอยู่ เปิดใหม่แล้วใช้ต่อได้)')) return;
+    try {
+      const r = await api('POST', '/api/connect/enabled', { enabled: next });
+      renderConnToggle(r.connectEnabled);
+      addBubble('hint', r.connectEnabled
+        ? 'เปิดรับการเชื่อมต่อข้อมูลแล้วค่ะ คนอื่นขอและใช้ข้อมูลในหมวดที่คุณเปิดแชร์ไว้ได้'
+        : 'ปิดรับการเชื่อมต่อข้อมูลแล้วค่ะ ตอนนี้ไม่มีใครขอหรือใช้ข้อมูลของคุณได้ (สิทธิ์เดิมยังอยู่)');
+    } catch (err) { addBubble('error', err.message); }
+  });
+
   async function refreshConnectBadge() {
     try {
-      const { incoming } = await api('GET', '/api/connect/mine');
+      const { incoming, connectEnabled } = await api('GET', '/api/connect/mine');
+      renderConnToggle(connectEnabled !== false);
       const n = incoming.filter((r) => r.status === 'pending').length;
       $('connectBtn').textContent = '🔗 เชื่อมต่อข้อมูล' + (n ? ' (' + n + ')' : '');
       $('connectBtn').classList.toggle('on', n > 0);
@@ -657,7 +678,8 @@
     note(body, 'รายชื่อสมาชิก — เลือกคนที่จะเชื่อมต่อ', 'sub');
     if (!people.people.length) note(body, 'ตอนนี้ยังไม่มีสมาชิกคนอื่นในระบบ');
     people.people.forEach((p) => {
-      if (p.categories > 0) sheetButton(body, '👤 ' + p.name + '  · เปิดให้ ' + p.categories + ' หมวด', () => showPerson(p));
+      if (p.open === false) sheetButton(body, '👤 ' + p.name + '  · ปิดรับการเชื่อมต่อชั่วคราว', () => { note(body, 'คุณ' + p.name + ' ปิดรับการเชื่อมต่อข้อมูลไว้ชั่วคราวค่ะ'); }, 'dim');
+      else if (p.categories > 0) sheetButton(body, '👤 ' + p.name + '  · เปิดให้ ' + p.categories + ' หมวด', () => showPerson(p));
       else sheetButton(body, '👤 ' + p.name + '  · ยังไม่ได้เปิดข้อมูล', () => { note(body, 'คุณ' + p.name + ' ยังไม่ได้เปิดหมวดข้อมูลให้เชื่อมต่อ — เมื่อเปิดแล้วจะเข้าใช้ได้ค่ะ'); }, 'dim');
     });
   }

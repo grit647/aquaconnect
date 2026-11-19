@@ -135,6 +135,14 @@ function buildTools(userId, conversationId) {
       },
       run: async (a) => sharing.decideRequest(userId, a.request_id, a.decision),
     },
+    set_connect_enabled: {
+      declaration: {
+        name: 'set_connect_enabled',
+        description: 'เปิดหรือปิดสวิตช์หลัก "รับการเชื่อมต่อข้อมูล" ของผู้ใช้ — ปิด = ไม่มีใครขอหรือใช้ข้อมูลของผู้ใช้ได้เลยชั่วคราว (สิทธิ์ที่อนุมัติไว้ไม่หาย) ใช้เมื่อผู้ใช้สั่งชัดเจนเท่านั้น',
+        parameters: { type: 'OBJECT', properties: { enabled: { type: 'BOOLEAN', description: 'true = เปิดรับ, false = ปิดรับ' } }, required: ['enabled'] },
+      },
+      run: async (a) => ({ ok: true, connectEnabled: await sharing.setConnectEnabled(userId, a.enabled === true) }),
+    },
     check_credit_balance: {
       declaration: {
         name: 'check_credit_balance',

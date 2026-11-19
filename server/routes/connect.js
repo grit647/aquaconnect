@@ -35,11 +35,20 @@ router.get('/people/:ownerId', async (req, res) => {
 // คำขอเข้าถึงของฉัน: incoming (รอเจ้าของ = ฉัน อนุญาต) และ outgoing (ที่ฉันขอคนอื่น)
 router.get('/mine', async (req, res) => {
   try {
-    res.json(await sharing.listAccess(req.user.id));
+    const [acc, enabled] = await Promise.all([sharing.listAccess(req.user.id), sharing.getConnectEnabled(req.user.id)]);
+    res.json({ ...acc, connectEnabled: enabled });
   } catch (err) {
     console.error('connect mine error:', err);
     res.status(500).json({ error: 'เกิดข้อผิดพลาดฝั่งเซิร์ฟเวอร์' });
   }
+});
+
+// สวิตช์หลักของฉัน: เปิด/ปิดรับการเชื่อมต่อข้อมูล (ปิด = ไม่มีใครขอหรือใช้ข้อมูลของฉันได้ สิทธิ์เดิมไม่ถูกลบ)
+router.post('/enabled', async (req, res) => {
+  try {
+    const enabled = !!(req.body && req.body.enabled);
+    res.json({ ok: true, connectEnabled: await sharing.setConnectEnabled(req.user.id, enabled) });
+  } catch (err) { fail(res, err); }
 });
 
 router.post('/request', async (req, res) => {

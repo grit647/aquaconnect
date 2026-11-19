@@ -114,6 +114,25 @@ async function cleanup() {
   const msgs = await call('GET', `/api/chat/conversations/${conv}/messages`, null, askerC);
   check('บทสนทนาบันทึกคำถาม/คำตอบไว้', msgs.json.messages.some((m) => m.role === 'assistant' && m.content.includes('ข้อมูลจากคุณเจ้าของ เชื่อม')));
 
+  // --- สวิตช์หลัก เปิด/ปิดรับการเชื่อมต่อ ---
+  check('ไม่ล็อกอินเปลี่ยนสวิตช์ไม่ได้', (await call('POST', '/api/connect/enabled', { enabled: false })).status === 401);
+  check('ค่าเริ่มต้นสวิตช์ = เปิด', (await call('GET', '/api/connect/mine', null, ownerC)).json.connectEnabled === true);
+  check('เจ้าของปิดสวิตช์ได้', (await call('POST', '/api/connect/enabled', { enabled: false }, ownerC)).json.connectEnabled === false);
+  const closedList = (await call('GET', '/api/connect/people', null, askerC)).json.people.find((p) => p.id === owner);
+  check('ปิดสวิตช์ → รายชื่อแสดงว่าปิดรับ ไม่นับหมวด', !!closedList && closedList.open === false && closedList.categories === 0);
+  const closedDet = await call('GET', `/api/connect/people/${owner}`, null, askerC);
+  check('ปิดสวิตช์ → เข้าดูหมวดไม่ได้ (closed, ไม่มีหมวด)', closedDet.json.closed === true && closedDet.json.categories.length === 0);
+  const balBefore = Number((await query('SELECT balance FROM credit_balances WHERE user_id = $1', [asker])).rows[0].balance);
+  const closedAsk = await call('POST', `/api/chat/conversations/${conv}/messages`, { content: 'ถามตอนปิด', askRequestId: rq.json.requestId }, askerC);
+  check('ปิดสวิตช์ → ใช้ข้อมูลที่เคยอนุญาตไว้ไม่ได้ และไม่ถูกหักเงิน', closedAsk.status === 400 && closedAsk.json.error.includes('ปิดรับ') && Math.abs(Number((await query('SELECT balance FROM credit_balances WHERE user_id = $1', [asker])).rows[0].balance) - balBefore) < 0.01);
+  check('ปิดสวิตช์ → ขอสิทธิ์ใหม่ไม่ได้', (await call('POST', '/api/connect/request', { ownerId: owner, category: 'ฟาร์ม' }, askerC)).status === 400);
+  check('ปิดสวิตช์ → เจ้าของยังเห็นสถานะปิดของตัวเอง', (await call('GET', '/api/connect/mine', null, ownerC)).json.connectEnabled === false);
+  check('เจ้าของเปิดสวิตช์กลับได้', (await call('POST', '/api/connect/enabled', { enabled: true }, ownerC)).json.connectEnabled === true);
+  const openDet = await call('GET', `/api/connect/people/${owner}`, null, askerC);
+  check('เปิดสวิตช์กลับ → หมวดและสิทธิ์เดิมกลับมา (approved ยังอยู่)', openDet.json.categories.length === 2 && openDet.json.categories.find((c) => c.name === 'วิชาการ').my_status === 'approved');
+  const tools = require('./secretary').buildTools(owner, null);
+  check('เครื่องมือเลขาสั่งปิด/เปิดสวิตช์ได้', (await tools.set_connect_enabled.run({ enabled: false })).connectEnabled === false && (await tools.set_connect_enabled.run({ enabled: true })).connectEnabled === true);
+
   // --- ความปลอดภัย ---
   const steal = await call('POST', `/api/chat/conversations/${(await call('POST', '/api/chat/conversations', {}, otherC)).json.conversation.id}/messages`, { content: 'ขโมย', askRequestId: rq.json.requestId }, otherC);
   check('คนอื่นเอา request ของผู้ขอไปใช้ไม่ได้', steal.status === 400);
