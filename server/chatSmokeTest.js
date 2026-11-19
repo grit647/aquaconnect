@@ -41,6 +41,9 @@ async function call(method, path, body, cookie) {
 }
 
 (async () => {
+  // จำนวนข้อมูลจริงก่อนเริ่มทดสอบ — ตอนจบต้องกลับมาเท่าเดิมเป๊ะ (ฐานข้อมูลนี้มีข้อมูลจริงของผู้ใช้อยู่ด้วย ห้ามสมมติว่าว่างเปล่า)
+  const counts = async () => (await query('SELECT (SELECT count(*)::int FROM users) AS users, (SELECT count(*)::int FROM messages) AS messages, (SELECT count(*)::int FROM memories) AS memories, (SELECT count(*)::int FROM memory_categories) AS cats')).rows[0];
+  const base = await counts();
   const pinA = '111222', pinB = '333444';
   const A = await call('POST', '/api/auth/register', { name: 'ทดสอบ เอ', phone: '0999900001', pin: pinA });
   const B = await call('POST', '/api/auth/register', { name: 'ทดสอบ บี', phone: '0999900002', pin: pinB });
@@ -85,6 +88,30 @@ async function call(method, path, body, cookie) {
   check('ข้อความว่างถูกปฏิเสธ (400)', (await call('POST', `/api/chat/conversations/${convB.id}/messages`, { content: '   ' }, B.cookie)).status === 400);
   check('ข้อความยาวเกินถูกปฏิเสธ (400)', (await call('POST', `/api/chat/conversations/${convB.id}/messages`, { content: 'ก'.repeat(4001) }, B.cookie)).status === 400);
 
+  // ---- ถอดเสียง (ปุ่มไมค์) — ใช้ตัวถอดเสียงจำลอง ไม่เรียก Gemini จริง ----
+  ai.setTranscribeForTests(async (audio, mime) => (audio === 'SILENT' ? '' : `ถอดได้:${mime}`));
+  check('ไม่ login ถอดเสียงไม่ได้ (401)', (await call('POST', '/api/chat/transcribe', { audio: 'AAAA', mimeType: 'audio/webm' })).status === 401);
+  const tr = await call('POST', '/api/chat/transcribe', { audio: 'QUJD', mimeType: 'audio/webm;codecs=opus' }, B.cookie);
+  check('ส่งเสียงแล้วได้ข้อความกลับ (ตัด codecs ออกจากชนิดไฟล์)', tr.status === 200 && tr.json.text === 'ถอดได้:audio/webm', JSON.stringify(tr.json));
+  const trSilent = await call('POST', '/api/chat/transcribe', { audio: 'SILENT', mimeType: 'audio/webm' }, B.cookie);
+  check('เสียงเงียบ → ได้ข้อความว่าง ไม่ error', trSilent.status === 200 && trSilent.json.text === '');
+  check('ไม่ส่งไฟล์เสียง → 400', (await call('POST', '/api/chat/transcribe', { mimeType: 'audio/webm' }, B.cookie)).status === 400);
+  check('ชนิดไฟล์ไม่ใช่เสียง → 400', (await call('POST', '/api/chat/transcribe', { audio: 'QUJD', mimeType: 'text/html' }, B.cookie)).status === 400);
+  const big = await call('POST', '/api/chat/transcribe', { audio: 'A'.repeat(5 * 1024 * 1024 + 10), mimeType: 'audio/webm' }, B.cookie);
+  check('ไฟล์เสียงใหญ่เกินเพดาน → 413', big.status === 413, String(big.status));
+
+  const cats = await call('GET', '/api/chat/categories', null, A.cookie);
+  check('รายการหมวดของ A มี "วิชาการ" 1 รายการ', cats.status === 200 && cats.json.categories.length === 1 && cats.json.categories[0].name === 'วิชาการ' && cats.json.categories[0].memories === 1, JSON.stringify(cats.json.categories));
+  const catsB = await call('GET', '/api/chat/categories', null, B.cookie);
+  check('รายการหมวดของ B ว่าง (ไม่เห็นหมวดของ A)', catsB.status === 200 && catsB.json.categories.length === 0);
+
+  let hitTrLimit = false;
+  for (let i = 0; i < 40 && !hitTrLimit; i++) {
+    const r = await call('POST', '/api/chat/transcribe', { audio: 'QUJD', mimeType: 'audio/webm' }, B.cookie);
+    if (r.status === 429) hitTrLimit = true;
+  }
+  check('ถอดเสียงถี่เกินเพดาน → โดน 429', hitTrLimit);
+
   // เพดานส่งถี่: A ส่งไปแล้ว 3 ข้อความ ส่งต่ออีกจนชน 20
   let hit429 = false;
   for (let i = 0; i < 25 && !hit429; i++) {
@@ -95,8 +122,8 @@ async function call(method, path, body, cookie) {
 
   // เก็บกวาด: ลบผู้ใช้ทดสอบ (ข้อมูลที่ผูกอยู่ลบตามอัตโนมัติ)
   const del = await query("DELETE FROM users WHERE phone IN ('0999900001','0999900002')");
-  const left = await query('SELECT count(*)::int AS users, (SELECT count(*)::int FROM messages) AS messages, (SELECT count(*)::int FROM memories) AS memories, (SELECT count(*)::int FROM memory_categories) AS cats FROM users');
-  check('ลบข้อมูลทดสอบหมดเกลี้ยง', del.rowCount === 2 && left.rows[0].users === 1 && left.rows[0].messages === 0 && left.rows[0].memories === 0 && left.rows[0].cats === 0, JSON.stringify(left.rows[0]));
+  const left = await counts();
+  check('ลบข้อมูลทดสอบหมดเกลี้ยง (จำนวนกลับมาเท่าก่อนทดสอบ)', del.rowCount === 2 && JSON.stringify(left) === JSON.stringify(base), `ก่อน ${JSON.stringify(base)} หลัง ${JSON.stringify(left)}`);
 
   server.close();
   await getPool().end();

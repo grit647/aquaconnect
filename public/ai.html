@@ -2,19 +2,21 @@
 <html lang="th">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0f1e">
 <title>AquaConnect — AI เลขา</title>
+<!-- บอท 3 มิติ (ตัวเดียวกับของครีมใน ช.นายท้าย) แสดงด้วย <model-viewer> ของ Google -->
+<script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.5.0/model-viewer.min.js"></script>
 <link rel="stylesheet" href="ai.css">
 </head>
-<body>
+<body class="auth-mode">
 
-<div class="topbar"><span>🦐</span><span>AquaConnect</span></div>
-
-<!-- ยังไม่ได้เข้าสู่ระบบ -->
-<main class="page" id="authPage">
-  <section id="authView" class="card" hidden>
+<!-- ===== ยังไม่ได้เข้าสู่ระบบ ===== -->
+<main id="authPage" class="auth-page">
+  <section id="authView" class="auth-card" hidden>
+    <div class="auth-logo">🦐 AquaConnect</div>
     <h1>AI เลขาของคุณ</h1>
-    <p class="sub">เข้าสู่ระบบหรือสมัครสมาชิกด้วยเบอร์โทรศัพท์ + PIN 6 หลัก</p>
+    <p class="auth-sub">เข้าสู่ระบบหรือสมัครสมาชิกด้วยเบอร์โทรศัพท์ + PIN 6 หลัก</p>
 
     <div class="tabs" role="tablist">
       <button type="button" class="tab active" id="tabLogin" role="tab">เข้าสู่ระบบ</button>
@@ -45,33 +47,42 @@
   </section>
 </main>
 
-<!-- เข้าสู่ระบบแล้ว: แชทกับเลขา -->
-<section id="chatView" class="chat" hidden>
-  <div class="chat-head">
-    <div class="chat-title">
-      <span class="avatar-sm">🤖</span>
-      <div>
-        <strong id="chatSecretary"></strong>
-        <small id="chatTopic"></small>
-      </div>
-    </div>
-    <div class="chat-actions">
-      <button type="button" class="mini" id="newTopicBtn">＋ หัวข้อใหม่</button>
-      <button type="button" class="mini" id="topicsBtn">หัวข้อ</button>
-      <button type="button" class="mini" id="logoutBtn">ออก</button>
-    </div>
+<!-- ===== เข้าสู่ระบบแล้ว: คุยกับเลขา ===== -->
+<div id="app" hidden>
+
+  <div id="botStage" class="state-idle">
+    <button id="menuBtn" class="stage-btn left" title="เมนู" aria-label="เมนู">☰</button>
+    <div id="stateLabel">พร้อมคุยค่ะ</div>
+    <button id="ttsToggle" class="stage-btn right" title="เลขาเสียง — อ่านคำตอบให้ฟัง">🔇 เลขาเสียง</button>
+    <div id="ring"></div>
+    <model-viewer id="bot" src="/models/bot.glb" camera-controls auto-rotate auto-rotate-delay="0"
+      rotation-per-second="18deg" camera-orbit="0deg 78deg 90%" field-of-view="32deg"
+      interaction-prompt="none" disable-zoom exposure="1.1" shadow-intensity="0"></model-viewer>
   </div>
 
-  <div id="topicsPanel" class="topics" hidden></div>
+  <div id="chatLog" aria-live="polite"></div>
 
-  <div id="messages" class="messages" aria-live="polite"></div>
+  <div id="micModeBar">
+    <button id="realtimeMicToggle" type="button">🎙️ โหมดปกติ</button>
+    <button id="saveMemoryBtn" type="button">💾 จำไว้ให้เลขา</button>
+  </div>
 
-  <form id="composer" class="composer">
-    <button type="button" id="micBtn" class="icon-btn" disabled title="คุยด้วยเสียง: เร็วๆ นี้">🎤</button>
-    <textarea id="input" rows="1" maxlength="4000" placeholder="พิมพ์คุยกับเลขา..."></textarea>
-    <button type="submit" id="sendBtn" class="send-btn">ส่ง</button>
+  <form id="inputBar" autocomplete="off">
+    <input id="msgInput" type="text" maxlength="4000" placeholder="พิมพ์ข้อความ..." enterkeyhint="send">
+    <button id="micBtn" type="button" class="round-btn" aria-label="พูดกับเลขา">🎤</button>
+    <button id="sendBtn" type="submit" class="round-btn" aria-label="ส่ง">➤</button>
   </form>
-</section>
+
+</div>
+
+<!-- แผ่นเลื่อนขึ้นจากด้านล่าง (ใช้ทั้งเมนู / รายการหัวข้อ / เลือกหมวดที่จะจำ) -->
+<div id="sheetOverlay" hidden>
+  <div id="sheet" role="dialog" aria-modal="true">
+    <div id="sheetTitle"></div>
+    <div id="sheetBody"></div>
+    <button id="sheetClose" type="button">ปิด</button>
+  </div>
+</div>
 
 <!-- LIFF SDK ของ LINE: ทำให้หน้าเว็บที่เปิดในไลน์รู้ว่าใครกำลังเปิดอยู่ (เข้าสู่ระบบอัตโนมัติ) — นอกไลน์ไม่ทำอะไร -->
 <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>

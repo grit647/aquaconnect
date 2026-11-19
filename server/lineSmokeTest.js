@@ -36,6 +36,9 @@ const sign = (obj) => crypto.createHmac('sha256', process.env.LINE_CHANNEL_SECRE
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 (async () => {
+  // จำนวนผู้ใช้จริงก่อนเริ่มทดสอบ — ตอนจบต้องกลับมาเท่าเดิม (ห้ามสมมติว่ามีแค่แอดมินคนเดียว)
+  const baseUsers = (await query('SELECT count(*)::int AS n FROM users')).rows[0].n;
+
   // ---- webhook ----
   const evFollow = { events: [{ type: 'follow', replyToken: 'rt1', webhookEventId: 'ev-follow-1' }] };
   check('webhook ไม่มีลายเซ็น → 401', (await call('POST', '/api/line/webhook', evFollow)).status === 401);
@@ -90,7 +93,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   // เก็บกวาด
   const del = await query("DELETE FROM users WHERE phone IN ('0999900011','0999900012')");
   const left = await query('SELECT count(*)::int AS users FROM users');
-  check('ลบข้อมูลทดสอบหมดเกลี้ยง', del.rowCount === 2 && left.rows[0].users === 1, JSON.stringify(left.rows[0]));
+  check('ลบข้อมูลทดสอบหมดเกลี้ยง (จำนวนผู้ใช้กลับมาเท่าก่อนทดสอบ)', del.rowCount === 2 && left.rows[0].users === baseUsers, `ก่อน ${baseUsers} หลัง ${left.rows[0].users}`);
 
   server.close();
   await getPool().end();

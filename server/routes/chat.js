@@ -4,7 +4,7 @@ const { query, withTransaction } = require('../db');
 const { requireAuth } = require('../auth');
 const ai = require('../ai');
 const { buildSystemPrompt, buildTools } = require('../secretary');
-const { getMemoryContext } = require('../memory');
+const { getMemoryContext, listCategories } = require('../memory');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -40,6 +40,58 @@ async function ownConversation(id, userId) {
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// ---------- ถอดเสียงพูดเป็นข้อความ (ปุ่มไมค์ในหน้าแชท) ----------
+const TRANSCRIBE_MAX_BASE64 = 5 * 1024 * 1024;   // ไฟล์เสียงหลัง base64 ไม่เกิน ~5MB (ราว 3.7MB จริง เกินพอสำหรับพูดต่อเนื่องเป็นนาที)
+const TRANSCRIBE_BURST_MAX = 30;                 // ถอดเสียงได้กี่ครั้งต่อ 5 นาที
+const TRANSCRIBE_DAILY_MAX = 300;                // และกี่ครั้งต่อวันต่อคน (นับในหน่วยความจำ รีสตาร์ทเซิร์ฟเวอร์แล้วเริ่มนับใหม่)
+const AUDIO_MIME_RE = /^audio\/(webm|ogg|mp4|mpeg|mp3|wav|x-wav|aac|x-m4a|m4a)$/i;
+
+const transcribeRecent = new Map();   // userId -> [timestamp]
+const transcribeToday = new Map();    // userId -> { day, count }
+function transcribeLimited(userId) {
+  const now = Date.now();
+  const list = (transcribeRecent.get(userId) || []).filter((t) => now - t < BURST_WINDOW_MS);
+  const day = new Date().toISOString().slice(0, 10);
+  const daily = transcribeToday.get(userId);
+  const count = daily && daily.day === day ? daily.count : 0;
+  if (list.length >= TRANSCRIBE_BURST_MAX) return 'ส่งเสียงถี่เกินไป รอสักครู่แล้วลองใหม่';
+  if (count >= TRANSCRIBE_DAILY_MAX) return 'วันนี้ใช้ถอดเสียงครบโควตาแล้ว พิมพ์แทนได้นะครับ';
+  list.push(now);
+  transcribeRecent.set(userId, list);
+  transcribeToday.set(userId, { day, count: count + 1 });
+  return null;
+}
+
+router.post('/transcribe', async (req, res) => {
+  try {
+    const { audio, mimeType } = req.body || {};
+    if (typeof audio !== 'string' || !audio) return res.status(400).json({ error: 'ไม่พบไฟล์เสียง' });
+    if (audio.length > TRANSCRIBE_MAX_BASE64) return res.status(413).json({ error: 'ไฟล์เสียงยาวเกินไป ลองพูดให้สั้นลง' });
+    const mime = String(mimeType || 'audio/webm').split(';')[0].trim();
+    if (!AUDIO_MIME_RE.test(mime)) return res.status(400).json({ error: 'ชนิดไฟล์เสียงไม่รองรับ' });
+    if (!ai.isConfigured()) return res.status(503).json({ error: 'เลขายังไม่พร้อมใช้งาน (ยังไม่ได้ตั้งค่าสมอง AI)' });
+
+    const limited = transcribeLimited(req.user.id);
+    if (limited) return res.status(429).json({ error: limited });
+
+    const text = await ai.transcribeAudio(audio, mime);
+    res.json({ text });
+  } catch (err) {
+    console.error('POST transcribe error:', err.message);
+    res.status(502).json({ error: 'ถอดเสียงไม่สำเร็จ ลองพูดใหม่อีกครั้งนะครับ' });
+  }
+});
+
+// รายการหมวดความจำของผู้ใช้ (ไว้ให้ปุ่ม "จำไว้ให้เลขา" ให้เลือกหมวด)
+router.get('/categories', async (req, res) => {
+  try {
+    res.json({ categories: await listCategories(req.user.id) });
+  } catch (err) {
+    console.error('GET categories error:', err);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดฝั่งเซิร์ฟเวอร์ ลองใหม่อีกครั้ง' });
+  }
+});
 
 router.get('/conversations', async (req, res) => {
   try {

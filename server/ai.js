@@ -76,6 +76,44 @@ async function callVertex({ systemPrompt, contents, toolDeclarations }) {
 let callModel = callVertex;
 function setCallModelForTests(fn) { callModel = fn || callVertex; }
 
+// ถอดเสียงพูดเป็นข้อความด้วย Gemini (รับไฟล์เสียงเป็น inlineData ในคำขอ generateContent เดียวกับที่คุยปกติ)
+// วิธีเดียวกับที่ครีมใช้ (ทดสอบแล้วว่าถอดภาษาไทยได้แม่น) — ฝั่งเว็บอัดเสียงเองด้วย MediaRecorder แล้วส่งมาที่นี่
+async function realTranscribe(base64Audio, mimeType) {
+  const projectId = getVertexProjectId();
+  const token = await getAccessToken();
+  const url = `https://${VERTEX_LOCATION}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${VERTEX_LOCATION}/publishers/google/models/${VERTEX_MODEL}:generateContent`;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        contents: [{
+          role: 'user',
+          parts: [
+            { text: 'Transcribe the speech in this audio verbatim, in the language actually spoken (usually Thai, sometimes with English words mixed in). Do NOT translate. Output only the transcript with no preface or explanation. Output an empty string only if the audio contains no human speech at all (pure silence or noise).' },
+            { inlineData: { mimeType: mimeType || 'audio/webm', data: base64Audio } },
+          ],
+        }],
+        generationConfig: { maxOutputTokens: 1024, thinkingConfig: { thinkingBudget: 0 } },
+      }),
+      signal: ctrl.signal,
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`Vertex AI (audio) error (${res.status}): ${text.slice(0, 300)}`);
+    }
+    const data = await res.json();
+    return (data.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('').trim();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+let transcribeImpl = realTranscribe;
+function transcribeAudio(base64Audio, mimeType) { return transcribeImpl(base64Audio, mimeType); }
+function setTranscribeForTests(fn) { transcribeImpl = fn || realTranscribe; }
+
 /**
  * วงจรเอเจนต์: ถามโมเดล → ถ้าโมเดลสั่งเรียกเครื่องมือ ก็รันจริงแล้วส่งผลกลับ → วนจนได้คำตอบเป็นข้อความ
  * history: [{ role: 'user'|'assistant', content }]
@@ -121,4 +159,4 @@ async function runAgent({ systemPrompt, history, tools, maxSteps = 4 }) {
   return { text: '(เลขาทำงานหลายขั้นตอนเกินไป ลองบอกใหม่ให้สั้นลงนะคะ)', executed, usage };
 }
 
-module.exports = { isConfigured, runAgent, setCallModelForTests };
+module.exports = { isConfigured, runAgent, setCallModelForTests, transcribeAudio, setTranscribeForTests };

@@ -12,6 +12,9 @@ const { query } = require('./db');
 
 const app = express();
 app.set('trust proxy', 1); // อยู่หลังพร็อกซีของ Render — ให้ req.ip / req.secure ถูกต้อง (ใช้กันเดา PIN และตั้งคุกกี้ secure)
+// ไฟล์เสียงที่ส่งมาถอดเป็นข้อความมีขนาดใหญ่กว่า JSON ทั่วไป — ขยายเพดานเฉพาะเส้นทางนี้ (ต้องประกาศก่อนตัวอ่าน JSON ทั่วไปด้านล่าง
+// ไม่งั้นตัวทั่วไปจะตัดทิ้งที่ 1MB ก่อน) ส่วนเพดานที่แท้จริง (5MB + จำนวนครั้ง) ตรวจซ้ำอีกชั้นใน routes/chat.js
+app.use('/api/chat/transcribe', express.json({ limit: '7mb' }));
 // เก็บ body ดิบไว้ด้วย (req.rawBody) เพราะการตรวจลายเซ็น webhook ของ LINE ต้องใช้ข้อความดิบก่อนถูกแปลงเป็น JSON
 app.use(express.json({ limit: '1mb', verify: (req, res, buf) => { req.rawBody = buf; } }));
 app.use(cookieParser());
