@@ -133,6 +133,25 @@ async function cleanup() {
   const tools = require('./secretary').buildTools(owner, null);
   check('เครื่องมือเลขาสั่งปิด/เปิดสวิตช์ได้', (await tools.set_connect_enabled.run({ enabled: false })).connectEnabled === false && (await tools.set_connect_enabled.run({ enabled: true })).connectEnabled === true);
 
+  // --- เมนู "ตั้งค่าข้อมูล": ดูจำนวนเนื้อหา + ตั้งส่วนตัว/ฟรี/เสียเงิน ---
+  await memory.saveMemory(owner, 'ทดสอบตั้งค่า', 'เนื้อหา 1'); await memory.saveMemory(owner, 'ทดสอบตั้งค่า', 'เนื้อหา 2');
+  check('ไม่ล็อกอินดูตั้งค่าข้อมูลไม่ได้', (await call('GET', '/api/connect/my-categories')).status === 401);
+  const mc = await call('GET', '/api/connect/my-categories', null, ownerC);
+  const tcat = mc.json.categories.find((x) => x.name === 'ทดสอบตั้งค่า');
+  check('ตั้งค่าข้อมูล: เห็นหมวดของตัวเองพร้อมจำนวนเนื้อหา', mc.status === 200 && !!tcat && tcat.items === 2 && tcat.visibility === 'private');
+  check('ตั้งค่าข้อมูล: ผู้ถามเห็นเฉพาะหมวดของตัวเอง (ไม่ปนของเจ้าของ)', !(await call('GET', '/api/connect/my-categories', null, askerC)).json.categories.some((x) => x.name === 'ทดสอบตั้งค่า'));
+  const setHour = await call('POST', '/api/connect/category-setting', { category: 'ทดสอบตั้งค่า', visibility: 'paid', priceType: 'hour', price: 150 }, ownerC);
+  const after1 = (await call('GET', '/api/connect/my-categories', null, ownerC)).json.categories.find((x) => x.name === 'ทดสอบตั้งค่า');
+  check('ตั้งเป็นเสียเงิน 150 เครดิต/ชั่วโมงได้ และบันทึกจริง', setHour.status === 200 && after1.visibility === 'paid' && after1.price_type === 'hour' && after1.price_credits === 150);
+  check('คนอื่นเห็นราคาที่ตั้งไว้ในหน้าเชื่อมต่อ', (await call('GET', `/api/connect/people/${owner}`, null, askerC)).json.categories.find((x) => x.name === 'ทดสอบตั้งค่า').price_credits === 150);
+  check('เสียเงินแต่ไม่ใส่ราคา → ปฏิเสธ', (await call('POST', '/api/connect/category-setting', { category: 'ทดสอบตั้งค่า', visibility: 'paid', priceType: 'hour' }, ownerC)).status === 400);
+  check('คนอื่นแก้หมวดของเจ้าของไม่ได้', (await call('POST', '/api/connect/category-setting', { category: 'ทดสอบตั้งค่า', visibility: 'free' }, askerC)).status === 400);
+  check('ตั้งเป็นฟรีได้', (await call('POST', '/api/connect/category-setting', { category: 'ทดสอบตั้งค่า', visibility: 'free' }, ownerC)).status === 200);
+  const items = await call('GET', `/api/connect/my-categories/${tcat.id}/items`, null, ownerC);
+  check('เจ้าของดูเนื้อหาในหมวดตัวเองได้', items.status === 200 && items.json.items.length === 2);
+  check('คนอื่นดูเนื้อหาในหมวดของเจ้าของไม่ได้ (404)', (await call('GET', `/api/connect/my-categories/${tcat.id}/items`, null, askerC)).status === 404);
+  check('ตั้งกลับเป็นส่วนตัวได้', (await call('POST', '/api/connect/category-setting', { category: 'ทดสอบตั้งค่า', visibility: 'private' }, ownerC)).status === 200);
+
   // --- ความปลอดภัย ---
   const steal = await call('POST', `/api/chat/conversations/${(await call('POST', '/api/chat/conversations', {}, otherC)).json.conversation.id}/messages`, { content: 'ขโมย', askRequestId: rq.json.requestId }, otherC);
   check('คนอื่นเอา request ของผู้ขอไปใช้ไม่ได้', steal.status === 400);

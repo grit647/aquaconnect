@@ -51,6 +51,53 @@ router.post('/enabled', async (req, res) => {
   } catch (err) { fail(res, err); }
 });
 
+// ---------- ตั้งค่าข้อมูลของฉัน: ดูจำนวนเนื้อหาในแต่ละหมวด + ตั้งส่วนตัว/ฟรี/เสียเงิน (ราคาต่อชั่วโมงหรือต่อคำถาม) ----------
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+router.get('/my-categories', async (req, res) => {
+  try {
+    const [c, idle, freeMin, enabled] = await Promise.all([
+      query(`SELECT c.id, c.name, c.description, c.visibility, c.price_type, c.price_credits,
+                    (SELECT count(*)::int FROM memories m WHERE m.category_id = c.id) AS items,
+                    (SELECT max(m.created_at) FROM memories m WHERE m.category_id = c.id) AS last_at
+               FROM memory_categories c WHERE c.owner_id = $1 ORDER BY c.name`, [req.user.id]),
+      query("SELECT value FROM app_settings WHERE key = 'idle_timeout_min'"),
+      query("SELECT value FROM app_settings WHERE key = 'free_access_minutes'"),
+      sharing.getConnectEnabled(req.user.id),
+    ]);
+    res.json({
+      categories: c.rows.map((x) => ({ ...x, price_credits: x.price_credits === null ? null : Number(x.price_credits) })),
+      blockMinutes: Number(idle.rows[0] && idle.rows[0].value) || 5,
+      freeMinutes: Number(freeMin.rows[0] && freeMin.rows[0].value) || 15,
+      connectEnabled: enabled,
+    });
+  } catch (err) {
+    console.error('my-categories error:', err);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดฝั่งเซิร์ฟเวอร์' });
+  }
+});
+
+// รายการเนื้อหาในหมวดของฉัน (ดูได้เฉพาะของตัวเอง)
+router.get('/my-categories/:id/items', async (req, res) => {
+  try {
+    if (!UUID_RE.test(req.params.id)) return res.status(404).json({ error: 'ไม่พบหมวดนี้' });
+    const own = await query('SELECT name FROM memory_categories WHERE id = $1 AND owner_id = $2', [req.params.id, req.user.id]);
+    if (!own.rows[0]) return res.status(404).json({ error: 'ไม่พบหมวดนี้' });
+    const r = await query('SELECT content, created_at FROM memories WHERE category_id = $1 AND owner_id = $2 ORDER BY created_at DESC LIMIT 30', [req.params.id, req.user.id]);
+    res.json({ category: own.rows[0].name, items: r.rows.map((x) => ({ text: String(x.content).slice(0, 500), created_at: x.created_at })) });
+  } catch (err) {
+    console.error('my-category items error:', err);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดฝั่งเซิร์ฟเวอร์' });
+  }
+});
+
+router.post('/category-setting', async (req, res) => {
+  try {
+    const { category, visibility, priceType, price } = req.body || {};
+    res.json({ ok: true, category: await sharing.setCategoryVisibility(req.user.id, category, visibility, priceType, price) });
+  } catch (err) { fail(res, err); }
+});
+
 router.post('/request', async (req, res) => {
   try {
     const { ownerId, category, message } = req.body || {};

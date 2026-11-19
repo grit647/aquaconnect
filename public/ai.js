@@ -500,6 +500,7 @@
     sheetButton(body, '➕ เริ่มหัวข้อใหม่', async () => { try { await newConversation(); } catch (err) { addBubble('error', err.message); } });
     sheetButton(body, '🗂️ หัวข้อที่เคยคุย', showTopics);
     sheetButton(body, '💰 เครดิต / เติมเงิน', showCredits);
+    sheetButton(body, '⚙️ ตั้งค่าข้อมูล (ฟรี / คิดค่าบริการ)', showDataSettings);
     if (inLine) sheetButton(body, '🌐 เปิดในเบราว์เซอร์ (ใช้เสียงได้ครบ)', () => { closeSheet(); openExternal(); });
     if (me && me.isAdmin) sheetButton(body, '🛠️ หลังบ้านแอดมิน', () => { location.href = '/admin'; });
     sheetButton(body, '🚪 ออกจากระบบ', async () => {
@@ -783,6 +784,68 @@
     backButton(body, () => showPerson(p));
   }
   $('connectBtn').addEventListener('click', showConnect);
+
+  // ---------- ตั้งค่าข้อมูลของฉัน (ดูจำนวนเนื้อหา + ตั้งส่วนตัว/ฟรี/เสียเงิน) ----------
+  function statusText(c, block) {
+    if (c.visibility === 'private') return 'ส่วนตัว — ไม่มีใครเห็น';
+    return 'เปิดแชร์ · ค่าบริการ: ' + priceText(c, block);
+  }
+
+  async function showCategoryItems(c) {
+    const body = openSheet('เนื้อหาในหมวด "' + c.name + '"');
+    try {
+      const r = await api('GET', '/api/connect/my-categories/' + c.id + '/items');
+      if (!r.items.length) note(body, 'ยังไม่มีเนื้อหาในหมวดนี้');
+      r.items.forEach((it) => pcard(body, new Date(it.created_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }), it.text));
+      if (r.items.length >= 30) note(body, 'แสดง 30 รายการล่าสุด');
+    } catch (err) { note(body, err.message); }
+    backButton(body, showDataSettings);
+  }
+
+  async function saveCategorySetting(c, visibility, priceType, price) {
+    const warn = visibility === 'private'
+      ? 'ตั้งหมวด "' + c.name + '" เป็นส่วนตัว?\nสิทธิ์ที่เคยอนุญาตให้คนอื่นไว้จะถูกตัดทันที'
+      : 'เปิดหมวด "' + c.name + '" ให้คนอื่นเชื่อมต่อ (' + (visibility === 'free' ? 'ฟรี' : price + ' เครดิต/' + (priceType === 'hour' ? 'ชั่วโมง' : 'คำถาม')) + ')?\nคนอื่นจะเห็นชื่อหมวดและขอเข้าใช้ได้ แต่ต้องให้คุณกดอนุญาตก่อนทุกครั้ง';
+    if (!confirm(warn)) return false;
+    await api('POST', '/api/connect/category-setting', { category: c.name, visibility, priceType, price });
+    return true;
+  }
+
+  async function showDataSettings() {
+    const body = openSheet('ตั้งค่าข้อมูลของฉัน');
+    let r;
+    try { r = await api('GET', '/api/connect/my-categories'); } catch (err) { note(body, err.message); return; }
+    note(body, 'แต่ละหมวดตั้งได้ว่าส่วนตัว ฟรี หรือคิดค่าบริการ (เครดิต) คนอื่นต้องขออนุญาตและคุณกดอนุญาตก่อนจึงจะใช้ข้อมูลได้' +
+      (r.connectEnabled ? '' : '\n⚠️ ตอนนี้คุณปิดสวิตช์ "เชื่อมต่อ" อยู่ ไม่มีใครเห็นหมวดของคุณ (เปิดได้ที่ปุ่ม 🔗 เชื่อมต่อ ใต้ปุ่มเลขาเสียง)'));
+    if (!r.categories.length) note(body, 'ยังไม่มีหมวด — บอกเลขาให้จำเรื่องต่างๆ แล้วหมวดจะมาอยู่ที่นี่');
+    r.categories.forEach((c) => {
+      const d = pcard(body, c.name + '  · ' + c.items + ' รายการ', statusText(c, r.blockMinutes));
+      const row = document.createElement('div'); row.className = 'row2'; d.appendChild(row);
+      const reload = () => showDataSettings();
+      miniBtn(row, 'ดูเนื้อหา', () => showCategoryItems(c));
+      miniBtn(row, 'ส่วนตัว', async () => { try { if (await saveCategorySetting(c, 'private')) reload(); } catch (err) { note(body, err.message); } }, c.visibility === 'private' ? 'ok' : '');
+      miniBtn(row, 'ฟรี', async () => { try { if (await saveCategorySetting(c, 'free')) reload(); } catch (err) { note(body, err.message); } }, c.visibility === 'free' ? 'ok' : '');
+
+      // เสียเงิน: เลือกหน่วย (ต่อชั่วโมง/ต่อคำถาม) + ราคาเป็นเครดิต
+      const paidRow = document.createElement('div'); paidRow.className = 'row2'; d.appendChild(paidRow);
+      const unit = document.createElement('select');
+      [['hour', 'เครดิต / ชั่วโมง'], ['question', 'เครดิต / คำถาม']].forEach(([v, t]) => { const o = document.createElement('option'); o.value = v; o.textContent = t; unit.appendChild(o); });
+      unit.value = c.price_type || 'hour';
+      const price = document.createElement('input'); price.type = 'number'; price.min = '1'; price.step = 'any'; price.placeholder = 'ราคา เช่น 150'; price.value = c.visibility === 'paid' && c.price_credits ? c.price_credits : '';
+      paidRow.append(price, unit);
+      const hint = document.createElement('small'); hint.style.color = 'var(--muted)';
+      const showHint = () => { const v = Number(price.value); hint.textContent = unit.value === 'hour' && v > 0 ? 'คิดเป็นก้อนละ ' + r.blockMinutes + ' นาที ก้อนละ ' + (Math.round((v / 60) * r.blockMinutes * 100) / 100) + ' เครดิต' : 'เครดิต 1 = 1 บาท · แพลตฟอร์มหักส่วนแบ่งก่อนเข้ากระเป๋าคุณ'; };
+      price.addEventListener('input', showHint); unit.addEventListener('change', showHint); showHint();
+      d.appendChild(hint);
+      const rowSave = document.createElement('div'); rowSave.className = 'row2'; d.appendChild(rowSave);
+      miniBtn(rowSave, c.visibility === 'paid' ? '💾 บันทึกราคาใหม่' : '💰 ตั้งเป็นเสียเงิน', async () => {
+        const v = Number(price.value);
+        if (!(v > 0)) { note(body, 'ใส่ราคาเป็นตัวเลขมากกว่า 0 ก่อน'); return; }
+        try { if (await saveCategorySetting(c, 'paid', unit.value, v)) reload(); } catch (err) { note(body, err.message); }
+      }, c.visibility === 'paid' ? 'ok' : '');
+    });
+    if (r.categories.some((c) => c.visibility === 'free')) note(body, 'หมวดฟรี: ผู้ใช้ใช้ได้ครั้งละ ' + r.freeMinutes + ' นาทีหลังคุณอนุญาต แล้วระบบตัด ต้องขอใหม่');
+  }
 
   // ปุ่ม "จำไว้ให้เลขา": เลือกหมวด (หรือพิมพ์ชื่อหมวดใหม่) แล้วสั่งให้เลขาสรุปบทสนทนานี้เก็บเข้าความจำ
   $('saveMemoryBtn').addEventListener('click', async () => {
