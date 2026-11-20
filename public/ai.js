@@ -297,7 +297,7 @@
     } catch (err) {
       typing.remove();
       addBubble('error', err.message);
-      if (connected && /หมดเวลา|ถอนสิทธิ์|ปิดรับ|ไม่ได้รับอนุมัติ/.test(err.message)) endConnected(true);
+      if (connected && /หมดเวลา|ถอนสิทธิ์|ปิดรับ|ปิดการอนุญาต|ไม่ได้รับอนุมัติ/.test(err.message)) endConnected(true);
       if (source !== 'voice') inputEl.value = text;
     } finally {
       sending = false;
@@ -678,19 +678,19 @@
   function renderConnToggle(open) {
     connectOpen = open;
     const b = $('connToggle');
-    b.textContent = '🔗 เชื่อมต่อ: ' + (open ? 'เปิด' : 'ปิด');
+    b.textContent = (open ? '🔓' : '🔒') + ' อนุญาตใช้ข้อมูล: ' + (open ? 'เปิด' : 'ปิด');
     b.classList.toggle('on', open);
     b.classList.toggle('off', !open);
   }
   $('connToggle').addEventListener('click', async () => {
     const next = !connectOpen;
-    if (!next && !confirm('ปิดรับการเชื่อมต่อข้อมูลชั่วคราว?\nจะไม่มีใครขอหรือใช้ข้อมูลของคุณได้ (สิทธิ์ที่เคยอนุญาตไว้ยังอยู่ เปิดใหม่แล้วใช้ต่อได้)')) return;
+    if (!next && !confirm('ปิดการอนุญาตใช้ข้อมูลชั่วคราว?\nจะไม่มีใครขอหรือใช้ข้อมูลของคุณได้ (สิทธิ์ที่เคยอนุญาตไว้ยังอยู่ เปิดใหม่แล้วใช้ต่อได้)')) return;
     try {
       const r = await api('POST', '/api/connect/enabled', { enabled: next });
       renderConnToggle(r.connectEnabled);
       addBubble('hint', r.connectEnabled
-        ? 'เปิดรับการเชื่อมต่อข้อมูลแล้วค่ะ คนอื่นขอและใช้ข้อมูลในหมวดที่คุณเปิดแชร์ไว้ได้'
-        : 'ปิดรับการเชื่อมต่อข้อมูลแล้วค่ะ ตอนนี้ไม่มีใครขอหรือใช้ข้อมูลของคุณได้ (สิทธิ์เดิมยังอยู่)');
+        ? 'เปิดการอนุญาตใช้ข้อมูลแล้วค่ะ คนอื่นขอและใช้ข้อมูลในหมวดที่คุณเปิดแชร์ไว้ได้ (ต้องให้คุณกดอนุญาตก่อนทุกครั้ง)'
+        : 'ปิดการอนุญาตใช้ข้อมูลแล้วค่ะ ตอนนี้ไม่มีใครขอหรือใช้ข้อมูลของคุณได้ (สิทธิ์เดิมยังอยู่)');
     } catch (err) { addBubble('error', err.message); }
   });
 
@@ -704,7 +704,7 @@
       }
       renderConnToggle(connectEnabled !== false);
       const n = incoming.filter((r) => r.status === 'pending').length;
-      $('connectBtn').textContent = '🔗 เชื่อมต่อข้อมูล' + (n ? ' (' + n + ')' : '');
+      $('connectBtn').textContent = '🔗 เชื่อมต่อข้อมูลภายนอก' + (n ? ' (' + n + ')' : '');
       $('connectBtn').classList.toggle('on', n > 0);
     } catch (e) { /* ครั้งนี้เช็กไม่ได้ ไว้รอบหน้า */ }
   }
@@ -749,7 +749,7 @@
   function expireConnected() {
     const who = connected ? 'คุณ' + connected.owner + ' หมวด "' + connected.category + '"' : '';
     endConnected(true);
-    addBubble('hint', 'ครบเวลาใช้ข้อมูลฟรี ตัดการเชื่อมต่อ' + who + ' แล้วค่ะ ถ้าจะใช้ต่อ กด "เชื่อมต่อข้อมูล" แล้วขอเข้าใช้ใหม่อีกครั้ง');
+    addBubble('hint', 'ครบเวลาใช้ข้อมูลฟรี ตัดการเชื่อมต่อ' + who + ' แล้วค่ะ ถ้าจะใช้ต่อ กด "เชื่อมต่อข้อมูลภายนอก" แล้วขอเข้าใช้ใหม่อีกครั้ง');
   }
 
   // เฝ้าคำขอที่ส่งไป: เจ้าของกดอนุญาตเมื่อไหร่ ระบบเชื่อมต่อให้เองทันที (ผู้ขอไม่ต้องกดอะไรเพิ่ม)
@@ -788,12 +788,12 @@
   }
 
   async function showConnect() {
-    const body = openSheet('เชื่อมต่อข้อมูล');
+    const body = openSheet('เชื่อมต่อข้อมูลภายนอก');
     let mine; let people;
     try { [mine, people] = await Promise.all([api('GET', '/api/connect/mine'), api('GET', '/api/connect/people')]); }
     catch (err) { note(body, err.message); return; }
     const pending = mine.incoming.filter((r) => r.status === 'pending');
-    $('connectBtn').textContent = '🔗 เชื่อมต่อข้อมูล' + (pending.length ? ' (' + pending.length + ')' : '');
+    $('connectBtn').textContent = '🔗 เชื่อมต่อข้อมูลภายนอก' + (pending.length ? ' (' + pending.length + ')' : '');
 
     if (pending.length) {
       note(body, 'รอคุณอนุญาต', 'sub');
@@ -836,7 +836,7 @@
     note(body, 'รายชื่อสมาชิก — เลือกคนที่จะเชื่อมต่อ', 'sub');
     if (!people.people.length) note(body, 'ตอนนี้ยังไม่มีสมาชิกคนอื่นในระบบ');
     people.people.forEach((p) => {
-      if (p.open === false) sheetButton(body, '👤 ' + p.name + '  · ปิดรับการเชื่อมต่อชั่วคราว', () => { note(body, 'คุณ' + p.name + ' ปิดรับการเชื่อมต่อข้อมูลไว้ชั่วคราวค่ะ'); }, 'dim');
+      if (p.open === false) sheetButton(body, '👤 ' + p.name + '  · ปิดการอนุญาตใช้ข้อมูลชั่วคราว', () => { note(body, 'คุณ' + p.name + ' ปิดการอนุญาตใช้ข้อมูลไว้ชั่วคราวค่ะ'); }, 'dim');
       else if (p.categories > 0) sheetButton(body, '👤 ' + p.name + '  · เปิดให้ ' + p.categories + ' หมวด', () => showPerson(p));
       else sheetButton(body, '👤 ' + p.name + '  · ยังไม่ได้เปิดข้อมูล', () => { note(body, 'คุณ' + p.name + ' ยังไม่ได้เปิดหมวดข้อมูลให้เชื่อมต่อ — เมื่อเปิดแล้วจะเข้าใช้ได้ค่ะ'); }, 'dim');
     });
@@ -917,7 +917,7 @@
     let r;
     try { r = await api('GET', '/api/connect/my-categories'); } catch (err) { note(body, err.message); return; }
     note(body, 'แต่ละหมวดตั้งได้ว่าส่วนตัว ฟรี หรือคิดค่าบริการ (เครดิต) คนอื่นต้องขออนุญาตและคุณกดอนุญาตก่อนจึงจะใช้ข้อมูลได้' +
-      (r.connectEnabled ? '' : '\n⚠️ ตอนนี้คุณปิดสวิตช์ "เชื่อมต่อ" อยู่ ไม่มีใครเห็นหมวดของคุณ (เปิดได้ที่ปุ่ม 🔗 เชื่อมต่อ ใต้ปุ่มเลขาเสียง)'));
+      (r.connectEnabled ? '' : '\n⚠️ ตอนนี้คุณปิด "อนุญาตใช้ข้อมูล" อยู่ ไม่มีใครเห็นหมวดของคุณ (เปิดได้ที่ปุ่ม 🔓 อนุญาตใช้ข้อมูล ข้างรูปโปรไฟล์)'));
     if (!r.categories.length) note(body, 'ยังไม่มีหมวด — บอกเลขาให้จำเรื่องต่างๆ แล้วหมวดจะมาอยู่ที่นี่');
     r.categories.forEach((c) => {
       const d = pcard(body, c.name + '  · ' + c.items + ' รายการ', statusText(c, r.blockMinutes));

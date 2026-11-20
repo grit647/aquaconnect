@@ -94,7 +94,7 @@ async function requestAccess(userId, ownerId, categoryName, message) {
       WHERE c.owner_id = $1 AND lower(c.name) = lower($2) AND c.visibility <> 'private' AND u.status = 'active' AND u.connect_enabled`,
     [ownerId, String(categoryName || '').trim()]
   );
-  if (!cat.rows[0]) throw new Error('ไม่พบหมวดนี้ เจ้าของไม่ได้เปิดให้ขอเข้าถึง หรือปิดรับการเชื่อมต่อไว้ชั่วคราว');
+  if (!cat.rows[0]) throw new Error('ไม่พบหมวดนี้ เจ้าของไม่ได้เปิดให้ขอเข้าถึง หรือปิดการอนุญาตใช้ข้อมูลไว้ชั่วคราว');
   if (ownerId === userId) throw new Error('นี่คือหมวดของคุณเอง');
 
   const existing = await query(
@@ -175,12 +175,12 @@ async function askSharedCategory(userId, requestId, question) {
   const a = r.rows[0];
   if (!a) {
     const st = UUID_RE.test(String(requestId)) ? await query('SELECT status FROM access_requests WHERE id = $1 AND requester_id = $2', [requestId, userId]) : { rows: [] };
-    if (st.rows[0] && st.rows[0].status === 'expired') throw new Error('หมดเวลาใช้ข้อมูลฟรีแล้ว ตัดการเชื่อมต่อ — ขอเข้าใช้ใหม่อีกครั้งได้ที่ปุ่ม "เชื่อมต่อข้อมูล"');
+    if (st.rows[0] && st.rows[0].status === 'expired') throw new Error('หมดเวลาใช้ข้อมูลฟรีแล้ว ตัดการเชื่อมต่อ — ขอเข้าใช้ใหม่อีกครั้งได้ที่ปุ่ม "เชื่อมต่อข้อมูลภายนอก"');
     throw new Error('ยังไม่ได้รับอนุมัติ หรือสิทธิ์ถูกถอนแล้ว');
   }
-  if (a.expires_at && new Date(a.expires_at) < new Date()) throw new Error('หมดเวลาใช้ข้อมูลฟรีแล้ว ตัดการเชื่อมต่อ — ขอเข้าใช้ใหม่อีกครั้งได้ที่ปุ่ม "เชื่อมต่อข้อมูล"');
+  if (a.expires_at && new Date(a.expires_at) < new Date()) throw new Error('หมดเวลาใช้ข้อมูลฟรีแล้ว ตัดการเชื่อมต่อ — ขอเข้าใช้ใหม่อีกครั้งได้ที่ปุ่ม "เชื่อมต่อข้อมูลภายนอก"');
   if (a.visibility === 'private') throw new Error('เจ้าของปิดหมวดนี้เป็นส่วนตัวแล้ว');
-  if (!a.connect_enabled) throw new Error('เจ้าของปิดรับการเชื่อมต่อข้อมูลไว้ชั่วคราว (เปิดใหม่เมื่อไหร่ใช้ต่อได้ สิทธิ์ที่อนุมัติไว้ยังอยู่)');
+  if (!a.connect_enabled) throw new Error('เจ้าของปิดการอนุญาตใช้ข้อมูลไว้ชั่วคราว (เปิดใหม่เมื่อไหร่ใช้ต่อได้ สิทธิ์ที่อนุมัติไว้ยังอยู่)');
 
   // กันใช้เกินเพดานรายวัน (ใช้จำนวนรอบที่บันทึกไว้ใน access_sessions)
   const used = await query(

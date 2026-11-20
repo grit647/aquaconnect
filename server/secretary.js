@@ -138,7 +138,7 @@ function buildTools(userId, conversationId) {
     set_connect_enabled: {
       declaration: {
         name: 'set_connect_enabled',
-        description: 'เปิดหรือปิดสวิตช์หลัก "รับการเชื่อมต่อข้อมูล" ของผู้ใช้ — ปิด = ไม่มีใครขอหรือใช้ข้อมูลของผู้ใช้ได้เลยชั่วคราว (สิทธิ์ที่อนุมัติไว้ไม่หาย) ใช้เมื่อผู้ใช้สั่งชัดเจนเท่านั้น',
+        description: 'เปิดหรือปิดสวิตช์หลัก "อนุญาตใช้ข้อมูล" ของผู้ใช้ (ปุ่มข้างรูปโปรไฟล์) — ปิด = ไม่มีใครขอหรือใช้ข้อมูลของผู้ใช้ได้เลยชั่วคราว (สิทธิ์ที่อนุมัติไว้ไม่หาย) ใช้เมื่อผู้ใช้สั่งชัดเจนเท่านั้น',
         parameters: { type: 'OBJECT', properties: { enabled: { type: 'BOOLEAN', description: 'true = เปิดรับ, false = ปิดรับ' } }, required: ['enabled'] },
       },
       run: async (a) => ({ ok: true, connectEnabled: await sharing.setConnectEnabled(userId, a.enabled === true) }),

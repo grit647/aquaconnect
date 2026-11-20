@@ -203,3 +203,7 @@ body {
 #attachTray .chip-att button { border: none; background: transparent; color: var(--danger); font-size: 14px; cursor: pointer; padding: 0 6px; }
 #plusBtn { font-size: 24px; line-height: 1; }
 #sheetBody input[type=url] { padding: 11px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); color: var(--text); font: inherit; font-size: 16px; }
+
+/* สวิตช์ "อนุญาตใช้ข้อมูล" วางต่อจากรูปโปรไฟล์ มุมซ้ายล่าง ขนาดเล็ก */
+#connToggle { left: 70px; right: auto; top: auto; bottom: 22px; font-size: 11px; padding: 3px 10px; }
+#micModeBar button { padding: 6px 9px; }

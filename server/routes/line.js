@@ -39,7 +39,7 @@ async function handleEvent(ev) {
     try {
       const decision = d.get('d') === 'approve' ? 'approve' : 'deny';
       await sharing.decideRequest(u.rows[0].id, d.get('id'), decision);
-      return line.replyText(ev.replyToken, decision === 'approve' ? 'อนุญาตแล้วค่ะ ผู้ขอเริ่มใช้ข้อมูลได้เลย (ถอนสิทธิ์ได้ภายหลังในเมนู "เชื่อมต่อข้อมูล")' : 'ปฏิเสธคำขอแล้วค่ะ');
+      return line.replyText(ev.replyToken, decision === 'approve' ? 'อนุญาตแล้วค่ะ ผู้ขอเริ่มใช้ข้อมูลได้เลย (ถอนสิทธิ์ได้ภายหลังที่ปุ่ม "เชื่อมต่อข้อมูลภายนอก")' : 'ปฏิเสธคำขอแล้วค่ะ');
     } catch (err) {
       return line.replyText(ev.replyToken, 'ทำรายการไม่ได้: ' + err.message);
     }

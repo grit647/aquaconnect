@@ -124,7 +124,7 @@ async function cleanup() {
   check('ปิดสวิตช์ → เข้าดูหมวดไม่ได้ (closed, ไม่มีหมวด)', closedDet.json.closed === true && closedDet.json.categories.length === 0);
   const balBefore = Number((await query('SELECT balance FROM credit_balances WHERE user_id = $1', [asker])).rows[0].balance);
   const closedAsk = await call('POST', `/api/chat/conversations/${conv}/messages`, { content: 'ถามตอนปิด', askRequestId: rq.json.requestId }, askerC);
-  check('ปิดสวิตช์ → ใช้ข้อมูลที่เคยอนุญาตไว้ไม่ได้ และไม่ถูกหักเงิน', closedAsk.status === 400 && closedAsk.json.error.includes('ปิดรับ') && Math.abs(Number((await query('SELECT balance FROM credit_balances WHERE user_id = $1', [asker])).rows[0].balance) - balBefore) < 0.01);
+  check('ปิดสวิตช์ → ใช้ข้อมูลที่เคยอนุญาตไว้ไม่ได้ และไม่ถูกหักเงิน', closedAsk.status === 400 && closedAsk.json.error.includes('ปิดการอนุญาต') && Math.abs(Number((await query('SELECT balance FROM credit_balances WHERE user_id = $1', [asker])).rows[0].balance) - balBefore) < 0.01);
   check('ปิดสวิตช์ → ขอสิทธิ์ใหม่ไม่ได้', (await call('POST', '/api/connect/request', { ownerId: owner, category: 'ฟาร์ม' }, askerC)).status === 400);
   check('ปิดสวิตช์ → เจ้าของยังเห็นสถานะปิดของตัวเอง', (await call('GET', '/api/connect/mine', null, ownerC)).json.connectEnabled === false);
   check('เจ้าของเปิดสวิตช์กลับได้', (await call('POST', '/api/connect/enabled', { enabled: true }, ownerC)).json.connectEnabled === true);
