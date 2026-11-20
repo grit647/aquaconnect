@@ -480,7 +480,7 @@
     if (voiceStream) { try { voiceStream.getTracks().forEach((t) => t.stop()); } catch (e) { /* ignore */ } voiceStream = null; }
     $('voiceScreen').hidden = true;
     if (document.pictureInPictureElement) { document.exitPictureInPicture().catch(() => { /* ignore */ }); }
-    cleanupPip(); pipMicLost = false;
+    cleanupPip(); pipMicLost = false; $('pipGuide').hidden = true;
     $('vHint').textContent = 'สวมหูฟังบลูทูธแล้วพูดได้เลย คุยต่อเนื่องไม่ต้องกดซ้ำ — แตะไมค์เพื่อหยุดชั่วคราว';
     setBotState('idle');
     renderMic();
@@ -563,6 +563,7 @@
       video.addEventListener('leavepictureinpicture', cleanupPip, { once: true });
       setupMediaSession();
       $('vPip').textContent = '↩️ กลับเต็มจอ';
+      try { if (localStorage.getItem('aq_pip_guide') !== '1') $('pipGuide').hidden = false; } catch (e) { $('pipGuide').hidden = false; }
       $('vHint').textContent = 'หน้าต่างลอยทำงานอยู่ — ถ้าออกจากแอปแล้วเลขาไม่ได้ยิน แปลว่ามือถือพักไมค์ไว้ ให้กลับมาที่แอปเพื่อคุยต่อ';
     } catch (e) {
       cleanupPip();
@@ -570,6 +571,7 @@
     }
   }
   $('vPip').addEventListener('click', togglePip);
+  $('pgOk').addEventListener('click', () => { if ($('pgNever').checked) { try { localStorage.setItem('aq_pip_guide', '1'); } catch (e) { /* ignore */ } } $('pipGuide').hidden = true; });
   if (pipSupported()) $('vPip').hidden = false;
 
   function stopAllVoice() {

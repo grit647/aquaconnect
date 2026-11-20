@@ -268,3 +268,11 @@ body {
 #vHint { color: var(--muted); font-size: 12px; text-align: center; max-width: 360px; }
 
 #vPip { position: absolute; top: calc(14px + env(safe-area-inset-top, 0px)); right: 14px; border: 1px solid var(--neon2); background: rgba(19, 26, 48, 0.9); color: var(--neon2); border-radius: 999px; padding: 8px 14px; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
+
+#pipGuide { position: absolute; inset: 0; z-index: 5; display: flex; align-items: center; justify-content: center; background: rgba(5, 8, 20, 0.78); padding: 24px; }
+#pipGuide[hidden] { display: none; }
+#pipGuide .pg-card { background: #131a30; border: 1px solid var(--neon2); border-radius: 20px; padding: 22px 20px; text-align: center; max-width: 340px; }
+#pipGuide .pg-t { font-size: 20px; font-weight: 800; margin-bottom: 10px; }
+#pipGuide .pg-b { font-size: 16px; line-height: 1.6; color: #cfd7f5; margin-bottom: 16px; }
+#pipGuide button { width: 100%; border: 0; border-radius: 999px; padding: 12px; font: inherit; font-size: 16px; font-weight: 800; background: linear-gradient(135deg, var(--neon2), #8b5cf6); color: #06101f; cursor: pointer; }
+#pipGuide .pg-n { display: block; margin-top: 12px; font-size: 13px; color: #8d98c4; }
