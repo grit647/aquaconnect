@@ -547,7 +547,12 @@
 
   async function togglePip() {
     if (document.pictureInPictureElement) { try { await document.exitPictureInPicture(); } catch (e) { /* ignore */ } cleanupPip(); return; }
-    if (!pipSupported()) { alert('เบราว์เซอร์นี้ยังไม่รองรับหน้าต่างลอย (Picture-in-Picture) — ลองเปิดด้วย Chrome ในมือถือ/คอมพิวเตอร์'); return; }
+    if (!pipSupported()) { alert('เครื่องนี้ยังเปิดหน้าต่างลอยไม่ได้
+
+ลองทำตามนี้:
+1) ใช้ Chrome (ไม่ใช่เบราว์เซอร์ในไลน์/Facebook)
+2) ตั้งค่ามือถือ → แอป → Chrome → "ภาพซ้อนภาพ" (Picture-in-picture) → เปิดอนุญาต
+3) ต้องเป็น Android 8 ขึ้นไป และอัปเดต Chrome เป็นล่าสุด'); return; }
     try {
       const canvas = document.createElement('canvas'); canvas.width = PIP_W; canvas.height = PIP_H;
       const ctx = canvas.getContext('2d');
@@ -572,7 +577,7 @@
   }
   $('vPip').addEventListener('click', togglePip);
   $('pgOk').addEventListener('click', () => { if ($('pgNever').checked) { try { localStorage.setItem('aq_pip_guide', '1'); } catch (e) { /* ignore */ } } $('pipGuide').hidden = true; });
-  if (pipSupported()) $('vPip').hidden = false;
+  $('vPip').hidden = false; // แสดงเสมอ — ถ้าเครื่องไม่รองรับ กดแล้วมีคำแนะนำวิธีเปิดสิทธิ์
 
   function stopAllVoice() {
     exitVoiceMode();
