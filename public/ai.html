@@ -56,6 +56,7 @@
     <button id="connToggle" class="stage-btn right2" title="เปิด/ปิดรับการเชื่อมต่อข้อมูลของคุณ">🔗 เชื่อมต่อ: เปิด</button>
     <button id="ttsToggle" class="stage-btn right" title="เลขาเสียง — อ่านคำตอบให้ฟัง">🔇 เลขาเสียง</button>
     <div id="ring"></div>
+    <div id="avatar" title="โปรไฟล์ไลน์ของคุณ"></div>
     <model-viewer id="bot" src="/models/bot.glb" camera-controls auto-rotate auto-rotate-delay="0"
       rotation-per-second="18deg" camera-orbit="0deg 78deg 90%" field-of-view="32deg"
       interaction-prompt="none" disable-zoom exposure="1.1" shadow-intensity="0"></model-viewer>
@@ -71,7 +72,10 @@
     <button id="connectBtn" type="button">🔗 เชื่อมต่อข้อมูล</button>
   </div>
 
+  <div id="attachTray" hidden></div>
+
   <form id="inputBar" autocomplete="off">
+    <button id="plusBtn" type="button" class="round-btn" aria-label="แนบรูป ไฟล์ หรือลิงก์ให้เลขาอ่าน">＋</button>
     <input id="msgInput" type="text" maxlength="4000" placeholder="พิมพ์ข้อความ..." enterkeyhint="send">
     <button id="micBtn" type="button" class="round-btn" aria-label="พูดกับเลขา">🎤</button>
     <button id="sendBtn" type="submit" class="round-btn" aria-label="ส่ง">➤</button>

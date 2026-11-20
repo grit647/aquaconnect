@@ -62,6 +62,7 @@ function publicUser(u) {
     phone: u.phone,
     isAdmin: !!u.is_admin,
     secretaryName: u.secretary_name,
+    pictureUrl: u.line_picture_url || null,
   };
 }
 
@@ -70,8 +71,8 @@ function publicUser(u) {
 async function tryBindLine(userId, idToken) {
   if (!idToken) return null;
   try {
-    const { lineUserId } = await line.verifyIdToken(idToken);
-    await query('UPDATE users SET line_user_id = $2 WHERE id = $1', [userId, lineUserId]);
+    const { lineUserId, picture } = await line.verifyIdToken(idToken);
+    await query('UPDATE users SET line_user_id = $2, line_picture_url = COALESCE($3, line_picture_url) WHERE id = $1', [userId, lineUserId, picture || null]);
     return { linked: true };
   } catch (err) {
     if (err.code === '23505') return { linked: false, error: 'บัญชี LINE นี้ผูกกับบัญชีอื่นอยู่แล้ว' };
@@ -178,7 +179,7 @@ router.post('/login', async (req, res) => {
     }
 
     const r = await query(
-      'SELECT id, phone, name, pin_hash, is_admin, status, secretary_name FROM users WHERE phone = $1',
+      'SELECT id, phone, name, pin_hash, is_admin, status, secretary_name, line_picture_url FROM users WHERE phone = $1',
       [phone]
     );
     const user = r.rows[0];
@@ -225,13 +226,17 @@ router.post('/line', async (req, res) => {
     }
 
     const r = await query(
-      'SELECT id, phone, name, is_admin, status, secretary_name FROM users WHERE line_user_id = $1',
+      'SELECT id, phone, name, is_admin, status, secretary_name, line_picture_url FROM users WHERE line_user_id = $1',
       [info.lineUserId]
     );
     const user = r.rows[0];
     if (!user) return res.json({ ok: false, needsLink: true, lineName: info.name });
     if (user.status !== 'active') return res.status(403).json({ error: 'บัญชีนี้ถูกระงับการใช้งาน ติดต่อแอดมิน' });
 
+    if (info.picture && info.picture !== user.line_picture_url) {
+      await query('UPDATE users SET line_picture_url = $2 WHERE id = $1', [user.id, info.picture]);
+      user.line_picture_url = info.picture;
+    }
     setAuthCookie(req, res, issueToken(user));
     res.json({ ok: true, user: publicUser(user) });
   } catch (err) {
@@ -283,7 +288,7 @@ router.get('/me', async (req, res) => {
   if (!session) return res.json({ user: null });
   try {
     const r = await query(
-      "SELECT id, phone, name, is_admin, secretary_name FROM users WHERE id = $1 AND status = 'active'",
+      "SELECT id, phone, name, is_admin, secretary_name, line_picture_url FROM users WHERE id = $1 AND status = 'active'",
       [session.id]
     );
     res.json({ user: r.rows[0] ? publicUser(r.rows[0]) : null });

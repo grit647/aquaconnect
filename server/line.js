@@ -59,7 +59,13 @@ function pushButtons(lineUserId, altText, text, actions) {
   });
 }
 
-// ตรวจ ID token ที่ LIFF ให้มา กับ LINE โดยตรง (ปลอมไม่ได้) — คืน { lineUserId, name }
+// รับเฉพาะ URL รูปโปรไฟล์ที่มาจากโดเมนรูปของ LINE (กันใส่ลิงก์อื่นแล้วหน้าเว็บไปโหลดรูปจากที่ไม่รู้จัก)
+function safePictureUrl(u) {
+  const s = String(u || '');
+  return /^https:\/\/profile\.line-scdn\.net\/[A-Za-z0-9_\-\/.]+$/.test(s) && s.length < 300 ? s : null;
+}
+
+// ตรวจ ID token ที่ LIFF ให้มา กับ LINE โดยตรง (ปลอมไม่ได้) — คืน { lineUserId, name, picture }
 async function realVerifyIdToken(idToken) {
   const clientId = process.env.LINE_LOGIN_CHANNEL_ID;
   if (!clientId) throw new Error('ยังไม่ได้ตั้งค่า LINE_LOGIN_CHANNEL_ID');
@@ -71,11 +77,11 @@ async function realVerifyIdToken(idToken) {
   if (!res.ok) throw new Error('ยืนยันตัวตนกับ LINE ไม่สำเร็จ');
   const data = await res.json();
   if (!data.sub) throw new Error('ยืนยันตัวตนกับ LINE ไม่สำเร็จ');
-  return { lineUserId: data.sub, name: data.name || '' };
+  return { lineUserId: data.sub, name: data.name || '', picture: safePictureUrl(data.picture) };
 }
 
 let verifyIdTokenImpl = realVerifyIdToken;
 function verifyIdToken(idToken) { return verifyIdTokenImpl(idToken); }
 function setVerifyIdTokenForTests(fn) { verifyIdTokenImpl = fn || realVerifyIdToken; } // ทดสอบโดยไม่ต้องคุยกับ LINE จริง
 
-module.exports = { isConfigured, verifySignature, replyText, pushText, pushButtons, verifyIdToken, setVerifyIdTokenForTests, setSenderForTests };
+module.exports = { safePictureUrl, isConfigured, verifySignature, replyText, pushText, pushButtons, verifyIdToken, setVerifyIdTokenForTests, setSenderForTests };

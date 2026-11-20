@@ -92,6 +92,24 @@
     }
   });
 
+  // ---------- รูปโปรไฟล์ไลน์ ----------
+  let liffPicture = null;      // รูปจาก liff.getProfile() (เฉพาะตอนเปิดในไลน์) ใช้เมื่อเซิร์ฟเวอร์ยังไม่มีรูปเก็บไว้
+  const LINE_PIC_RE = /^https:\/\/profile\.line-scdn\.net\//;
+  function avatarContent(el) {
+    el.textContent = '';
+    const url = (me && me.pictureUrl) || liffPicture;
+    if (url && LINE_PIC_RE.test(url)) {
+      const img = document.createElement('img');
+      img.alt = ''; img.referrerPolicy = 'no-referrer';
+      img.onerror = () => { el.textContent = (me && me.name ? me.name.trim().charAt(0) : '?'); };
+      img.src = url;
+      el.appendChild(img);
+    } else {
+      el.textContent = me && me.name ? me.name.trim().charAt(0) : '?';
+    }
+  }
+  function renderAvatar() { avatarContent($('avatar')); }
+
   // ---------- สถานะบอท ----------
   const STATE_TEXT = { idle: 'พร้อมคุยค่ะ', thinking: 'เลขากำลังคิด...', speaking: 'เลขากำลังพูด...', listening: 'กำลังฟังอยู่ค่ะ...' };
   let botState = 'idle';
@@ -168,6 +186,7 @@
     appEl.hidden = false;
     document.body.classList.remove('auth-mode');
     setBotState('idle');
+    renderAvatar();
     refreshConnectBadge();
     try {
       const { conversations } = await api('GET', '/api/chat/conversations');
@@ -178,15 +197,89 @@
     }
   }
 
+  // ---------- แนบรูป / ไฟล์ / ลิงก์ให้เลขาอ่าน ----------
+  const MAX_FILES = 4;
+  const MAX_RAW_BYTES = 3.5 * 1024 * 1024;
+  const FILE_TYPES = { pdf: 'application/pdf', txt: 'text/plain', csv: 'text/csv', md: 'text/markdown', json: 'application/json' };
+  let pendingFiles = [];   // { name, mime, data(base64) }
+
+  function renderTray() {
+    const tray = $('attachTray');
+    tray.textContent = '';
+    tray.hidden = !pendingFiles.length;
+    pendingFiles.forEach((f, i) => {
+      const chip = document.createElement('div'); chip.className = 'chip-att';
+      const t = document.createElement('span'); t.textContent = (f.mime.startsWith('image/') ? '🖼️ ' : f.mime === 'application/pdf' ? '📕 ' : '📄 ') + f.name;
+      const x = document.createElement('button'); x.type = 'button'; x.textContent = '✕'; x.setAttribute('aria-label', 'เอาออก');
+      x.addEventListener('click', () => { pendingFiles.splice(i, 1); renderTray(); });
+      chip.append(t, x); tray.appendChild(chip);
+    });
+  }
+
+  function readFileBase64(file) {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result).split(',')[1] || '');
+      r.onerror = () => reject(new Error('อ่านไฟล์ไม่ได้'));
+      r.readAsDataURL(file);
+    });
+  }
+
+  async function addFiles(fileList) {
+    for (const file of fileList) {
+      if (pendingFiles.length >= MAX_FILES) { addBubble('error', 'แนบได้สูงสุด ' + MAX_FILES + ' ไฟล์ต่อข้อความค่ะ'); break; }
+      try {
+        if (file.type.startsWith('image/')) {
+          const data = await fileToJpegBase64(file, 1600);          // ย่อรูปก่อนส่ง ประหยัดเน็ตและค่าอ่านรูป
+          pendingFiles.push({ name: file.name || 'รูปภาพ', mime: 'image/jpeg', data });
+        } else {
+          const ext = (file.name.split('.').pop() || '').toLowerCase();
+          const mime = FILE_TYPES[ext];
+          if (!mime) throw new Error('ไฟล์ "' + file.name + '" ชนิดที่ยังไม่รองรับ (รองรับ รูปภาพ, PDF, txt, csv, md, json)');
+          if (file.size > MAX_RAW_BYTES) throw new Error('ไฟล์ "' + file.name + '" ใหญ่เกินไป (ไม่เกินประมาณ 3.5 MB)');
+          pendingFiles.push({ name: file.name, mime, data: await readFileBase64(file) });
+        }
+      } catch (err) { addBubble('error', err.message); }
+    }
+    renderTray();
+  }
+
+  function pickFiles(accept, multiple) {
+    const inp = document.createElement('input');
+    inp.type = 'file'; inp.accept = accept; inp.multiple = multiple;
+    inp.addEventListener('change', () => { closeSheet(); if (inp.files && inp.files.length) addFiles([...inp.files]); });
+    inp.click();
+  }
+
+  $('plusBtn').addEventListener('click', () => {
+    const body = openSheet('แนบให้เลขาอ่าน');
+    note(body, 'แนบได้สูงสุด ' + MAX_FILES + ' ไฟล์ต่อข้อความ แล้วพิมพ์บอกเลขาว่าอยากให้ทำอะไร เช่น "สรุปให้หน่อย" หรือ "จำไว้ในหมวดฟาร์ม"');
+    if (connected) note(body, '⚠️ ตอนนี้อยู่ในโหมดใช้ข้อมูลของคนอื่น แนบไฟล์ไม่ได้ — กด "จบการใช้ข้อมูล" ก่อน');
+    sheetButton(body, '📷 รูปภาพ (ถ่ายรูป / เลือกจากเครื่อง)', () => pickFiles('image/*', true));
+    sheetButton(body, '📄 ไฟล์ (PDF / txt / csv / md / json)', () => pickFiles('.pdf,.txt,.csv,.md,.json,application/pdf,text/plain,text/csv,text/markdown,application/json', true));
+    note(body, 'หรือวางลิงก์เว็บ — เลขาจะเปิดอ่านหน้าเว็บให้ (ใช้ได้เฉพาะหน้าที่เปิดสาธารณะ ไม่ต้องล็อกอิน)', 'sub');
+    const url = document.createElement('input'); url.type = 'url'; url.placeholder = 'https://...'; body.appendChild(url);
+    const status = note(body, '');
+    sheetButton(body, '🔗 ใส่ลิงก์ในข้อความ', () => {
+      const v = url.value.trim();
+      if (!/^https?:\/\/\S+$/i.test(v)) { status.textContent = 'ลิงก์ต้องขึ้นต้นด้วย http:// หรือ https://'; return; }
+      inputEl.value = (inputEl.value ? inputEl.value.trim() + ' ' : '') + v + ' ';
+      closeSheet(); inputEl.focus();
+    });
+  });
+
   // ---------- ส่งข้อความ ----------
   async function send(text, source) {
     text = (text || '').trim();
-    if (!text || sending || !conversationId) return false;
+    if ((!text && !pendingFiles.length) || sending || !conversationId) return false;
+    if (connected && pendingFiles.length) { addBubble('error', 'โหมดใช้ข้อมูลของคนอื่นแนบไฟล์ไม่ได้ — กด "จบการใช้ข้อมูล" ก่อน หรือเอาไฟล์ออกค่ะ'); return false; }
+    const files = pendingFiles.slice();
+    if (!text) text = 'ช่วยอ่านสิ่งที่แนบให้หน่อย';
     sending = true;
     sendBtn.disabled = true;
     inputEl.value = '';
     cancelSpeech();
-    addBubble('user', text);
+    addBubble('user', text + (files.length ? '\n📎 ' + files.map((f) => f.name).join(', ') : ''));
     const typing = document.createElement('div');
     typing.className = 'typing';
     typing.textContent = me.secretaryName + ' กำลังพิมพ์...';
@@ -195,11 +288,12 @@
     setBotState('thinking');
     let replyText = null;
     try {
-      const { reply, savedMemories } = await api('POST', '/api/chat/conversations/' + conversationId + '/messages', { content: text, source: source || 'text', askRequestId: connected ? connected.requestId : undefined });
+      const { reply, savedMemories } = await api('POST', '/api/chat/conversations/' + conversationId + '/messages', { content: text, source: source || 'text', askRequestId: connected ? connected.requestId : undefined, attachments: files.length ? files : undefined });
       typing.remove();
       addBubble('assistant', reply);
       (savedMemories || []).forEach((m) => addSavedChip(m.category));
       replyText = reply;
+      if (files.length) { pendingFiles = []; renderTray(); }
     } catch (err) {
       typing.remove();
       addBubble('error', err.message);
@@ -496,7 +590,14 @@
   }
 
   $('menuBtn').addEventListener('click', () => {
-    const body = openSheet(me ? me.name + ' · ' + me.secretaryName : 'เมนู');
+    const body = openSheet('เมนู');
+    if (me) {
+      const head = document.createElement('div'); head.className = 'menu-head';
+      const av = document.createElement('div'); av.className = 'av'; avatarContent(av);
+      const who = document.createElement('div'); who.className = 'who';
+      const nm = document.createElement('b'); nm.textContent = me.name; const sm = document.createElement('small'); sm.textContent = 'เลขา: ' + me.secretaryName;
+      who.append(nm, sm); head.append(av, who); body.appendChild(head);
+    }
     sheetButton(body, '➕ เริ่มหัวข้อใหม่', async () => { try { await newConversation(); } catch (err) { addBubble('error', err.message); } });
     sheetButton(body, '🗂️ หัวข้อที่เคยคุย', showTopics);
     sheetButton(body, '💰 เครดิต / เติมเงิน', showCredits);
@@ -878,6 +979,7 @@
       inLine = window.liff.isInClient();
       if (!inLine) return null;
       if (!window.liff.isLoggedIn()) { window.liff.login(); return 'redirect'; }
+      try { const prof = await window.liff.getProfile(); liffPicture = prof && prof.pictureUrl ? prof.pictureUrl : null; } catch (e) { /* ไม่มีรูปก็แสดงตัวอักษรแทน */ }
       return window.liff.getIDToken() || null;
     } catch (e) {
       return null;

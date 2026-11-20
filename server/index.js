@@ -20,6 +20,8 @@ app.set('trust proxy', 1); // อยู่หลังพร็อกซีข�
 app.use('/api/chat/transcribe', express.json({ limit: '7mb' }));
 // รูปสลิป/รูป QR เป็น base64 ขนาดเกิน 1MB — ขยายเฉพาะสองเส้นทางนี้ (เพดานจริงตรวจซ้ำในโค้ดแต่ละเส้นทาง)
 app.use('/api/credits/topups', express.json({ limit: '3mb' }));
+// ส่งข้อความพร้อมไฟล์แนบ (รูป/PDF เป็น base64) — เพดานจริง (4 ไฟล์ รวม ~8MB) ตรวจซ้ำใน attachments.js
+app.use(/^\/api\/chat\/conversations\/[^/]+\/messages$/, express.json({ limit: '9mb' }));
 app.use('/api/admin/payment-qr', express.json({ limit: '3mb' }));
 // เก็บ body ดิบไว้ด้วย (req.rawBody) เพราะการตรวจลายเซ็น webhook ของ LINE ต้องใช้ข้อความดิบก่อนถูกแปลงเป็น JSON
 app.use(express.json({ limit: '1mb', verify: (req, res, buf) => { req.rawBody = buf; } }));

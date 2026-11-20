@@ -161,7 +161,7 @@ function setReadSlipForTests(fn) { readSlipImpl = fn || realReadSlip; }
 async function runAgent({ systemPrompt, history, tools, maxSteps = 4 }) {
   const contents = history.map((m) => ({
     role: m.role === 'assistant' ? 'model' : 'user',
-    parts: [{ text: m.content }],
+    parts: [{ text: m.content }, ...(m.extraParts || [])],   // extraParts = รูป/PDF แนบ (inlineData) ของข้อความนั้น
   }));
   const toolDeclarations = Object.values(tools || {}).map((t) => t.declaration);
   const executed = [];
