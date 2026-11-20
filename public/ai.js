@@ -547,12 +547,7 @@
 
   async function togglePip() {
     if (document.pictureInPictureElement) { try { await document.exitPictureInPicture(); } catch (e) { /* ignore */ } cleanupPip(); return; }
-    if (!pipSupported()) { alert('เครื่องนี้ยังเปิดหน้าต่างลอยไม่ได้
-
-ลองทำตามนี้:
-1) ใช้ Chrome (ไม่ใช่เบราว์เซอร์ในไลน์/Facebook)
-2) ตั้งค่ามือถือ → แอป → Chrome → "ภาพซ้อนภาพ" (Picture-in-picture) → เปิดอนุญาต
-3) ต้องเป็น Android 8 ขึ้นไป และอัปเดต Chrome เป็นล่าสุด'); return; }
+    if (!pipSupported()) { alert('เครื่องนี้ยังเปิดหน้าต่างลอยไม่ได้\n\nลองทำตามนี้:\n1) ใช้ Chrome (ไม่ใช่เบราว์เซอร์ในไลน์/Facebook)\n2) ตั้งค่ามือถือ → แอป → Chrome → "ภาพซ้อนภาพ" (Picture-in-picture) → เปิดอนุญาต\n3) ต้องเป็น Android 8 ขึ้นไป และอัปเดต Chrome เป็นล่าสุด'); return; }
     try {
       const canvas = document.createElement('canvas'); canvas.width = PIP_W; canvas.height = PIP_H;
       const ctx = canvas.getContext('2d');
