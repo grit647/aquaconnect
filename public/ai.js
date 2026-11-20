@@ -353,23 +353,10 @@
     speechToken++;
     if (ttsSupported) window.speechSynthesis.cancel();
   }
-  function cleanForSpeech(t) {
-    return String(t)
-      .replace(/[*_`#>~]/g, '')
-      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-      .replace(/\p{Extended_Pictographic}/gu, '')
-      .replace(/\s+/g, ' ').trim();
-  }
-  function chunkText(t) {
-    const parts = t.split(/(?<=[.!?。！？\n])\s*|\s{2,}/).filter(Boolean);
-    const out = [];
-    let cur = '';
-    for (const p of parts) {
-      if ((cur + ' ' + p).length > 160 && cur) { out.push(cur); cur = p; } else { cur = cur ? cur + ' ' + p : p; }
-    }
-    if (cur) out.push(cur);
-    return out;
-  }
+  // การเตรียมข้อความก่อนอ่านออกเสียง (ทศนิยม "0.25" → "0 จุด 25", เดือนย่อ "พ.ย." → "พฤศจิกายน", ตัด markdown/อีโมจิ)
+  // อยู่ที่ speech.js (ไฟล์เดียวกับที่ชุดทดสอบใช้)
+  const cleanForSpeech = (t) => window.aqSpeech.forSpeech(t);
+  const chunkText = (t) => window.aqSpeech.chunkText(t);
   function speak(text, done) {
     if (!ttsSupported) { done && done(); return; }
     const chunks = chunkText(cleanForSpeech(text));
