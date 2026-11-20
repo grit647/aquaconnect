@@ -416,7 +416,7 @@
   let wakeLock = null;
 
   async function lockScreen() {
-    try { if ('wakeLock' in navigator && !wakeLock) wakeLock = await navigator.wakeLock.request('screen'); } catch (e) { /* ไม่รองรับก็ข้าม */ }
+    try { if ('wakeLock' in navigator && !wakeLock) { wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', () => { wakeLock = null; }); } } catch (e) { /* ไม่รองรับก็ข้าม */ }
   }
   function unlockScreen() {
     try { if (wakeLock) wakeLock.release(); } catch (e) { /* ignore */ }
@@ -1408,5 +1408,5 @@
   })();
 
   // กลับมาที่แท็บ: ขอ wake lock คืน (เบราว์เซอร์ปล่อยให้เองตอนซ่อนแท็บ)
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && realtime) lockScreen(); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && (realtime || voiceMode)) lockScreen(); });
 })();
