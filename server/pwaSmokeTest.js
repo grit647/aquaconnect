@@ -34,6 +34,7 @@ const get = async (p) => { const r = await fetch(BASE + p); return { status: r.s
   const html = (await get('/ai.html')).buf.toString('utf8');
   check('หน้าเว็บเชื่อม manifest + ไอคอน + ตั้งค่าแอปมือถือ', html.includes('rel="manifest" href="/manifest.webmanifest"') && html.includes('apple-touch-icon') && html.includes('mobile-web-app-capable'));
   check('หน้าสนทนาเสียงมีครบ: ปุ่มไมค์กลางจอ ปุ่มจบ ข้อความสถานะ คำบรรยาย', ['id="voiceScreen"', 'id="vMic"', 'id="vExit"', 'id="vState"', 'id="vReply"'].every((x) => html.includes(x)));
+  check('ปุ่มหน้าต่างลอย (PiP) มีอยู่ ซ่อนไว้จนกว่าเบราว์เซอร์รองรับ', /id="vPip"[^>]*hidden/.test(html));
   check('ปุ่มสลับ "โหมดปกติ/เรียลไทม์" เดิมถูกเอาออกแล้ว (เหลือไมค์ปุ่มเดียว)', !html.includes('realtimeMicToggle'));
   check('เส้นทางแปลก (ไม่ใช่ไฟล์) ยังตกไปหน้าแอป ไม่กระทบ', (await get('/something-random')).buf.toString('utf8').includes('id="voiceScreen"'));
 

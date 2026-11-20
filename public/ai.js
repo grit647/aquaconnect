@@ -477,6 +477,9 @@
     cancelSpeech(); stopRecording(true); unlockScreen();
     if (voiceStream) { try { voiceStream.getTracks().forEach((t) => t.stop()); } catch (e) { /* ignore */ } voiceStream = null; }
     $('voiceScreen').hidden = true;
+    if (document.pictureInPictureElement) { document.exitPictureInPicture().catch(() => { /* ignore */ }); }
+    cleanupPip(); pipMicLost = false;
+    $('vHint').textContent = 'สวมหูฟังบลูทูธแล้วพูดได้เลย คุยต่อเนื่องไม่ต้องกดซ้ำ — แตะไมค์เพื่อหยุดชั่วคราว';
     setBotState('idle');
     renderMic();
   }
@@ -484,6 +487,88 @@
   $('micBtn').addEventListener('click', () => enterVoiceMode(false));
   $('vExit').addEventListener('click', exitVoiceMode);
   $('vMic').addEventListener('click', () => { if (voicePaused) resumeVoice(); else pauseVoice(); });
+
+
+  // ---------- หน้าต่างเล็กลอย (Picture-in-Picture) — ทดลอง ----------
+  // ย่อหน้าสนทนาเสียงเป็นหน้าต่างวิดีโอเล็กๆ ลอยอยู่บนหน้าจอหลัก/แอปอื่น (วาดสถานะลงภาพวิดีโอ) ไม่ต้องติดตั้งแอป
+  // ข้อจำกัดของเบราว์เซอร์: หน้าต่างลอยกดได้แค่ เล่น/หยุด (ผูกกับ "คุยต่อ/หยุดฟังชั่วคราว") และแตะเพื่อกลับแอป
+  // และระบบมือถืออาจพักไมค์เมื่อออกจากแอป — ถ้าเกิดขึ้น เบราว์เซอร์แจ้งว่าไมค์ถูกพัก เราแสดงข้อความในหน้าต่างลอยให้เห็น
+  let pip = null; let pipMicLost = false;
+  const PIP_W = 480; const PIP_H = 270;
+  const pipSupported = () => !!(document.pictureInPictureEnabled && HTMLCanvasElement.prototype.captureStream);
+
+  function bindMicWatch(stream) {
+    stream.getAudioTracks().forEach((t) => {
+      t.onmute = () => { pipMicLost = true; };
+      t.onunmute = () => { pipMicLost = false; };
+      t.onended = () => { pipMicLost = true; };
+    });
+  }
+
+  function drawPip(ctx) {
+    const w = PIP_W; const h = PIP_H; const t = Date.now() / 1000;
+    const g = ctx.createRadialGradient(w / 2, h * 0.4, 8, w / 2, h * 0.4, w * 0.7);
+    g.addColorStop(0, '#1d2a5e'); g.addColorStop(1, '#070a16');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+    const st = pipMicLost ? 'lost' : (voicePaused ? 'paused' : botState);
+    const color = { listening: '#34d399', thinking: '#a78bfa', speaking: '#22d3ee', idle: '#22d3ee', paused: '#8d98c4', lost: '#fb7185' }[st] || '#22d3ee';
+    const label = st === 'lost' ? 'ไมค์ถูกระบบพักไว้ — แตะเพื่อกลับแอป' : st === 'paused' ? 'หยุดฟังชั่วคราว (กดเล่นเพื่อคุยต่อ)' : (STATE_TEXT[st] || '');
+    const pulse = (st === 'listening' || st === 'speaking') ? 1 + 0.07 * Math.sin(t * 5) : 1;
+    ctx.lineWidth = 7; ctx.strokeStyle = color; ctx.shadowColor = color; ctx.shadowBlur = 20;
+    ctx.beginPath(); ctx.arc(w / 2, h * 0.4, h * 0.2 * pulse, 0, Math.PI * 2); ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = Math.round(h * 0.22) + 'px sans-serif'; ctx.fillStyle = '#fff'; ctx.fillText('🎙️', w / 2, h * 0.4);
+    ctx.font = 'bold ' + Math.round(h * 0.085) + 'px sans-serif'; ctx.fillStyle = color; ctx.fillText(label, w / 2, h * 0.78);
+    ctx.font = Math.round(h * 0.06) + 'px sans-serif'; ctx.fillStyle = '#8d98c4'; ctx.fillText('เลขา AquaConnect · แตะเพื่อกลับไปที่แอป', w / 2, h * 0.92);
+  }
+
+  function setupMediaSession() {
+    if (!('mediaSession' in navigator)) return;
+    try {
+      navigator.mediaSession.metadata = new MediaMetadata({ title: 'เลขา AquaConnect', artist: 'สนทนาด้วยเสียง', artwork: [{ src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' }] });
+      navigator.mediaSession.playbackState = 'playing';
+      navigator.mediaSession.setActionHandler('pause', () => { if (voiceMode && !voicePaused) pauseVoice(); navigator.mediaSession.playbackState = 'paused'; });
+      navigator.mediaSession.setActionHandler('play', () => { if (voiceMode && voicePaused) resumeVoice(); navigator.mediaSession.playbackState = 'playing'; });
+    } catch (e) { /* ไม่รองรับบางคำสั่งก็ข้าม */ }
+  }
+  function clearMediaSession() {
+    if (!('mediaSession' in navigator)) return;
+    try { navigator.mediaSession.setActionHandler('pause', null); navigator.mediaSession.setActionHandler('play', null); navigator.mediaSession.metadata = null; } catch (e) { /* ignore */ }
+  }
+
+  function cleanupPip() {
+    if (pip) { clearInterval(pip.timer); try { pip.video.pause(); pip.video.srcObject = null; pip.video.remove(); } catch (e) { /* ignore */ } pip = null; }
+    clearMediaSession();
+    if ($('vPip')) $('vPip').textContent = '📺 ย่อเป็นหน้าต่างลอย';
+  }
+
+  async function togglePip() {
+    if (document.pictureInPictureElement) { try { await document.exitPictureInPicture(); } catch (e) { /* ignore */ } cleanupPip(); return; }
+    if (!pipSupported()) { alert('เบราว์เซอร์นี้ยังไม่รองรับหน้าต่างลอย (Picture-in-Picture) — ลองเปิดด้วย Chrome ในมือถือ/คอมพิวเตอร์'); return; }
+    try {
+      const canvas = document.createElement('canvas'); canvas.width = PIP_W; canvas.height = PIP_H;
+      const ctx = canvas.getContext('2d');
+      const video = document.createElement('video');
+      video.muted = true; video.playsInline = true; video.autoplay = true;
+      video.srcObject = canvas.captureStream(10);
+      Object.assign(video.style, { position: 'fixed', left: '0', top: '0', width: '2px', height: '2px', opacity: '0.01', pointerEvents: 'none' });
+      document.body.appendChild(video);
+      drawPip(ctx);
+      pip = { video, timer: setInterval(() => drawPip(ctx), 100) };
+      await video.play();
+      await video.requestPictureInPicture();
+      video.addEventListener('leavepictureinpicture', cleanupPip, { once: true });
+      setupMediaSession();
+      $('vPip').textContent = '↩️ กลับเต็มจอ';
+      $('vHint').textContent = 'หน้าต่างลอยทำงานอยู่ — ถ้าออกจากแอปแล้วเลขาไม่ได้ยิน แปลว่ามือถือพักไมค์ไว้ ให้กลับมาที่แอปเพื่อคุยต่อ';
+    } catch (e) {
+      cleanupPip();
+      alert('เปิดหน้าต่างลอยไม่ได้: ' + (e && e.message ? e.message : e));
+    }
+  }
+  $('vPip').addEventListener('click', togglePip);
+  if (pipSupported()) $('vPip').hidden = false;
 
   function stopAllVoice() {
     exitVoiceMode();
@@ -508,7 +593,7 @@
       if (voiceMode && voiceStream && voiceStream.active) stream = voiceStream;
       else {
         stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
-        if (voiceMode) voiceStream = stream;
+        if (voiceMode) { voiceStream = stream; bindMicWatch(stream); }
       }
     } catch (e) {
       if (voiceMode) exitVoiceMode();
