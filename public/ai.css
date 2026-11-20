@@ -207,3 +207,39 @@ body {
 /* สวิตช์ "อนุญาตใช้ข้อมูล" วางต่อจากรูปโปรไฟล์ มุมซ้ายล่าง ขนาดเล็ก */
 #connToggle { left: 70px; right: auto; top: auto; bottom: 22px; font-size: 11px; padding: 3px 10px; }
 #micModeBar button { padding: 6px 9px; }
+
+/* ปฏิทิน & เตือน — popup กลางจอ สไตล์นีออน */
+#calOverlay { position: fixed; inset: 0; z-index: 60; background: rgba(2, 6, 23, 0.74); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; padding: 14px; }
+#calCard { width: 100%; max-width: 440px; max-height: 88vh; overflow-y: auto; background: linear-gradient(160deg, rgba(19, 26, 48, 0.98), rgba(11, 15, 30, 0.98)); border: 1px solid var(--neon); border-radius: 22px; box-shadow: 0 0 40px rgba(34, 211, 238, 0.25), inset 0 0 30px rgba(167, 139, 250, 0.08); padding: 14px 14px 16px; }
+.cal-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.cal-head b { flex: 1; text-align: center; color: var(--neon); font-size: 16px; text-shadow: 0 0 8px rgba(34, 211, 238, 0.6); }
+.cal-nav { border: 1px solid var(--line); background: var(--panel2); color: var(--text); width: 36px; height: 36px; border-radius: 50%; font-size: 18px; cursor: pointer; flex-shrink: 0; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; text-align: center; }
+.cal-dow { color: var(--muted); font-size: 12px; padding: 4px 0; }
+.cal-day { position: relative; aspect-ratio: 1; border: 1px solid transparent; background: rgba(27, 36, 66, 0.6); border-radius: 10px; color: var(--text); font: inherit; font-size: 14px; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 0; }
+.cal-day.empty { visibility: hidden; }
+.cal-day.today { border-color: var(--neon); box-shadow: 0 0 10px rgba(34, 211, 238, 0.45); }
+.cal-day.sel { background: linear-gradient(135deg, #0e7490, #6d28d9); }
+.cal-day .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--neon2); box-shadow: 0 0 6px var(--neon2); }
+.cal-day .dot.due { background: var(--danger); box-shadow: 0 0 8px var(--danger); animation: pulse2 1s ease-in-out infinite; }
+.cal-day .cnt { font-size: 10px; color: var(--neon2); line-height: 1; }
+.cal-sub { margin: 12px 0 2px; font-weight: 800; color: var(--neon); font-size: 14px; }
+.cal-ev { border: 1px solid var(--line); background: var(--panel2); border-radius: 12px; padding: 9px 12px; margin-top: 8px; }
+.cal-ev .t { font-weight: 700; }
+.cal-ev small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; white-space: pre-wrap; }
+.cal-ev .st { display: inline-block; font-size: 11px; border-radius: 999px; padding: 0 8px; margin-left: 6px; border: 1px solid var(--line); }
+.cal-ev .st.ok { color: var(--ok); border-color: var(--ok); } .cal-ev .st.due { color: var(--danger); border-color: var(--danger); }
+.cal-ev .row2 { display: flex; gap: 8px; margin-top: 8px; }
+.cal-ev .row2 button, .cal-btn { flex: 1; border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 10px; padding: 8px; font: inherit; font-size: 14px; cursor: pointer; }
+.cal-ev .row2 button.ok, .cal-btn.ok { border-color: var(--ok); color: var(--ok); }
+.cal-ev .row2 button.danger { color: var(--danger); border-color: var(--danger); }
+.cal-btn { width: 100%; margin-top: 10px; padding: 10px; font-weight: 700; }
+.cal-btn.primary { border-color: var(--neon); color: var(--neon); }
+.cal-form label { display: block; font-size: 13px; font-weight: 700; margin: 10px 0 4px; }
+.cal-form input[type=text], .cal-form input[type=date], .cal-form input[type=time], .cal-form select, .cal-form textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--text); font: inherit; font-size: 16px; }
+.cal-form textarea { resize: vertical; min-height: 64px; }
+.cal-form .two { display: flex; gap: 8px; } .cal-form .two > div { flex: 1; min-width: 0; }
+.cal-form .chk { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 14px; }
+.cal-err { color: var(--danger); font-size: 13px; margin-top: 8px; min-height: 18px; }
+
+.cal-empty { color: var(--muted); font-size: 13px; margin-top: 6px; }

@@ -2,12 +2,13 @@
 const memory = require('./memory');
 const sharing = require('./sharing');
 const credits = require('./credits');
+const cal = require('./calendar');
 
 // ค่าเริ่มต้นของบุคลิกเลขา (ผู้ใช้แต่ละคนเปลี่ยนเองได้ผ่าน users.secretary_persona) — กำหนดคำลงท้ายตายตัว
 // ไม่งั้นโมเดลจะสลับ "ครับ/ค่ะ" ไปมาระหว่างข้อความ
 const DEFAULT_PERSONA = 'เลขาผู้หญิง สุภาพ อบอุ่น เป็นกันเอง กระชับ ใช้คำลงท้าย "ค่ะ/นะคะ" เสมอ';
 
-function buildSystemPrompt({ secretaryName, persona, userName, memoryContext, pendingRequests = 0 }) {
+function buildSystemPrompt({ secretaryName, persona, userName, memoryContext, pendingRequests = 0, nowText = '' }) {
   return `คุณคือ "${secretaryName}" ผู้ช่วยส่วนตัว (เลขา) ของ "${userName}" บนแพลตฟอร์ม AquaConnect
 บุคลิก: ${persona || DEFAULT_PERSONA}
 
@@ -22,6 +23,7 @@ function buildSystemPrompt({ secretaryName, persona, userName, memoryContext, pe
 - ถ้าถามเรื่องที่มีในความจำ ให้ใช้ความจำตอบ ถ้าไม่มี บอกตรงๆ ว่าไม่มีข้อมูล ห้ามแต่งขึ้นเอง
 - ข้อมูลในความจำเป็นของผู้ใช้คนนี้เท่านั้น ห้ามบอกว่ารู้ข้อมูลของบุคคลอื่น
 - การแชร์: หมวดมี 3 สถานะ คือ private (ส่วนตัว ค่าเริ่มต้น) free (ฟรี) paid (เสียเงิน ต้องมีราคา: ต่อชั่วโมงหรือต่อคำถาม) เปลี่ยนด้วย set_category_visibility เมื่อผู้ใช้สั่งชัดเจนเท่านั้น ถ้าเป็นหมวดเสียเงินแต่ผู้ใช้ไม่บอกราคาหรือหน่วย ให้ถามก่อน ห้ามเดา
+- ปฏิทิน/นัดหมาย/เตือน: ตอนนี้คือ ${nowText || 'ไม่ทราบเวลา'} เมื่อผู้ใช้บอกงาน/นัด/ประชุมพร้อมวัน-เวลา หรือสั่งให้เตือน ให้ใช้ create_event (วันที่เป็น ค.ศ. รูปแบบ ปปปป-ดด-วว แปลงปี พ.ศ. ให้ถูก เช่น 2569 = 2026; เวลา 24 ชั่วโมง ถ้าไม่บอกเวลาให้ถือเป็นนัดทั้งวัน; ถ้าบอกเดือนอย่างเดียวโดยไม่บอกปี ให้ใช้ปีที่ใกล้ที่สุดในอนาคต) ถ้าผู้ใช้ไม่บอกว่าให้เตือนเมื่อไหร่ ให้เตือนตรงเวลานัด (นัดทั้งวันเตือน 8 โมงเช้า) ถ้าบอกว่า "เตือนล่วงหน้า…" ให้ใส่ remind_minutes_before (1 ชั่วโมง = 60, 1 วัน = 1440) หรือ remind_date/remind_time ถ้าระบุวันเตือนเอง — ถึงเวลาระบบส่งไลน์พร้อมปุ่ม "รับทราบแล้ว" ให้ผู้ใช้เอง ถ้าข้อมูลสำคัญไม่ครบ (ไม่รู้วันที่) ให้ถามก่อน อย่าเดาวัน ดูนัดด้วย list_events และลบด้วย delete_event เมื่อผู้ใช้สั่งชัดเจนเท่านั้น และหลังตั้งนัดให้ทวนวัน เวลา และเวลาที่จะเตือนสั้นๆ
 - ผู้ใช้อยากถามข้อมูลของคนอื่น: ใช้ find_shared_categories ค้นหา → request_access ขออนุญาต → เมื่อเจ้าของอนุมัติแล้ว (ดูจาก list_access_requests ฝั่ง outgoing สถานะ approved) ใช้ ask_shared_category ถาม แล้วเล่าคำตอบให้ผู้ใช้ฟังโดยบอกด้วยว่าข้อมูลมาจากใคร ห้ามเดาเนื้อหาเอง
 - ถ้าผู้ใช้ขอดูคำขอ/อนุมัติ/ปฏิเสธ/ถอนสิทธิ์: ใช้ list_access_requests และ decide_access_request โดยต้องได้ยินคำสั่งชัดเจนจากผู้ใช้ก่อนทุกครั้ง ห้ามอนุมัติเองเด็ดขาด
 - หมวดเสียเงินจะหักเครดิตผู้ถามอัตโนมัติ ก่อนถามให้บอกผู้ใช้ว่าหมวดนี้คิดราคาเท่าไหร่ (ดูจาก find_shared_categories) และหลังถามให้บอกว่าหักไปกี่เครดิต เหลือเท่าไหร่ ถ้าเครดิตไม่พอ ให้บอกผู้ใช้ไปเติมที่เมนู "เครดิต" ในแอป (ผู้ใช้เติมเครดิตผ่านแชทไม่ได้ ต้องส่งสลิปที่เมนู) ถามยอดคงเหลือใช้ check_credit_balance
@@ -142,6 +144,53 @@ function buildTools(userId, conversationId) {
         parameters: { type: 'OBJECT', properties: { enabled: { type: 'BOOLEAN', description: 'true = เปิดรับ, false = ปิดรับ' } }, required: ['enabled'] },
       },
       run: async (a) => ({ ok: true, connectEnabled: await sharing.setConnectEnabled(userId, a.enabled === true) }),
+    },
+    create_event: {
+      declaration: {
+        name: 'create_event',
+        description: 'ตั้งนัดหมาย/งาน/บันทึกที่ให้เลขาแจ้งเตือนทางไลน์ (พร้อมปุ่มรับทราบ) ใช้เมื่อผู้ใช้บอกนัดพร้อมวันที่ หรือสั่งให้เตือน',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            title: { type: 'STRING', description: 'ชื่อนัด เช่น ประชุมกับบริษัท A' },
+            date: { type: 'STRING', description: 'วันที่นัด รูปแบบ YYYY-MM-DD (ค.ศ.)' },
+            time: { type: 'STRING', description: 'เวลานัด HH:MM แบบ 24 ชั่วโมง (ไม่ระบุ = นัดทั้งวัน)' },
+            note: { type: 'STRING', description: 'รายละเอียดเพิ่มเติม (ไม่บังคับ)' },
+            remind_minutes_before: { type: 'NUMBER', description: 'ให้เตือนก่อนนัดกี่นาที (0 = ตรงเวลา, 60 = 1 ชม., 1440 = 1 วัน)' },
+            remind_date: { type: 'STRING', description: 'หรือระบุวันเตือนเอง YYYY-MM-DD' },
+            remind_time: { type: 'STRING', description: 'เวลาเตือนเอง HH:MM (ใช้คู่กับ remind_date)' },
+          },
+          required: ['title', 'date'],
+        },
+      },
+      run: async (a) => {
+        let remind = { mode: 'at' };
+        if (a.remind_date) remind = { mode: 'custom', date: a.remind_date, time: a.remind_time };
+        else if (a.remind_minutes_before !== undefined && a.remind_minutes_before !== null) remind = { mode: 'minutes', minutes: a.remind_minutes_before };
+        const ev = await cal.createEvent(userId, { title: a.title, date: a.date, time: a.time, note: a.note, remind }, 'secretary');
+        return { ok: true, event: { id: ev.id, title: ev.title, date: ev.date, time: ev.time, allDay: ev.allDay, remindDate: ev.remindDate, remindTime: ev.remindTime } };
+      },
+    },
+    list_events: {
+      declaration: {
+        name: 'list_events',
+        description: 'ดูนัดหมายของผู้ใช้ในช่วงวันที่ (ไม่ระบุ = 30 วันข้างหน้า) ใช้เมื่อผู้ใช้ถามว่ามีนัดอะไรบ้าง หรือก่อนลบนัด',
+        parameters: { type: 'OBJECT', properties: { from_date: { type: 'STRING', description: 'YYYY-MM-DD' }, to_date: { type: 'STRING', description: 'YYYY-MM-DD' } } },
+      },
+      run: async (a) => ({ events: (await cal.listRange(userId, a.from_date, a.to_date)).map((e) => ({ id: e.id, title: e.title, date: e.date, time: e.time, allDay: e.allDay, note: e.note, remindDate: e.remindDate, remindTime: e.remindTime, acknowledged: e.acknowledged })) }),
+    },
+    delete_event: {
+      declaration: {
+        name: 'delete_event',
+        description: 'ลบนัดหมายของผู้ใช้ (ใช้ event_id จาก list_events) เมื่อผู้ใช้สั่งลบ/ยกเลิกนัดชัดเจนเท่านั้น',
+        parameters: { type: 'OBJECT', properties: { event_id: { type: 'STRING' } }, required: ['event_id'] },
+      },
+      run: async (a) => {
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(a.event_id || ''))) throw new Error('event_id ไม่ถูกต้อง (ดูจาก list_events)');
+        const r = await cal.removeEvent(userId, a.event_id);
+        if (!r) throw new Error('ไม่พบนัดหมายนี้');
+        return { ok: true, deleted: r.title };
+      },
     },
     check_credit_balance: {
       declaration: {

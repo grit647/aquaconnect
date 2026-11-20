@@ -7,6 +7,7 @@ const { buildSystemPrompt, buildTools } = require('../secretary');
 const { getMemoryContext, listCategories } = require('../memory');
 const sharing = require('../sharing');
 const attachments = require('../attachments');
+const { nowText } = require('../calendar');
 const { pendingCount } = sharing;
 
 const router = express.Router();
@@ -247,6 +248,7 @@ router.post('/conversations/:id/messages', async (req, res) => {
       userName: user.name,
       memoryContext,
       pendingRequests,
+      nowText: nowText(),
     });
     const history = [...hist.rows.filter((m) => m.role !== 'system'), { role: 'user', content: storedContent, extraParts: ext.parts }];
 
@@ -273,7 +275,8 @@ router.post('/conversations/:id/messages', async (req, res) => {
     const savedMemories = result.executed
       .filter((e) => e.name === 'save_memory' && e.result && e.result.ok)
       .map((e) => ({ category: e.result.category, createdNewCategory: e.result.createdNewCategory }));
-    res.json({ reply: result.text, savedMemories });
+    const createdEvents = result.executed.filter((e) => e.name === 'create_event' && e.result && e.result.ok).map((e) => e.result.event);
+    res.json({ reply: result.text, savedMemories, createdEvents });
   } catch (err) {
     console.error('POST message error:', err);
     res.status(500).json({ error: 'เกิดข้อผิดพลาดฝั่งเซิร์ฟเวอร์ ลองใหม่อีกครั้ง' });

@@ -9,6 +9,8 @@ const lineRouter = require('./routes/line');
 const adminRouter = require('./routes/admin');
 const creditsRouter = require('./routes/credits');
 const connectRouter = require('./routes/connect');
+const calendarRouter = require('./routes/calendar');
+const { runDueReminders } = require('./reminders');
 const { query } = require('./db');
 // หมายเหตุ: ตลาดลูกกุ้ง (server/listings.js, ฐานข้อมูล Google Sheets) เลิกใช้แล้วตอนเปลี่ยนเป็นแอป AI เลขา
 // ไฟล์ยังอยู่ใน git เผื่อย้อนกลับ แต่ไม่ถูกเรียกใช้อีก
@@ -32,12 +34,15 @@ app.use('/api/chat', chatRouter);
 app.use('/api/line', lineRouter);
 app.use('/api/credits', creditsRouter);
 app.use('/api/connect', connectRouter);
+app.use('/api/calendar', calendarRouter);
 app.use('/api/admin', adminRouter);
 
 // เช็คสุขภาพระบบ (ใช้กับ UptimeRobot ได้) — แตะฐานข้อมูลเบาๆ ด้วย ช่วยกันโปรเจกต์ Supabase แผนฟรีโดนพักจากไม่มีการใช้งาน
 app.get('/api/health', async (req, res) => {
   try {
     await query('SELECT 1');
+    // คนยิง /api/health (UptimeRobot ทุก 5 นาที) = ปลุกเซิร์ฟเวอร์ + ตรวจนัดที่ถึงเวลาเตือนแล้วส่งไลน์ (ไม่รอผล ไม่ให้ health ช้า)
+    runDueReminders().catch((e) => console.error('[reminders]', e.message));
     res.json({ ok: true });
   } catch (err) {
     console.error('health check failed:', err.message);
@@ -59,6 +64,8 @@ app.get('*', (req, res) => {
 if (require.main === module) {
   const PORT = process.env.PORT || 8787;
   app.listen(PORT, () => console.log(`AquaConnect server running on port ${PORT}`));
+  // ตัวจับเวลาแจ้งเตือนนัดหมายทุก 1 นาที (เฉพาะตอนรันจริง ไม่ทำงานตอนชุดทดสอบ require ไฟล์นี้)
+  setInterval(() => runDueReminders().catch((e) => console.error('[reminders]', e.message)), 60000);
 }
 
 module.exports = app;

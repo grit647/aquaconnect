@@ -188,6 +188,7 @@
     setBotState('idle');
     renderAvatar();
     refreshConnectBadge();
+    pollDue();
     try {
       const { conversations } = await api('GET', '/api/chat/conversations');
       if (conversations.length) await openConversation(conversations[0].id);
@@ -288,10 +289,11 @@
     setBotState('thinking');
     let replyText = null;
     try {
-      const { reply, savedMemories } = await api('POST', '/api/chat/conversations/' + conversationId + '/messages', { content: text, source: source || 'text', askRequestId: connected ? connected.requestId : undefined, attachments: files.length ? files : undefined });
+      const { reply, savedMemories, createdEvents } = await api('POST', '/api/chat/conversations/' + conversationId + '/messages', { content: text, source: source || 'text', askRequestId: connected ? connected.requestId : undefined, attachments: files.length ? files : undefined });
       typing.remove();
       addBubble('assistant', reply);
       (savedMemories || []).forEach((m) => addSavedChip(m.category));
+      (createdEvents || []).forEach(addEventChip);
       replyText = reply;
       if (files.length) { pendingFiles = []; renderTray(); }
     } catch (err) {
@@ -587,6 +589,7 @@
     }
     sheetButton(body, '➕ เริ่มหัวข้อใหม่', async () => { try { await newConversation(); } catch (err) { addBubble('error', err.message); } });
     sheetButton(body, '🗂️ หัวข้อที่เคยคุย', showTopics);
+    sheetButton(body, '📅 ปฏิทิน & เตือน' + (dueCount ? ' (' + dueCount + ')' : ''), () => { closeSheet(); openCal(); });
     sheetButton(body, '💰 เครดิต / เติมเงิน', showCredits);
     sheetButton(body, '⚙️ ตั้งค่าข้อมูล (ฟรี / คิดค่าบริการ)', showDataSettings);
     if (inLine) sheetButton(body, '🌐 เปิดในเบราว์เซอร์ (ใช้เสียงได้ครบ)', () => { closeSheet(); openExternal(); });
@@ -651,6 +654,189 @@
         addBubble('hint', 'ส่งสลิปแล้วค่ะ รอแอดมินตรวจสอบ เครดิตจะเข้าและแจ้งเตือนทางไลน์');
       } catch (err) { status.textContent = err.message; }
     });
+  }
+
+  // ---------- ปฏิทิน & เตือน (popup กลางจอ) ----------
+  const TH_MONTHS = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+  const TH_DOW = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
+  const pad2 = (n) => String(n).padStart(2, '0');
+  const bkkToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date());   // YYYY-MM-DD เวลาไทย
+  const thDate = (key) => { const [y, m, d] = key.split('-').map(Number); return d + ' ' + TH_MONTHS[m - 1] + ' ' + (y + 543); };
+  const calCard = () => $('calCard');
+  let cal = { y: 0, m: 0, sel: '', events: [] };
+  let dueCount = 0;
+  const shownDue = new Set();
+
+  function calClose() { $('calOverlay').hidden = true; calCard().textContent = ''; }
+  $('calOverlay').addEventListener('click', (e) => { if (e.target === $('calOverlay')) calClose(); });
+
+  function ce(tag, text, cls) { const e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (cls) e.className = cls; return e; }
+
+  async function openCal(dateKey) {
+    const key = dateKey || bkkToday();
+    const [y, m] = key.split('-').map(Number);
+    cal = { y, m, sel: key, events: [] };
+    $('calOverlay').hidden = false;
+    await calReload();
+  }
+
+  async function calReload() {
+    try { cal.events = (await api('GET', '/api/calendar?month=' + cal.y + '-' + pad2(cal.m))).events; }
+    catch (err) { calCard().textContent = ''; calCard().append(ce('div', err.message, 'cal-err'), calCloseBtn()); return; }
+    calRender();
+  }
+
+  function calCloseBtn() { const b = ce('button', 'ปิด', 'cal-btn'); b.type = 'button'; b.addEventListener('click', calClose); return b; }
+
+  function calRender() {
+    const card = calCard(); card.textContent = '';
+    const head = ce('div', undefined, 'cal-head');
+    const prev = ce('button', '‹', 'cal-nav'); prev.type = 'button'; prev.setAttribute('aria-label', 'เดือนก่อน');
+    const next = ce('button', '›', 'cal-nav'); next.type = 'button'; next.setAttribute('aria-label', 'เดือนถัดไป');
+    const shift = (d) => { let m = cal.m + d, y = cal.y; if (m < 1) { m = 12; y--; } if (m > 12) { m = 1; y++; } cal.y = y; cal.m = m; cal.sel = y + '-' + pad2(m) + '-01'; calReload(); };
+    prev.addEventListener('click', () => shift(-1)); next.addEventListener('click', () => shift(1));
+    head.append(prev, ce('b', '📅 ' + TH_MONTHS[cal.m - 1] + ' ' + (cal.y + 543)), next);
+    card.appendChild(head);
+
+    const byDay = {};
+    cal.events.forEach((e) => { (byDay[e.date] = byDay[e.date] || []).push(e); });
+    const grid = ce('div', undefined, 'cal-grid');
+    TH_DOW.forEach((d) => grid.appendChild(ce('div', d, 'cal-dow')));
+    const first = new Date(Date.UTC(cal.y, cal.m - 1, 1)).getUTCDay();
+    const days = new Date(Date.UTC(cal.y, cal.m, 0)).getUTCDate();
+    for (let i = 0; i < first; i++) grid.appendChild(ce('div', '', 'cal-day empty'));
+    const today = bkkToday();
+    for (let d = 1; d <= days; d++) {
+      const key = cal.y + '-' + pad2(cal.m) + '-' + pad2(d);
+      const list = byDay[key] || [];
+      const cell = ce('button', undefined, 'cal-day' + (key === today ? ' today' : '') + (key === cal.sel ? ' sel' : ''));
+      cell.type = 'button';
+      cell.appendChild(ce('span', String(d)));
+      if (list.length) {
+        const dot = ce('span', undefined, 'dot' + (list.some((e) => e.due) ? ' due' : '')); cell.appendChild(dot);
+        if (list.length > 1) cell.appendChild(ce('span', '×' + list.length, 'cnt'));
+      }
+      cell.addEventListener('click', () => { cal.sel = key; calRender(); });
+      grid.appendChild(cell);
+    }
+    card.appendChild(grid);
+
+    card.appendChild(ce('div', thDate(cal.sel), 'cal-sub'));
+    const todays = byDay[cal.sel] || [];
+    if (!todays.length) card.appendChild(ce('div', 'ไม่มีนัดหมายหรือบันทึกในวันนี้', 'cal-empty'));
+    todays.forEach((e) => card.appendChild(calEventCard(e)));
+
+    const add = ce('button', '＋ เพิ่มนัด / บันทึก (' + thDate(cal.sel) + ')', 'cal-btn primary'); add.type = 'button';
+    add.addEventListener('click', () => calForm(cal.sel));
+    card.append(add, calCloseBtn());
+  }
+
+  function calEventCard(e) {
+    const box = ce('div', undefined, 'cal-ev');
+    const t = ce('div', undefined, 't');
+    t.append((e.allDay ? 'ทั้งวัน' : e.time + ' น.') + ' · ' + e.title);
+    if (e.acknowledged) t.appendChild(ce('span', 'รับทราบแล้ว', 'st ok'));
+    else if (e.due) t.appendChild(ce('span', 'ถึงเวลาเตือนแล้ว', 'st due'));
+    box.appendChild(t);
+    if (e.note) box.appendChild(ce('small', e.note));
+    box.appendChild(ce('small', '🔔 เตือน ' + thDate(e.remindDate) + ' ' + e.remindTime + ' น.' + (e.reminded ? ' (แจ้งแล้ว)' : '') + (e.createdVia === 'secretary' ? ' · เลขาตั้งให้' : '')));
+    const row = ce('div', undefined, 'row2');
+    if (!e.acknowledged && e.due) {
+      const ok = ce('button', '✅ รับทราบแล้ว', 'ok'); ok.type = 'button';
+      ok.addEventListener('click', async () => { try { await api('POST', '/api/calendar/' + e.id + '/ack'); await calReload(); pollDue(); } catch (err) { alert(err.message); } });
+      row.appendChild(ok);
+    }
+    const del = ce('button', '🗑 ลบ', 'danger'); del.type = 'button';
+    del.addEventListener('click', async () => {
+      if (!confirm('ลบนัด "' + e.title + '" ?')) return;
+      try { await api('DELETE', '/api/calendar/' + e.id); await calReload(); pollDue(); } catch (err) { alert(err.message); }
+    });
+    row.appendChild(del);
+    box.appendChild(row);
+    return box;
+  }
+
+  function calForm(dateKey) {
+    const card = calCard(); card.textContent = '';
+    const form = ce('div', undefined, 'cal-form');
+    form.appendChild(ce('div', '📅 เพิ่มนัด / บันทึกให้เลขาเตือน', 'cal-sub'));
+    const mkInput = (type, label, attrs) => { const w = ce('div'); w.appendChild(ce('label', label)); const i = document.createElement(type === 'textarea' ? 'textarea' : 'input'); if (type !== 'textarea') i.type = type; Object.assign(i, attrs || {}); w.appendChild(i); return { w, i }; };
+    const title = mkInput('text', 'เรื่อง (เช่น ประชุมกับบริษัท A)', { maxLength: 120, placeholder: 'ชื่อนัดหมาย' });
+    const date = mkInput('date', 'วันที่นัด', { value: dateKey });
+    const time = mkInput('time', 'เวลา', { value: '09:00' });
+    const two = ce('div', undefined, 'two'); two.append(date.w, time.w);
+    const allDay = document.createElement('input'); allDay.type = 'checkbox';
+    const chk = ce('label', undefined, 'chk'); chk.append(allDay, document.createTextNode(' นัดทั้งวัน (ไม่ระบุเวลา)'));
+    allDay.addEventListener('change', () => { time.i.disabled = allDay.checked; });
+    const note = mkInput('textarea', 'บันทึกเพิ่มเติม (ไม่บังคับ)', { maxLength: 500, placeholder: 'เช่น ห้องประชุม ต้องเตรียมอะไร' });
+
+    const rw = ce('div'); rw.appendChild(ce('label', '🔔 ให้เลขาเตือนเมื่อไหร่'));
+    const sel = document.createElement('select');
+    [['at', 'ตรงเวลานัด (นัดทั้งวัน = 8 โมงเช้า)'], ['15', 'ก่อนนัด 15 นาที'], ['60', 'ก่อนนัด 1 ชั่วโมง'], ['180', 'ก่อนนัด 3 ชั่วโมง'], ['1440', 'ก่อนนัด 1 วัน (เวลาเดียวกัน)'], ['custom', 'กำหนดวัน-เวลาเตือนเอง']].forEach(([v, t]) => { const o = document.createElement('option'); o.value = v; o.textContent = t; sel.appendChild(o); });
+    rw.appendChild(sel);
+    const rdate = mkInput('date', 'วันที่เตือน', { value: dateKey }); const rtime = mkInput('time', 'เวลาเตือน', { value: '08:00' });
+    const rtwo = ce('div', undefined, 'two'); rtwo.append(rdate.w, rtime.w); rtwo.hidden = true;
+    sel.addEventListener('change', () => { rtwo.hidden = sel.value !== 'custom'; });
+    const err = ce('div', '', 'cal-err');
+    const save = ce('button', '💾 บันทึกนัด', 'cal-btn primary'); save.type = 'button';
+    const back = ce('button', 'ยกเลิก', 'cal-btn'); back.type = 'button'; back.addEventListener('click', calRender);
+    save.addEventListener('click', async () => {
+      err.textContent = '';
+      if (!title.i.value.trim()) { err.textContent = 'ใส่ชื่อนัดก่อน'; return; }
+      if (!date.i.value) { err.textContent = 'เลือกวันที่นัด'; return; }
+      const remind = sel.value === 'at' ? { mode: 'at' } : sel.value === 'custom' ? { mode: 'custom', date: rdate.i.value, time: rtime.i.value } : { mode: 'minutes', minutes: Number(sel.value) };
+      save.disabled = true;
+      try {
+        const r = await api('POST', '/api/calendar', { title: title.i.value, note: note.i.value, date: date.i.value, time: allDay.checked ? '' : time.i.value, allDay: allDay.checked, remind });
+        cal.sel = r.event.date; const [y, m] = r.event.date.split('-').map(Number); cal.y = y; cal.m = m;
+        await calReload();
+        pollDue();
+      } catch (e) { err.textContent = e.message; save.disabled = false; }
+    });
+    form.append(title.w, two, chk, note.w, rw, rtwo, err, save, back);
+    card.appendChild(form);
+    title.i.focus();
+  }
+
+  // ถึงเวลาเตือนแล้วแต่ยังไม่กดรับทราบ → เด้ง popup กลางจอ (สำหรับคนที่ไม่ได้ดูไลน์ หรือยังไม่ผูกไลน์)
+  function showDuePopup(list) {
+    const card = calCard(); card.textContent = '';
+    $('calOverlay').hidden = false;
+    card.appendChild(ce('div', '🔔 ถึงเวลาแจ้งเตือน', 'cal-sub'));
+    list.forEach((e) => {
+      const box = ce('div', undefined, 'cal-ev');
+      box.appendChild(ce('div', e.title, 't'));
+      box.appendChild(ce('small', '📅 ' + thDate(e.date) + (e.allDay ? ' (ทั้งวัน)' : ' เวลา ' + e.time + ' น.')));
+      if (e.note) box.appendChild(ce('small', e.note));
+      const row = ce('div', undefined, 'row2');
+      const ok = ce('button', '✅ รับทราบแล้ว', 'ok'); ok.type = 'button';
+      ok.addEventListener('click', async () => {
+        try { await api('POST', '/api/calendar/' + e.id + '/ack'); box.remove(); dueCount = Math.max(0, dueCount - 1); if (!card.querySelector('.cal-ev')) calClose(); pollDue(); }
+        catch (err) { alert(err.message); }
+      });
+      row.appendChild(ok); box.appendChild(row); card.appendChild(box);
+    });
+    const open = ce('button', '📅 เปิดปฏิทิน', 'cal-btn'); open.type = 'button'; open.addEventListener('click', () => openCal());
+    card.append(open, calCloseBtn());
+  }
+
+  async function pollDue() {
+    if (!me) return;
+    try {
+      const { events } = await api('GET', '/api/calendar/due');
+      dueCount = events.length;
+      const fresh = events.filter((e) => !shownDue.has(e.id));
+      if (fresh.length && $('calOverlay').hidden && $('sheetOverlay').hidden) { fresh.forEach((e) => shownDue.add(e.id)); showDuePopup(events); }
+    } catch (e) { /* ครั้งนี้เช็กไม่ได้ ไว้รอบหน้า */ }
+  }
+  setInterval(() => { if (me && !appEl.hidden && document.visibilityState === 'visible') pollDue(); }, 60000);
+
+  function addEventChip(ev) {
+    const chip = document.createElement('div');
+    chip.className = 'chip-saved';
+    chip.textContent = '📅 ตั้งเตือนแล้ว: ' + ev.title + ' · ' + thDate(ev.date) + (ev.time ? ' ' + ev.time + ' น.' : '') + ' (เตือน ' + thDate(ev.remindDate) + ' ' + ev.remindTime + ')';
+    logEl.appendChild(chip);
+    scrollToBottom();
   }
 
   // ---------- เชื่อมต่อข้อมูล ----------

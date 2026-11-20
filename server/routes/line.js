@@ -3,6 +3,7 @@ const express = require('express');
 const line = require('../line');
 const { query } = require('../db');
 const sharing = require('../sharing');
+const cal = require('../calendar');
 
 const router = express.Router();
 
@@ -32,10 +33,15 @@ async function handleEvent(ev) {
   // ปุ่ม "อนุญาต/ไม่อนุญาต" ในข้อความแจ้งคำขอเข้าใช้ข้อมูล — ตัวตนมาจากบัญชีไลน์ที่กดจริง (ผูกกับผู้ใช้ไว้แล้ว) ไม่ใช่จากข้อมูลในปุ่ม
   if (ev.type === 'postback' && ev.postback && ev.postback.data) {
     const d = new URLSearchParams(ev.postback.data);
-    if (d.get('act') !== 'access') return;
+    if (d.get('act') !== 'access' && d.get('act') !== 'remind') return;
     const lineUserId = ev.source && ev.source.userId;
     const u = lineUserId ? await query("SELECT id FROM users WHERE line_user_id = $1 AND status = 'active'", [lineUserId]) : { rows: [] };
     if (!u.rows[0]) return line.replyText(ev.replyToken, 'ยังไม่พบบัญชีที่ผูกกับไลน์นี้ค่ะ เปิดแอปผ่านปุ่ม "คุยกับเลขา" ก่อนนะคะ');
+    // ปุ่ม "รับทราบแล้ว" ของนัดหมาย — ยืนยันตัวตนจากบัญชีไลน์ที่กดจริง และต้องเป็นนัดของคนนั้นเท่านั้น
+    if (d.get('act') === 'remind') {
+      const done = await cal.acknowledge(u.rows[0].id, d.get('id'));
+      return line.replyText(ev.replyToken, done ? `รับทราบแล้วค่ะ ✅ เลิกเตือน "${done.title}"` : 'รายการนี้รับทราบไปแล้ว หรือไม่พบแล้วค่ะ');
+    }
     try {
       const decision = d.get('d') === 'approve' ? 'approve' : 'deny';
       await sharing.decideRequest(u.rows[0].id, d.get('id'), decision);
