@@ -271,7 +271,7 @@ router.get('/link', async (req, res) => {
     const r = await query("SELECT * FROM users WHERE id = $1 AND status = 'active'", [p.id]);
     if (!r.rows[0]) throw new Error('nouser');
     setAuthCookie(req, res, issueToken(r.rows[0]));
-    res.redirect('/');
+    res.redirect(req.query.next === 'voice' ? '/?mode=voice' : '/');
   } catch {
     res.status(400).send('<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><body style="font-family:sans-serif;background:#0b0f1e;color:#e8ecff;padding:30px"><h3>ลิงก์หมดอายุหรือถูกใช้ไปแล้ว</h3><p>กลับไปที่แอปในไลน์แล้วกดปุ่ม "เปิดในเบราว์เซอร์" ใหม่อีกครั้ง หรือ <a style="color:#22d3ee" href="/">เข้าสู่ระบบด้วยเบอร์ + PIN</a></p></body>');
   }

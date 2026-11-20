@@ -140,11 +140,11 @@
     scrollToBottom();
   }
   // ปุ่ม "เปิดในเบราว์เซอร์" — ใช้เมื่อฟีเจอร์เสียง/ไมค์ใช้ในเบราว์เซอร์ของไลน์ไม่ได้
-  async function openExternal() {
+  async function openExternal(next) {
     try {
       // ขอลิงก์เข้าสู่ระบบครั้งเดียว (อายุ 2 นาที) เพื่อให้ Chrome เข้าบัญชีเดียวกันทันที ไม่ต้องกรอก PIN ซ้ำ
       const { url } = await api('POST', '/api/auth/login-link');
-      window.liff.openWindow({ url, external: true });
+      window.liff.openWindow({ url: next === 'voice' ? url + '&next=voice' : url, external: true });
     } catch (e) { addBubble('error', 'เปิดอัตโนมัติไม่ได้ — คัดลอกลิงก์ ' + location.origin + ' ไปวางใน Chrome เองได้ค่ะ'); }
   }
   function addBrowserButton() {
@@ -153,7 +153,7 @@
     b.type = 'button';
     b.className = 'open-ext';
     b.textContent = '🌐 เปิดในเบราว์เซอร์ (Chrome)';
-    b.addEventListener('click', openExternal);
+    b.addEventListener('click', () => openExternal());
     logEl.appendChild(b);
     scrollToBottom();
   }
@@ -439,6 +439,8 @@
 
   async function enterVoiceMode(startPaused) {
     if (!me) return;
+    // เปิดอยู่ในเบราว์เซอร์ของไลน์ (ไมค์/หน้าต่างลอยใช้ไม่ได้) → เด้งไปเปิดใน Chrome แล้วเข้าโหมดสนทนาเสียงต่อให้เลย
+    if (inLine) { addBubble('assistant', 'กำลังเปิดใน Chrome เพื่อคุยด้วยเสียง…'); openExternal('voice'); return; }
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
       addBubble('error', 'เบราว์เซอร์นี้ยังอัดเสียงไม่ได้ — เปิดในเบราว์เซอร์ปกติ หรือพิมพ์แทนได้ค่ะ');
       addBrowserButton();
