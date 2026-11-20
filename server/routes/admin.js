@@ -44,12 +44,15 @@ router.get('/overview', async (req, res) => {
 router.get('/users', async (req, res) => {
   try {
     const r = await query(
-      `SELECT u.id, u.name, u.phone, u.is_admin, u.status, (u.line_user_id IS NOT NULL) AS line_linked, u.created_at,
+      `SELECT u.id, u.name, u.phone, u.is_admin, u.status, (u.line_user_id IS NOT NULL) AS line_linked, u.line_picture_url AS picture, u.created_at,
               (SELECT count(*)::int FROM messages m WHERE m.user_id = u.id AND m.role = 'user') AS messages,
-              (SELECT count(*)::int FROM memories x WHERE x.owner_id = u.id) AS memories
-         FROM users u ORDER BY u.created_at DESC LIMIT 500`
+              (SELECT count(*)::int FROM memories x WHERE x.owner_id = u.id) AS memories,
+              COALESCE(b.balance, 0) AS balance,
+              (SELECT count(*)::int FROM topups t WHERE t.user_id = u.id) AS topup_count,
+              (SELECT count(*)::int FROM credit_ledger l WHERE l.user_id = u.id) AS ledger_count
+         FROM users u LEFT JOIN credit_balances b ON b.user_id = u.id ORDER BY u.created_at DESC LIMIT 500`
     );
-    res.json({ users: r.rows });
+    res.json({ users: r.rows.map((x) => ({ ...x, balance: Number(x.balance) })) });
   } catch (err) {
     console.error('admin users error:', err);
     res.status(500).json({ error: 'เกิดข้อผิดพลาดฝั่งเซิร์ฟเวอร์' });
@@ -67,6 +70,36 @@ router.patch('/users/:id/status', async (req, res) => {
     res.json({ ok: true, user: r.rows[0] });
   } catch (err) {
     console.error('admin status error:', err);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดฝั่งเซิร์ฟเวอร์' });
+  }
+});
+
+// เครดิตของผู้ใช้รายคน: ยอดคงเหลือ + ยอดเติม/ใช้/รายได้สะสม + สมุดบัญชี + รายการเติมเงินทั้งหมดของคนนี้
+router.get('/users/:id/credits', async (req, res) => {
+  try {
+    if (!UUID_RE.test(req.params.id)) return res.status(404).json({ error: 'ไม่พบผู้ใช้' });
+    const u = await query('SELECT id, name, phone, line_picture_url AS picture FROM users WHERE id = $1', [req.params.id]);
+    if (!u.rows[0]) return res.status(404).json({ error: 'ไม่พบผู้ใช้' });
+    const [bal, sums, ledger, topups] = await Promise.all([
+      query('SELECT balance FROM credit_balances WHERE user_id = $1', [req.params.id]),
+      query(`SELECT COALESCE(sum(amount) FILTER (WHERE type = 'topup'), 0) AS topup,
+                    COALESCE(-sum(amount) FILTER (WHERE type = 'spend'), 0) AS spent,
+                    COALESCE(sum(amount) FILTER (WHERE type = 'earn'), 0) AS earned
+               FROM credit_ledger WHERE user_id = $1`, [req.params.id]),
+      query('SELECT amount, type, note, balance_after, created_at FROM credit_ledger WHERE user_id = $1 ORDER BY id DESC LIMIT 50', [req.params.id]),
+      query(`SELECT id, status, amount_claimed, slip_amount_read, approved_amount, created_at, reviewed_at, note
+               FROM topups WHERE user_id = $1 ORDER BY created_at DESC LIMIT 30`, [req.params.id]),
+    ]);
+    const num = (v) => (v === null || v === undefined ? null : Number(v));
+    res.json({
+      user: u.rows[0],
+      balance: num(bal.rows[0] && bal.rows[0].balance) || 0,
+      totals: { topup: num(sums.rows[0].topup), spent: num(sums.rows[0].spent), earned: num(sums.rows[0].earned) },
+      ledger: ledger.rows.map((x) => ({ ...x, amount: num(x.amount), balance_after: num(x.balance_after) })),
+      topups: topups.rows.map((x) => ({ ...x, amount_claimed: num(x.amount_claimed), slip_amount_read: num(x.slip_amount_read), approved_amount: num(x.approved_amount) })),
+    });
+  } catch (err) {
+    console.error('admin user credits error:', err);
     res.status(500).json({ error: 'เกิดข้อผิดพลาดฝั่งเซิร์ฟเวอร์' });
   }
 });
@@ -105,7 +138,7 @@ router.get('/topups', async (req, res) => {
   try {
     const status = ['pending', 'approved', 'rejected'].includes(req.query.status) ? req.query.status : 'pending';
     const r = await query(
-      `SELECT t.id, t.status, t.amount_claimed, t.slip_amount_read, t.approved_amount, t.created_at, t.note, u.name AS user_name, u.phone
+      `SELECT t.id, t.status, t.amount_claimed, t.slip_amount_read, t.approved_amount, t.created_at, t.note, u.name AS user_name, u.phone, u.line_picture_url AS picture
          FROM topups t JOIN users u ON u.id = t.user_id WHERE t.status = $1 ORDER BY t.created_at DESC LIMIT 100`,
       [status]
     );

@@ -13,7 +13,12 @@ async function call(method, path, body, cookie) {
   return { status: r.status, json, cookie: (r.headers.get('set-cookie') || '').split(';')[0] };
 }
 const PHONES = ['0999900031', '0999900032'];
-const cleanup = () => query('DELETE FROM users WHERE phone = ANY($1)', [PHONES]);
+const cleanup = async () => {
+  const ids = 'SELECT id FROM users WHERE phone = ANY($1)';
+  await query(`DELETE FROM credit_ledger WHERE user_id IN (${ids})`, [PHONES]);
+  await query(`DELETE FROM topups WHERE user_id IN (${ids}) OR reviewed_by IN (${ids})`, [PHONES]);
+  await query('DELETE FROM users WHERE phone = ANY($1)', [PHONES]);
+};
 
 (async () => {
   const baseUsers = (await query('SELECT count(*)::int AS n FROM users')).rows[0].n;
@@ -45,6 +50,27 @@ const cleanup = () => query('DELETE FROM users WHERE phone = ANY($1)', [PHONES])
   check('ค่าตั้งที่ไม่อนุญาต → 404', (await call('PATCH', '/api/admin/settings/withdraw_enabled', { value: 1 }, a.cookie)).status === 404);
   const st = await call('GET', '/api/admin/settings', null, a.cookie);
   check('อ่านค่าตั้งได้และเห็นค่าใหม่', st.json.settings.find((s) => s.key === 'commission_rate').value === 25);
+
+  // ---------- เครดิตรายคน (ปุ่มเข้าดูเครดิตในหลังบ้าน) ----------
+  const uid = target.id;
+  await query("UPDATE users SET line_picture_url = 'https://profile.line-scdn.net/0hAdminTestPic/preview' WHERE id = $1", [uid]);
+  const us2 = await call('GET', '/api/admin/users', null, a.cookie);
+  const row0 = us2.json.users.find((x) => x.id === uid);
+  check('ผู้ใช้ที่ยังไม่เคยเติมเครดิต: ไม่มีรายการเครดิต (หน้าจอจะไม่แสดงปุ่มดูเครดิต)', row0.topup_count === 0 && row0.ledger_count === 0 && row0.balance === 0);
+  check('รายชื่อผู้ใช้ส่งรูปโปรไฟล์ไลน์มาด้วย', row0.picture === 'https://profile.line-scdn.net/0hAdminTestPic/preview');
+  await query("INSERT INTO credit_balances (user_id, balance) VALUES ($1, 70) ON CONFLICT (user_id) DO UPDATE SET balance = 70", [uid]);
+  await query("INSERT INTO topups (user_id, amount_claimed, status, approved_amount, reviewed_by, reviewed_at) VALUES ($1, 100, 'approved', 100, $2, now())", [uid, self.id]);
+  await query("INSERT INTO credit_ledger (user_id, amount, type, note, balance_after) VALUES ($1, 100, 'topup', 'เติมเครดิต', 100), ($1, -30, 'spend', 'ถามเลขาหมวดเสียเงิน', 70)", [uid]);
+  const us3 = await call('GET', '/api/admin/users', null, a.cookie);
+  const row1 = us3.json.users.find((x) => x.id === uid);
+  check('มีการเติมเครดิต → รายชื่อบอกจำนวนรายการและยอดคงเหลือ (หน้าจอแสดงปุ่มดูเครดิต)', row1.topup_count === 1 && row1.ledger_count === 2 && row1.balance === 70);
+  const cr = await call('GET', `/api/admin/users/${uid}/credits`, null, a.cookie);
+  check('แอดมินดูเครดิตรายคนได้: ยอดคงเหลือ + ยอดสะสมเติม/ใช้', cr.status === 200 && cr.json.balance === 70 && cr.json.totals.topup === 100 && cr.json.totals.spent === 30 && cr.json.totals.earned === 0);
+  check('ดูเครดิตรายคน: มีสมุดบัญชีและรายการเติมเงิน', cr.json.ledger.length === 2 && cr.json.topups.length === 1 && cr.json.topups[0].status === 'approved' && cr.json.topups[0].approved_amount === 100);
+  check('ดูเครดิตรายคน: ไม่มีข้อมูลสลิป/รหัสผ่านหลุด', !JSON.stringify(cr.json).includes('slip_data') && !JSON.stringify(cr.json).includes('pin_hash'));
+  check('ผู้ใช้ทั่วไปดูเครดิตของคนอื่นไม่ได้', (await call('GET', `/api/admin/users/${uid}/credits`, null, u.cookie)).status === 403);
+  check('ไม่ล็อกอินดูไม่ได้', (await call('GET', `/api/admin/users/${uid}/credits`)).status === 401);
+  check('id มั่ว → 404', (await call('GET', '/api/admin/users/not-a-uuid/credits', null, a.cookie)).status === 404);
 
   // คืนค่าเดิม + เก็บกวาด
   if (oldSetting) await query("UPDATE app_settings SET value = $1::jsonb WHERE key = 'commission_rate'", [JSON.stringify(oldSetting.value)]);

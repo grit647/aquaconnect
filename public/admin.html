@@ -31,6 +31,18 @@ th { color:var(--muted); font-size:12px; font-weight:600; }
 .chip { border:1px solid var(--line); background:var(--panel2); color:var(--text); border-radius:999px; padding:5px 14px; font:inherit; font-size:13px; cursor:pointer; }
 .chip.on { border-color:var(--neon); color:var(--neon); }
 .warn { color:var(--danger); font-weight:700; }
+.av { width:34px; height:34px; border-radius:50%; background:var(--panel2); border:1px solid var(--line); display:inline-flex; align-items:center; justify-content:center; font-weight:800; color:var(--neon); overflow:hidden; vertical-align:middle; flex-shrink:0; }
+.av img { width:100%; height:100%; object-fit:cover; display:block; }
+.who { display:flex; align-items:center; gap:10px; }
+.bal { font-weight:800; color:var(--ok); }
+#modal { position:fixed; inset:0; background:rgba(0,0,0,.65); z-index:20; display:flex; align-items:center; justify-content:center; padding:14px; }
+#modalBox { background:var(--panel); border:1px solid var(--neon); border-radius:18px; width:100%; max-width:640px; max-height:88vh; overflow-y:auto; padding:16px 16px 18px; }
+#modalBox h3 { color:var(--neon); font-size:16px; margin:14px 0 6px; }
+#modalBox .head { display:flex; align-items:center; gap:12px; }
+#modalBox .head .av { width:48px; height:48px; font-size:20px; }
+.sum { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:8px; margin:12px 0; }
+.sum div { background:var(--panel2); border:1px solid var(--line); border-radius:12px; padding:8px 10px; }
+.sum b { display:block; font-size:18px; } .sum small { color:var(--muted); font-size:11px; }
 .muted { color:var(--muted); font-size:13px; margin-bottom:8px; }
 .box input[type=file] { color:var(--muted); font-size:13px; margin-right:8px; }
 .pill { display:inline-block; padding:1px 9px; border-radius:999px; font-size:12px; border:1px solid var(--line); }
@@ -76,6 +88,7 @@ button.act.danger { color:var(--danger); border-color:var(--danger); }
     <div class="box tablewrap"><table id="users"></table></div>
   </main>
 </div>
+<div id="modal" hidden><div id="modalBox"></div></div>
 <div id="msg" hidden></div>
 <script>
 (function () {
@@ -134,17 +147,96 @@ button.act.danger { color:var(--danger); border-color:var(--danger); }
     });
   }
 
+  const LINE_PIC_RE = /^https:\/\/profile\.line-scdn\.net\//;
+  function avatarEl(name, picture) {
+    const a = el('span', undefined, 'av');
+    const initial = String(name || '?').trim().charAt(0) || '?';
+    if (picture && LINE_PIC_RE.test(picture)) {
+      const img = document.createElement('img'); img.alt = ''; img.referrerPolicy = 'no-referrer';
+      img.onerror = () => { a.textContent = initial; };
+      img.src = picture; a.appendChild(img);
+    } else a.textContent = initial;
+    return a;
+  }
+  const fmt = (n) => (n === null || n === undefined ? '-' : Number(n).toLocaleString('th-TH', { maximumFractionDigits: 2 }));
+  const LEDGER_TH = { topup: 'เติมเครดิต', spend: 'ใช้ถามเลขาคนอื่น', earn: 'รายได้จากการตอบ', refund: 'คืนเครดิต', adjust: 'ปรับยอด' };
+  const TOPUP_TH = { pending: 'รอตรวจ', approved: 'อนุมัติแล้ว', rejected: 'ปฏิเสธ' };
+
+  function closeModal() { $('modal').hidden = true; $('modalBox').textContent = ''; }
+  $('modal').addEventListener('click', (e) => { if (e.target === $('modal')) closeModal(); });
+
+  async function showUserCredits(u) {
+    const box = $('modalBox'); box.textContent = '';
+    $('modal').hidden = false;
+    let d;
+    try { d = await api('GET', '/api/admin/users/' + u.id + '/credits'); }
+    catch (e) { box.appendChild(el('div', e.message, 'warn')); return; }
+    const head = el('div', undefined, 'head');
+    head.appendChild(avatarEl(d.user.name, d.user.picture));
+    const who = el('div'); who.appendChild(el('b', d.user.name)); who.appendChild(el('div', d.user.phone, 'muted'));
+    head.appendChild(who);
+    const close = el('button', 'ปิด', 'act'); close.style.marginLeft = 'auto'; close.addEventListener('click', closeModal); head.appendChild(close);
+    box.appendChild(head);
+
+    const sum = el('div', undefined, 'sum');
+    [['ยอดคงเหลือ', d.balance, 'bal'], ['เติมเข้ามาสะสม', d.totals.topup], ['ใช้ไปสะสม', d.totals.spent], ['รายได้จากการตอบ', d.totals.earned]].forEach(([l, v, cls]) => {
+      const c = el('div'); c.appendChild(el('b', fmt(v) + ' เครดิต', cls)); c.appendChild(el('small', l)); sum.appendChild(c);
+    });
+    box.appendChild(sum);
+
+    box.appendChild(el('h3', 'รายการเติมเครดิต (' + d.topups.length + ')'));
+    if (!d.topups.length) box.appendChild(el('div', 'ยังไม่มีการเติมเครดิต', 'muted'));
+    d.topups.forEach((t) => {
+      const row = el('div', undefined, 'set');
+      const info = el('div', undefined, 't');
+      info.appendChild(document.createTextNode('แจ้งโอน ' + fmt(t.amount_claimed) + ' บาท' + (t.approved_amount !== null ? ' → ให้เครดิต ' + fmt(t.approved_amount) : '')));
+      info.appendChild(el('small', new Date(t.created_at).toLocaleString('th-TH') + (t.note ? ' • ' + t.note : '')));
+      row.appendChild(info);
+      row.appendChild(el('span', TOPUP_TH[t.status] || t.status, 'pill ' + (t.status === 'approved' ? 'ok' : t.status === 'rejected' ? 'bad' : '')));
+      if (t.status === 'pending') {
+        const go = el('button', 'ไปตรวจสลิป', 'act');
+        go.addEventListener('click', () => { closeModal(); topupStatus = 'pending'; loadTopups(); $('topups').scrollIntoView({ behavior: 'smooth' }); });
+        row.appendChild(go);
+      }
+      box.appendChild(row);
+    });
+
+    box.appendChild(el('h3', 'สมุดบัญชีเครดิต (50 รายการล่าสุด)'));
+    if (!d.ledger.length) box.appendChild(el('div', 'ยังไม่มีรายการ', 'muted'));
+    const tbl = el('table');
+    if (d.ledger.length) {
+      const hr = el('tr'); ['วันที่', 'รายการ', 'จำนวน', 'คงเหลือ'].forEach((x) => hr.appendChild(el('th', x))); tbl.appendChild(hr);
+    }
+    d.ledger.forEach((l) => {
+      const tr = el('tr');
+      tr.appendChild(el('td', new Date(l.created_at).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' })));
+      tr.appendChild(el('td', (LEDGER_TH[l.type] || l.type) + (l.note ? ' (' + l.note + ')' : '')));
+      tr.appendChild(el('td', (l.amount > 0 ? '+' : '') + fmt(l.amount)));
+      tr.appendChild(el('td', fmt(l.balance_after)));
+      tbl.appendChild(tr);
+    });
+    box.appendChild(tbl);
+  }
+
   async function loadUsers() {
     const { users } = await api('GET', '/api/admin/users');
     const t = $('users'); t.textContent = '';
-    const head = el('tr'); ['ชื่อ', 'เบอร์', 'ไลน์', 'ข้อความ', 'ความจำ', 'สถานะ', ''].forEach((h) => head.appendChild(el('th', h))); t.appendChild(head);
+    const head = el('tr'); ['ชื่อ', 'เบอร์', 'ไลน์', 'ข้อความ', 'ความจำ', 'เครดิต', 'สถานะ', ''].forEach((h) => head.appendChild(el('th', h))); t.appendChild(head);
     users.forEach((u) => {
       const tr = el('tr');
-      tr.appendChild(el('td', u.name + (u.is_admin ? ' (แอดมิน)' : '')));
+      const nameTd = el('td'); const who = el('div', undefined, 'who'); who.appendChild(avatarEl(u.name, u.picture)); who.appendChild(el('span', u.name + (u.is_admin ? ' (แอดมิน)' : ''))); nameTd.appendChild(who); tr.appendChild(nameTd);
       tr.appendChild(el('td', u.phone));
       tr.appendChild(el('td', u.line_linked ? '✓' : '-'));
       tr.appendChild(el('td', String(u.messages)));
       tr.appendChild(el('td', String(u.memories)));
+      // ปุ่มดูเครดิต: แสดงเมื่อคนนี้เคยมีการเติมเครดิต/มีรายการในสมุดบัญชี (ปุ่มบอกยอดคงเหลือไว้เลย)
+      const creditTd = el('td');
+      if (u.topup_count > 0 || u.ledger_count > 0) {
+        const cb = el('button', '💰 ' + fmt(u.balance) + ' ดูเครดิต', 'act');
+        cb.addEventListener('click', () => showUserCredits(u));
+        creditTd.appendChild(cb);
+      } else creditTd.appendChild(el('span', '-', 'muted'));
+      tr.appendChild(creditTd);
       const st = el('td'); st.appendChild(el('span', u.status === 'active' ? 'ใช้งาน' : 'ถูกระงับ', 'pill ' + (u.status === 'active' ? 'ok' : 'bad'))); tr.appendChild(st);
       const act = el('td');
       if (!u.is_admin) {
@@ -202,7 +294,7 @@ button.act.danger { color:var(--danger); border-color:var(--danger); }
     topups.forEach((t) => {
       const row = el('div', undefined, 'set');
       const info = el('div', undefined, 't');
-      info.appendChild(document.createTextNode(t.user_name + ' (' + t.phone + ') แจ้งโอน ' + t.amount_claimed + ' บาท'));
+      const tw = el('div', undefined, 'who'); tw.appendChild(avatarEl(t.user_name, t.picture)); tw.appendChild(el('span', t.user_name + ' (' + t.phone + ') แจ้งโอน ' + t.amount_claimed + ' บาท')); info.appendChild(tw);
       const mismatch = t.slip_amount_read !== null && t.slip_amount_read !== t.amount_claimed;
       const sm = el('small', 'AI อ่านยอดจากสลิปได้: ' + (t.slip_amount_read === null ? 'อ่านไม่ได้' : t.slip_amount_read + ' บาท') + ' • ' + new Date(t.created_at).toLocaleString('th-TH'));
       info.appendChild(sm);
