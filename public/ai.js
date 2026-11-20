@@ -656,6 +656,51 @@
     });
   }
 
+  // ---------- เสียงปลุก (ดังจนกว่าจะกดรับทราบ) ----------
+  // เบราว์เซอร์ห้ามเล่นเสียงก่อนผู้ใช้แตะหน้าจอ → ปลดล็อกเสียงตอนแตะครั้งแรกของหน้านี้ แล้วค่อยใช้ตอนถึงเวลาเตือน (ใช้ได้เฉพาะตอนเปิดแอปค้างอยู่)
+  let audioCtx = null; let alarmTimer = null; let alarmStop = null;
+  function unlockAudio() {
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!audioCtx && AC) audioCtx = new AC();
+      if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    } catch (e) { /* ไม่รองรับเสียงก็ข้ามไป */ }
+  }
+  ['pointerdown', 'touchstart', 'keydown', 'click'].forEach((ev) => document.addEventListener(ev, unlockAudio, { passive: true }));
+
+  function beep(freq, when, dur) {
+    const o = audioCtx.createOscillator(); const g = audioCtx.createGain();
+    o.type = 'square'; o.frequency.value = freq;
+    g.gain.setValueAtTime(0.0001, when); g.gain.exponentialRampToValueAtTime(0.35, when + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, when + dur);
+    o.connect(g); g.connect(audioCtx.destination); o.start(when); o.stop(when + dur + 0.02);
+  }
+  function ringOnce() {
+    try { if (navigator.vibrate) navigator.vibrate([300, 150, 300, 150, 300]); } catch (e) { /* ไม่รองรับการสั่น */ }
+    if (!audioCtx || audioCtx.state !== 'running') return false;
+    const t = audioCtx.currentTime;
+    for (let i = 0; i < 4; i++) beep(i % 2 ? 988 : 784, t + i * 0.26, 0.2);
+    return true;
+  }
+  function stopAlarm() {
+    clearInterval(alarmTimer); clearTimeout(alarmStop); alarmTimer = null; alarmStop = null;
+    try { if (navigator.vibrate) navigator.vibrate(0); } catch (e) { /* ignore */ }
+  }
+  function startAlarm() {
+    stopAlarm();
+    unlockAudio();
+    ringOnce();
+    alarmTimer = setInterval(ringOnce, 1800);
+    alarmStop = setTimeout(stopAlarm, 3 * 60 * 1000);   // กันดังไม่หยุดเกิน 3 นาที (popup ยังอยู่จนกว่าจะรับทราบ)
+  }
+
+  // ปุ่ม ⏰ ตั้งนาฬิกาปลุกในมือถือ (Android) — ดู alarm.js
+  function setPhoneAlarm(e) {
+    const r = window.aqAlarm.buildAlarm({ remindAt: e.remindAt, remindTime: e.remindTime, title: e.title, ua: navigator.userAgent });
+    if (!r.ok) { alert(window.aqAlarm.MESSAGES[r.reason]); return; }
+    location.href = r.url;
+    addBubble('hint', 'ส่งคำสั่งตั้งปลุกให้แอปนาฬิกาแล้วค่ะ (เวลา ' + e.remindTime + ' น.)' + (inLine ? '\nถ้าไม่เด้งไปที่แอปนาฬิกา ให้เปิดแอปนี้ในเบราว์เซอร์ Chrome (เมนู ☰ → เปิดในเบราว์เซอร์) แล้วกดปุ่ม ⏰ อีกครั้ง' : '\nถ้าไม่เด้งไปที่แอปนาฬิกา ลองเปิดจาก Chrome แล้วกดอีกครั้ง'));
+  }
+
   // ---------- ปฏิทิน & เตือน (popup กลางจอ) ----------
   const TH_MONTHS = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
   const TH_DOW = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
@@ -665,9 +710,9 @@
   const calCard = () => $('calCard');
   let cal = { y: 0, m: 0, sel: '', events: [] };
   let dueCount = 0;
-  const shownDue = new Set();
+  const shownDue = new Map();      // id → เวลาที่เด้ง popup ล่าสุด (ยังไม่รับทราบ → เด้งซ้ำทุก 5 นาที ตราบที่ยังเปิดแอปค้างอยู่)
 
-  function calClose() { $('calOverlay').hidden = true; calCard().textContent = ''; }
+  function calClose() { stopAlarm(); $('calOverlay').hidden = true; calCard().textContent = ''; }
   $('calOverlay').addEventListener('click', (e) => { if (e.target === $('calOverlay')) calClose(); });
 
   function ce(tag, text, cls) { const e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (cls) e.className = cls; return e; }
@@ -728,7 +773,9 @@
 
     const add = ce('button', '＋ เพิ่มนัด / บันทึก (' + thDate(cal.sel) + ')', 'cal-btn primary'); add.type = 'button';
     add.addEventListener('click', () => calForm(cal.sel));
-    card.append(add, calCloseBtn());
+    const test = ce('button', '🔔 ทดสอบเสียงปลุก (เช็กว่าเสียงดังพอ)', 'cal-btn'); test.type = 'button';
+    test.addEventListener('click', () => { unlockAudio(); setTimeout(() => { if (!ringOnce()) alert('เครื่องนี้ยังเปิดเสียงไม่ได้ — ลองแตะหน้าจออีกครั้ง หรือเช็กว่าไม่ได้ปิดเสียงมือถือไว้'); }, 150); });
+    card.append(add, test, calCloseBtn());
   }
 
   function calEventCard(e) {
@@ -745,6 +792,11 @@
       const ok = ce('button', '✅ รับทราบแล้ว', 'ok'); ok.type = 'button';
       ok.addEventListener('click', async () => { try { await api('POST', '/api/calendar/' + e.id + '/ack'); await calReload(); pollDue(); } catch (err) { alert(err.message); } });
       row.appendChild(ok);
+    }
+    if (!e.acknowledged) {
+      const al = ce('button', '⏰ ตั้งปลุกในมือถือ'); al.type = 'button';
+      al.addEventListener('click', () => setPhoneAlarm(e));
+      row.appendChild(al);
     }
     const del = ce('button', '🗑 ลบ', 'danger'); del.type = 'button';
     del.addEventListener('click', async () => {
@@ -803,6 +855,8 @@
     const card = calCard(); card.textContent = '';
     $('calOverlay').hidden = false;
     card.appendChild(ce('div', '🔔 ถึงเวลาแจ้งเตือน', 'cal-sub'));
+    startAlarm();
+    if (!audioCtx || audioCtx.state !== 'running') card.appendChild(ce('div', '🔇 แตะหน้าจอ 1 ครั้งเพื่อเปิดเสียงปลุก', 'cal-empty'));
     list.forEach((e) => {
       const box = ce('div', undefined, 'cal-ev');
       box.appendChild(ce('div', e.title, 't'));
@@ -816,8 +870,9 @@
       });
       row.appendChild(ok); box.appendChild(row); card.appendChild(box);
     });
-    const open = ce('button', '📅 เปิดปฏิทิน', 'cal-btn'); open.type = 'button'; open.addEventListener('click', () => openCal());
-    card.append(open, calCloseBtn());
+    const mute = ce('button', '🔇 ปิดเสียง (ยังไม่รับทราบ)', 'cal-btn'); mute.type = 'button'; mute.addEventListener('click', stopAlarm);
+    const open = ce('button', '📅 เปิดปฏิทิน', 'cal-btn'); open.type = 'button'; open.addEventListener('click', () => { stopAlarm(); openCal(); });
+    card.append(mute, open, calCloseBtn());
   }
 
   async function pollDue() {
@@ -825,8 +880,8 @@
     try {
       const { events } = await api('GET', '/api/calendar/due');
       dueCount = events.length;
-      const fresh = events.filter((e) => !shownDue.has(e.id));
-      if (fresh.length && $('calOverlay').hidden && $('sheetOverlay').hidden) { fresh.forEach((e) => shownDue.add(e.id)); showDuePopup(events); }
+      const fresh = events.filter((e) => !shownDue.has(e.id) || Date.now() - shownDue.get(e.id) > 5 * 60000);
+      if (fresh.length && $('calOverlay').hidden && $('sheetOverlay').hidden) { fresh.forEach((e) => shownDue.set(e.id, Date.now())); showDuePopup(events); }
     } catch (e) { /* ครั้งนี้เช็กไม่ได้ ไว้รอบหน้า */ }
   }
   setInterval(() => { if (me && !appEl.hidden && document.visibilityState === 'visible') pollDue(); }, 60000);
