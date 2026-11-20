@@ -175,10 +175,10 @@ async function askSharedCategory(userId, requestId, question) {
   const a = r.rows[0];
   if (!a) {
     const st = UUID_RE.test(String(requestId)) ? await query('SELECT status FROM access_requests WHERE id = $1 AND requester_id = $2', [requestId, userId]) : { rows: [] };
-    if (st.rows[0] && st.rows[0].status === 'expired') throw new Error('หมดเวลาใช้ข้อมูลฟรีแล้ว ตัดการเชื่อมต่อ — ขอเข้าใช้ใหม่อีกครั้งได้ที่ปุ่ม "เชื่อมต่อข้อมูลภายนอก"');
+    if (st.rows[0] && st.rows[0].status === 'expired') throw new Error('หมดเวลาใช้ข้อมูลฟรีแล้ว ตัดการเชื่อมต่อ — ขอเข้าใช้ใหม่อีกครั้งได้ที่ปุ่ม "เชื่อมข้อมูลภายนอก"');
     throw new Error('ยังไม่ได้รับอนุมัติ หรือสิทธิ์ถูกถอนแล้ว');
   }
-  if (a.expires_at && new Date(a.expires_at) < new Date()) throw new Error('หมดเวลาใช้ข้อมูลฟรีแล้ว ตัดการเชื่อมต่อ — ขอเข้าใช้ใหม่อีกครั้งได้ที่ปุ่ม "เชื่อมต่อข้อมูลภายนอก"');
+  if (a.expires_at && new Date(a.expires_at) < new Date()) throw new Error('หมดเวลาใช้ข้อมูลฟรีแล้ว ตัดการเชื่อมต่อ — ขอเข้าใช้ใหม่อีกครั้งได้ที่ปุ่ม "เชื่อมข้อมูลภายนอก"');
   if (a.visibility === 'private') throw new Error('เจ้าของปิดหมวดนี้เป็นส่วนตัวแล้ว');
   if (!a.connect_enabled) throw new Error('เจ้าของปิดการอนุญาตใช้ข้อมูลไว้ชั่วคราว (เปิดใหม่เมื่อไหร่ใช้ต่อได้ สิทธิ์ที่อนุมัติไว้ยังอยู่)');
 

@@ -691,7 +691,7 @@
       }
       renderConnToggle(connectEnabled !== false);
       const n = incoming.filter((r) => r.status === 'pending').length;
-      $('connectBtn').textContent = '🔗 เชื่อมต่อข้อมูลภายนอก' + (n ? ' (' + n + ')' : '');
+      $('connectBtn').textContent = '🔗 เชื่อมข้อมูลภายนอก' + (n ? ' (' + n + ')' : '');
       $('connectBtn').classList.toggle('on', n > 0);
     } catch (e) { /* ครั้งนี้เช็กไม่ได้ ไว้รอบหน้า */ }
   }
@@ -736,7 +736,7 @@
   function expireConnected() {
     const who = connected ? 'คุณ' + connected.owner + ' หมวด "' + connected.category + '"' : '';
     endConnected(true);
-    addBubble('hint', 'ครบเวลาใช้ข้อมูลฟรี ตัดการเชื่อมต่อ' + who + ' แล้วค่ะ ถ้าจะใช้ต่อ กด "เชื่อมต่อข้อมูลภายนอก" แล้วขอเข้าใช้ใหม่อีกครั้ง');
+    addBubble('hint', 'ครบเวลาใช้ข้อมูลฟรี ตัดการเชื่อมต่อ' + who + ' แล้วค่ะ ถ้าจะใช้ต่อ กด "เชื่อมข้อมูลภายนอก" แล้วขอเข้าใช้ใหม่อีกครั้ง');
   }
 
   // เฝ้าคำขอที่ส่งไป: เจ้าของกดอนุญาตเมื่อไหร่ ระบบเชื่อมต่อให้เองทันที (ผู้ขอไม่ต้องกดอะไรเพิ่ม)
@@ -775,12 +775,12 @@
   }
 
   async function showConnect() {
-    const body = openSheet('เชื่อมต่อข้อมูลภายนอก');
+    const body = openSheet('เชื่อมข้อมูลภายนอก');
     let mine; let people;
     try { [mine, people] = await Promise.all([api('GET', '/api/connect/mine'), api('GET', '/api/connect/people')]); }
     catch (err) { note(body, err.message); return; }
     const pending = mine.incoming.filter((r) => r.status === 'pending');
-    $('connectBtn').textContent = '🔗 เชื่อมต่อข้อมูลภายนอก' + (pending.length ? ' (' + pending.length + ')' : '');
+    $('connectBtn').textContent = '🔗 เชื่อมข้อมูลภายนอก' + (pending.length ? ' (' + pending.length + ')' : '');
 
     if (pending.length) {
       note(body, 'รอคุณอนุญาต', 'sub');
