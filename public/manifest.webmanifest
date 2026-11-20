@@ -1,0 +1,27 @@
+{
+  "name": "AquaConnect เลขา",
+  "short_name": "เลขา",
+  "description": "AI เลขาส่วนตัว คุยด้วยเสียงหรือพิมพ์ จำเรื่องสำคัญ ตั้งนัดเตือน และเชื่อมข้อมูลกับผู้อื่น",
+  "lang": "th",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b0f1e",
+  "theme_color": "#0b0f1e",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    {
+      "name": "คุยด้วยเสียง",
+      "short_name": "คุยเสียง",
+      "description": "เปิดหน้าสนทนาเสียงต่อเนื่อง (ใช้กับหูฟังบลูทูธ)",
+      "url": "/?mode=voice",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
+  ]
+}

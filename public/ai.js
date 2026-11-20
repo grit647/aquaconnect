@@ -15,6 +15,7 @@
   let conversationId = null;
   let sending = false;
   let lineIdToken = null;        // ID token จาก LIFF (มีเฉพาะตอนเปิดในไลน์)
+  let voiceMode = false; let voicePaused = false; let voiceStream = null; let idleCycles = 0;   // หน้าสนทนาเสียงต่อเนื่อง (ประกาศไว้บนสุด กันเรียกใช้ก่อนประกาศ)
   let connected = null;          // โหมดใช้ข้อมูลของคนอื่น: { requestId, owner, category }
   let inLine = false;            // เปิดอยู่ในเบราว์เซอร์ของไลน์หรือไม่
 
@@ -119,6 +120,7 @@
     $('stateLabel').textContent = STATE_TEXT[s] || '';
     const bot = $('bot');
     if (bot) bot.autoRotate = (s === 'idle');
+    if (voiceMode) { $('voiceScreen').className = (voicePaused ? 'paused ' : '') + 'state-' + s; if (!voicePaused) $('vState').textContent = STATE_TEXT[s] || ''; }
   }
 
   // ---------- ข้อความในแชท ----------
@@ -189,6 +191,7 @@
     renderAvatar();
     refreshConnectBadge();
     pollDue();
+    if (new URLSearchParams(location.search).get('mode') === 'voice') { history.replaceState(null, '', '/'); enterVoiceMode(true); }
     try {
       const { conversations } = await api('GET', '/api/chat/conversations');
       if (conversations.length) await openConversation(conversations[0].id);
@@ -196,6 +199,31 @@
     } catch (err) {
       addBubble('error', err.message);
     }
+  }
+
+  // ---------- ติดตั้งไอคอนแอปบนหน้าจอหลักมือถือ (PWA) ----------
+  let deferredInstall = null;
+  const isStandalone = () => (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
+  window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferredInstall = e; });
+  window.addEventListener('appinstalled', () => { deferredInstall = null; addBubble('hint', 'ติดตั้งไอคอนบนหน้าจอหลักแล้วค่ะ 🎉 เปิดจากไอคอนได้เลย (กดค้างที่ไอคอนมีทางลัด "คุยด้วยเสียง")'); });
+  if ('serviceWorker' in navigator) { window.addEventListener('load', () => { navigator.serviceWorker.register('/sw.js').catch(() => { /* ติดตั้งไม่ได้ก็ใช้เว็บปกติต่อได้ */ }); }); }
+
+  async function installApp() {
+    closeSheet();
+    if (isStandalone()) { addBubble('hint', 'แอปนี้ติดตั้งบนหน้าจอหลักอยู่แล้วค่ะ'); return; }
+    if (deferredInstall) {
+      deferredInstall.prompt();
+      try { await deferredInstall.userChoice; } catch (e) { /* ignore */ }
+      deferredInstall = null;
+      return;
+    }
+    if (inLine) {
+      addBubble('hint', 'เบราว์เซอร์ในไลน์ติดตั้งไอคอนไม่ได้ค่ะ — กดปุ่มด้านล่างเพื่อเปิดใน Chrome แล้วเลือกเมนู 📲 ติดตั้งไอคอน อีกครั้ง');
+      addBrowserButton();
+      return;
+    }
+    if (/iPhone|iPad|iPod/i.test(navigator.userAgent)) { addBubble('hint', 'iPhone: เปิดด้วย Safari แล้วกดปุ่มแชร์ (สี่เหลี่ยมมีลูกศรขึ้น) → "เพิ่มไปยังหน้าจอโฮม"'); return; }
+    addBubble('hint', 'Android: กดเมนู ⋮ ของ Chrome (มุมขวาบน) → "เพิ่มลงในหน้าจอหลัก" หรือ "ติดตั้งแอป" แล้วกด "ติดตั้ง"\nติดตั้งแล้วจะมีไอคอน "เลขา" บนหน้าจอหลัก กดค้างที่ไอคอนมีทางลัด "คุยด้วยเสียง"');
   }
 
   // ---------- แนบรูป / ไฟล์ / ลิงก์ให้เลขาอ่าน ----------
@@ -286,6 +314,7 @@
     typing.textContent = me.secretaryName + ' กำลังพิมพ์...';
     logEl.appendChild(typing);
     scrollToBottom();
+    if (voiceMode) vCaption(text, '');
     setBotState('thinking');
     let replyText = null;
     try {
@@ -295,10 +324,12 @@
       (savedMemories || []).forEach((m) => addSavedChip(m.category));
       (createdEvents || []).forEach(addEventChip);
       replyText = reply;
+      if (voiceMode) vCaption(null, reply);
       if (files.length) { pendingFiles = []; renderTray(); }
     } catch (err) {
       typing.remove();
       addBubble('error', err.message);
+      if (voiceMode) vCaption(null, err.message);
       if (connected && /หมดเวลา|ถอนสิทธิ์|ปิดรับ|ปิดการอนุญาต|ไม่ได้รับอนุมัติ/.test(err.message)) endConnected(true);
       if (source !== 'voice') inputEl.value = text;
     } finally {
@@ -394,38 +425,68 @@
 
   function renderMic() {
     $('micBtn').classList.toggle('rec', !!rec);
-    const b = $('realtimeMicToggle');
-    b.textContent = realtime ? '🎙️ โหมดเรียลไทม์' : '🎙️ โหมดปกติ';
-    b.classList.toggle('on', realtime);
   }
 
-  $('realtimeMicToggle').addEventListener('click', () => {
-    realtime = !realtime;
-    if (realtime) {
-      if (ttsSupported) unlockSpeech();
-      lockScreen();
-      renderMic();
-      if (!sending && botState === 'idle') startListening();
-    } else {
-      unlockScreen();
-      stopRecording(true);
-      renderMic();
-    }
-  });
+  // ---------- หน้าสนทนาเสียงต่อเนื่อง (ปุ่มไมค์ข้างช่องพิมพ์) ----------
+  // เปิดแล้วฟัง → ถอดเสียง → ถามเลขา → เลขาพูดตอบ → กลับมาฟังต่อเองวนไปเรื่อยๆ ไม่ต้องกดซ้ำ (เหมาะกับหูฟังบลูทูธ คุยยาวๆ)
+  // เก็บสตรีมไมค์ไว้ใช้ซ้ำตลอดการสนทนา (ไม่ขอไมค์ใหม่ทุกประโยค — หูฟังบลูทูธจะไม่สลับโหมดเสียงไปมา)
+  const IDLE_LIMIT = 6;      // ไม่มีใครพูดติดกัน 6 รอบ (~1 นาที) → หยุดฟังชั่วคราว แตะไมค์เพื่อคุยต่อ (ประหยัดแบตและค่าถอดเสียง)
 
-  $('micBtn').addEventListener('click', () => {
-    if (rec) { stopRecording(false); return; }  // กดซ้ำ = หยุดอัดและส่งเลย
+  function vCaption(user, reply) {
+    if (user !== null) $('vUser').textContent = user;
+    if (reply !== null) $('vReply').textContent = String(reply).replace(/[*_`#]/g, '');
+  }
+
+  async function enterVoiceMode(startPaused) {
+    if (!me) return;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
+      addBubble('error', 'เบราว์เซอร์นี้ยังอัดเสียงไม่ได้ — เปิดในเบราว์เซอร์ปกติ หรือพิมพ์แทนได้ค่ะ');
+      addBrowserButton();
+      return;
+    }
+    stopRecording(true); cancelSpeech();
+    voiceMode = true; voicePaused = !!startPaused; idleCycles = 0; realtime = !startPaused;
+    $('voiceScreen').hidden = false;
+    vCaption('', '');
     if (ttsSupported) unlockSpeech();
-    cancelSpeech();
+    lockScreen();
+    if (startPaused) { pauseVoice('แตะไมค์เพื่อเริ่มคุย'); return; }
+    $('voiceScreen').className = 'state-idle';
+    setBotState('idle');
     startListening();
-  });
+  }
+
+  function pauseVoice(msg) {
+    voicePaused = true; realtime = false;
+    stopRecording(true); cancelSpeech();
+    $('voiceScreen').className = 'paused state-idle';
+    $('vState').textContent = msg || 'หยุดฟังชั่วคราว — แตะไมค์เพื่อคุยต่อ';
+  }
+
+  function resumeVoice() {
+    voicePaused = false; realtime = true; idleCycles = 0;
+    $('voiceScreen').className = 'state-idle';
+    if (ttsSupported) unlockSpeech();
+    lockScreen();
+    setBotState('idle');
+    if (!sending) startListening();
+  }
+
+  function exitVoiceMode() {
+    voiceMode = false; voicePaused = false; realtime = false;
+    cancelSpeech(); stopRecording(true); unlockScreen();
+    if (voiceStream) { try { voiceStream.getTracks().forEach((t) => t.stop()); } catch (e) { /* ignore */ } voiceStream = null; }
+    $('voiceScreen').hidden = true;
+    setBotState('idle');
+    renderMic();
+  }
+
+  $('micBtn').addEventListener('click', () => enterVoiceMode(false));
+  $('vExit').addEventListener('click', exitVoiceMode);
+  $('vMic').addEventListener('click', () => { if (voicePaused) resumeVoice(); else pauseVoice(); });
 
   function stopAllVoice() {
-    realtime = false;
-    unlockScreen();
-    cancelSpeech();
-    stopRecording(true);
-    renderMic();
+    exitVoiceMode();
   }
 
   function pickMime() {
@@ -444,13 +505,19 @@
     }
     let stream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+      if (voiceMode && voiceStream && voiceStream.active) stream = voiceStream;
+      else {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+        if (voiceMode) voiceStream = stream;
+      }
     } catch (e) {
+      if (voiceMode) exitVoiceMode();
       addBubble('error', 'เปิดไมโครโฟนไม่ได้ (ยังไม่ได้อนุญาต หรือเบราว์เซอร์ในไลน์ไม่รองรับ) — ลองเปิดในเบราว์เซอร์ปกติ หรือพิมพ์แทนได้ค่ะ');
       addBrowserButton();
       realtime = false; unlockScreen(); renderMic();
       return;
     }
+    if (voiceMode && voicePaused) return;     // ผู้ใช้กดหยุดระหว่างรอสิทธิ์ไมค์
     const mimeType = pickMime();
     const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
     const chunks = [];
@@ -463,10 +530,17 @@
       renderMic();
       if (state.cancelled || !state.heardSpeech || !chunks.length) {
         setBotState('idle');
+        if (voiceMode && !voicePaused && !state.cancelled) {
+          idleCycles++;
+          if (idleCycles >= IDLE_LIMIT) pauseVoice('ไม่ได้ยินเสียงนานแล้ว หยุดฟังชั่วคราวค่ะ — แตะไมค์เพื่อคุยต่อ');
+          else startListening();
+          return;
+        }
         // เรียลไทม์: ไม่มีใครพูดเลยก็หยุดฟัง ไม่วนฟังเปล่าๆ ไม่สิ้นสุด
         if (realtime && !state.cancelled) { realtime = false; unlockScreen(); renderMic(); }
         return;
       }
+      idleCycles = 0;
       await transcribeAndSend(new Blob(chunks, { type: recorder.mimeType || 'audio/webm' }));
     };
     recorder.start();
@@ -508,7 +582,7 @@
   function cleanupRec(state) {
     if (state.timer) clearInterval(state.timer);
     try { state.ctx && state.ctx.close(); } catch (e) { /* ignore */ }
-    try { state.stream.getTracks().forEach((t) => t.stop()); } catch (e) { /* ignore */ }
+    if (!(voiceMode && state.stream === voiceStream)) { try { state.stream.getTracks().forEach((t) => t.stop()); } catch (e) { /* ignore */ } }
   }
 
   function stopRecording(cancel) {
@@ -529,12 +603,17 @@
   async function transcribeAndSend(blob) {
     setBotState('thinking');
     $('stateLabel').textContent = 'กำลังถอดเสียง...';
+    if (voiceMode && !voicePaused) $('vState').textContent = 'กำลังถอดเสียง...';
     try {
       const audio = await blobToBase64(blob);
       const { text } = await api('POST', '/api/chat/transcribe', { audio, mimeType: blob.type || 'audio/webm' });
       if (!text || !text.trim()) {
         setBotState('idle');
         addBubble('hint', 'ไม่ได้ยินเสียงชัดๆ ค่ะ ลองพูดใหม่อีกครั้งนะคะ');
+        if (voiceMode) {
+          vCaption('(ไม่ได้ยินชัด ลองพูดใหม่ได้เลยค่ะ)', null);
+          if (++idleCycles >= IDLE_LIMIT) { pauseVoice('ไม่ได้ยินเสียงชัดเจนนานแล้ว หยุดฟังชั่วคราวค่ะ — แตะไมค์เพื่อคุยต่อ'); return; }
+        }
         if (realtime) startListening();
         return;
       }
@@ -542,6 +621,7 @@
     } catch (err) {
       setBotState('idle');
       addBubble('error', err.message);
+      if (voiceMode) { vCaption(null, err.message); pauseVoice('มีปัญหา หยุดฟังชั่วคราวค่ะ — แตะไมค์เพื่อลองใหม่'); return; }
       realtime = false; unlockScreen(); renderMic();
     }
   }
@@ -590,6 +670,8 @@
     sheetButton(body, '➕ เริ่มหัวข้อใหม่', async () => { try { await newConversation(); } catch (err) { addBubble('error', err.message); } });
     sheetButton(body, '🗂️ หัวข้อที่เคยคุย', showTopics);
     sheetButton(body, '📅 ปฏิทิน & เตือน' + (dueCount ? ' (' + dueCount + ')' : ''), () => { closeSheet(); openCal(); });
+    sheetButton(body, '🎙️ คุยด้วยเสียงต่อเนื่อง (ใช้กับหูฟังบลูทูธ)', () => { closeSheet(); enterVoiceMode(false); });
+    if (!isStandalone()) sheetButton(body, '📲 ติดตั้งไอคอนบนหน้าจอหลัก', installApp);
     sheetButton(body, '💰 เครดิต / เติมเงิน', showCredits);
     sheetButton(body, '⚙️ ตั้งค่าข้อมูล (ฟรี / คิดค่าบริการ)', showDataSettings);
     if (inLine) sheetButton(body, '🌐 เปิดในเบราว์เซอร์ (ใช้เสียงได้ครบ)', () => { closeSheet(); openExternal(); });
@@ -881,7 +963,7 @@
       const { events } = await api('GET', '/api/calendar/due');
       dueCount = events.length;
       const fresh = events.filter((e) => !shownDue.has(e.id) || Date.now() - shownDue.get(e.id) > 5 * 60000);
-      if (fresh.length && $('calOverlay').hidden && $('sheetOverlay').hidden) { fresh.forEach((e) => shownDue.set(e.id, Date.now())); showDuePopup(events); }
+      if (fresh.length && !voiceMode && $('calOverlay').hidden && $('sheetOverlay').hidden) { fresh.forEach((e) => shownDue.set(e.id, Date.now())); showDuePopup(events); }
     } catch (e) { /* ครั้งนี้เช็กไม่ได้ ไว้รอบหน้า */ }
   }
   setInterval(() => { if (me && !appEl.hidden && document.visibilityState === 'visible') pollDue(); }, 60000);

@@ -4,6 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0b0f1e">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
+<link rel="apple-touch-icon" href="/icons/icon-192.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="เลขา">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>AquaConnect — AI เลขา</title>
 <!-- บอท 3 มิติ (ตัวเดียวกับของครีมใน ช.นายท้าย) แสดงด้วย <model-viewer> ของ Google -->
 <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.5.0/model-viewer.min.js"></script>
@@ -67,7 +74,6 @@
   <div id="chatLog" aria-live="polite"></div>
 
   <div id="micModeBar">
-    <button id="realtimeMicToggle" type="button">🎙️ โหมดปกติ</button>
     <button id="saveMemoryBtn" type="button">💾 จำไว้ให้เลขา</button>
     <button id="connectBtn" type="button">🔗 เชื่อมข้อมูลภายนอก</button>
   </div>
@@ -81,6 +87,15 @@
     <button id="sendBtn" type="submit" class="round-btn" aria-label="ส่ง">➤</button>
   </form>
 
+</div>
+
+<!-- หน้าสนทนาเสียงต่อเนื่อง: เหลือปุ่มไมค์ใหญ่กลางจอปุ่มเดียว (ใช้กับหูฟังบลูทูธ คุยยาวๆ ได้) -->
+<div id="voiceScreen" hidden class="state-idle">
+  <button id="vExit" type="button">✕ จบการสนทนา</button>
+  <div id="vState">กำลังเตรียมไมค์...</div>
+  <button id="vMic" type="button" aria-label="หยุดฟังชั่วคราว / คุยต่อ"><span class="vring"></span><span class="vicon">🎙️</span></button>
+  <div id="vCaption"><div id="vUser"></div><div id="vReply"></div></div>
+  <div id="vHint">สวมหูฟังบลูทูธแล้วพูดได้เลย คุยต่อเนื่องไม่ต้องกดซ้ำ — แตะไมค์เพื่อหยุดชั่วคราว</div>
 </div>
 
 <!-- ปฏิทิน & เตือน: popup กลางจอ -->
