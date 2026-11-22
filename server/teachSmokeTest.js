@@ -229,6 +229,29 @@ async function call(method, path, body, cookie) {
     && (await call('PATCH', '/api/me/profile', { name: 'x'.repeat(101), secretaryName: 'ครีม' }, A.cookie)).status === 400
     && (await call('PATCH', '/api/me/profile', { name: 'ชื่อ <b>', secretaryName: 'ครีม' }, A.cookie)).status === 400
     && (await call('PATCH', '/api/me/profile', { name: 'ชื่อ', secretaryName: 'ชื่อเลขาที่ยาวเกินยี่สิบตัวอักษรแน่ๆ' }, A.cookie)).status === 400);
+  // ---------- สถานะปัจจุบัน (หมวดอาชีพ → หัวข้อย่อย → รายละเอียด) ----------
+  check('สรุปโปรไฟล์ส่งรายการหมวดสถานะ 8 หมวด (พร้อมหัวข้อย่อย) ให้หน้าจอ', Object.keys(sum.json.occupationOptions || {}).length === 8 && sum.json.occupationOptions['ข้าราชการ / รัฐวิสาหกิจ'].includes('ครู/อาจารย์/บุคลากรทางการศึกษา') && sum.json.profile.occupationMain === '');
+  const okOcc = await call('PATCH', '/api/me/profile', { name: 'ทดสอบ สอน ใหม่', callName: '', secretaryName: 'ครีม', occupationMain: 'ข้าราชการ / รัฐวิสาหกิจ', occupationSub: 'ครู/อาจารย์/บุคลากรทางการศึกษา', occupationDetail: 'สอนคณิตศาสตร์ ม.ต้น' }, A.cookie);
+  const occRow = (await query('SELECT occupation_main, occupation_sub, occupation_detail FROM users WHERE id = $1', [uidA])).rows[0];
+  check('บันทึกสถานะ (หมวด/หัวข้อย่อย/รายละเอียด) ได้', okOcc.status === 200 && occRow.occupation_main === 'ข้าราชการ / รัฐวิสาหกิจ' && occRow.occupation_sub === 'ครู/อาจารย์/บุคลากรทางการศึกษา' && occRow.occupation_detail === 'สอนคณิตศาสตร์ ม.ต้น', JSON.stringify(occRow));
+  const sumOcc = await call('GET', '/api/me/summary', null, A.cookie);
+  check('เปิดโปรไฟล์ใหม่ยังเห็นสถานะที่เลือกไว้', sumOcc.json.profile.occupationMain === 'ข้าราชการ / รัฐวิสาหกิจ' && sumOcc.json.profile.occupationDetail === 'สอนคณิตศาสตร์ ม.ต้น');
+  const convO = (await call('POST', '/api/chat/conversations', {}, A.cookie)).json.conversation;
+  await call('POST', `/api/chat/conversations/${convO.id}/messages`, { content: 'สวัสดี' }, A.cookie);
+  check('เลขารู้สถานะของผู้ใช้ (อยู่ใน prompt) พร้อมกฎห้ามแต่งข้อมูลเพิ่ม', lastChatPrompt.includes('ข้าราชการ / รัฐวิสาหกิจ › ครู/อาจารย์/บุคลากรทางการศึกษา — สอนคณิตศาสตร์ ม.ต้น') && lastChatPrompt.includes('ห้ามแต่งข้อมูลเพิ่ม'));
+  const sB2 = await call('POST', '/api/chat/conversations', {}, B.cookie);
+  await call('POST', `/api/chat/conversations/${sB2.json.conversation.id}/messages`, { content: 'สวัสดี' }, B.cookie);
+  check('สถานะของ A ไม่รั่วไปถึง B', !lastChatPrompt.includes('สอนคณิตศาสตร์ ม.ต้น'));
+  const bad = (o) => call('PATCH', '/api/me/profile', { name: 'ทดสอบ สอน ใหม่', secretaryName: 'ครีม', ...o }, A.cookie);
+  check('หมวดไม่มีอยู่จริง / หัวข้อย่อยไม่ตรงหมวด / อื่นๆ ไม่กรอกรายละเอียด / รายละเอียดยาวเกิน → 400',
+    (await bad({ occupationMain: 'มนุษย์ต่างดาว' })).status === 400
+    && (await bad({ occupationMain: 'บุคลากรทางการแพทย์', occupationSub: 'ฟรีแลนซ์' })).status === 400
+    && (await bad({ occupationMain: 'อื่นๆ / ไม่ได้ประกอบอาชีพ', occupationSub: 'อื่นๆ (โปรดระบุ)', occupationDetail: '' })).status === 400
+    && (await bad({ occupationMain: 'ค้าขาย / ธุรกิจส่วนตัว', occupationSub: 'ขายของชำ', occupationDetail: 'ก'.repeat(201) })).status === 400);
+  check('อื่นๆ + รายละเอียด → ผ่าน', (await bad({ occupationMain: 'อื่นๆ / ไม่ได้ประกอบอาชีพ', occupationSub: 'อื่นๆ (โปรดระบุ)', occupationDetail: 'นักดนตรีอิสระ' })).status === 200);
+  check('ไม่ส่งฟิลด์สถานะ → ไม่แตะของเดิม', (await call('PATCH', '/api/me/profile', { name: 'ทดสอบ สอน ใหม่', secretaryName: 'ครีม' }, A.cookie)).status === 200 && (await query('SELECT occupation_main FROM users WHERE id = $1', [uidA])).rows[0].occupation_main === 'อื่นๆ / ไม่ได้ประกอบอาชีพ');
+  check('เลือก "ยังไม่ระบุ" → ล้างสถานะทั้งหมด', (await bad({ occupationMain: '' })).status === 200 && (await query('SELECT occupation_main, occupation_sub, occupation_detail FROM users WHERE id = $1', [uidA])).rows[0].occupation_sub === null);
+
   check('แก้โปรไฟล์ของ A ไม่กระทบ B', (await query('SELECT secretary_name FROM users WHERE id = $1', [uidB])).rows[0].secretary_name !== 'ครีม');
 
   // ---------- ลบหมวด + เนื้อหาทั้งหมด ----------

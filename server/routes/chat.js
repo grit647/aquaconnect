@@ -278,7 +278,7 @@ router.post('/conversations/:id/messages', async (req, res) => {
 
     // ข้อมูลผู้ใช้สดจากฐานข้อมูล (ชื่อเลขา/บุคลิก) + ประวัติการคุยล่าสุด + ความจำ
     const [u, hist, memoryContext, pendingRequests, pendingProposals] = await Promise.all([
-      query("SELECT name, secretary_name, call_name, secretary_persona FROM users WHERE id = $1 AND status = 'active'", [req.user.id]),
+      query("SELECT name, secretary_name, call_name, secretary_persona, occupation_main, occupation_sub, occupation_detail FROM users WHERE id = $1 AND status = 'active'", [req.user.id]),
       query(
         `SELECT role, content, source FROM (
            SELECT id, role, content, source FROM messages WHERE conversation_id = $1 ORDER BY id DESC LIMIT ${HISTORY_LIMIT}
@@ -301,6 +301,7 @@ router.post('/conversations/:id/messages', async (req, res) => {
     const systemPrompt = buildSystemPrompt({
       secretaryName: user.secretary_name,
       callName: user.call_name || '',
+      occupationText: require('../occupations').describe(user.occupation_main, user.occupation_sub, user.occupation_detail),
       persona: user.secretary_persona,
       userName: user.name,
       memoryContext,

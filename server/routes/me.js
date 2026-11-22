@@ -4,6 +4,7 @@ const express = require('express');
 const { query } = require('../db');
 const { requireAuth } = require('../auth');
 const { cleanShortName } = require('../secretary');
+const occ = require('../occupations');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -14,7 +15,7 @@ router.get('/summary', async (req, res) => {
   try {
     const id = req.user.id;
     const [u, sizes, lim] = await Promise.all([
-      query('SELECT name, phone, call_name, secretary_name, google_search_enabled, (CASE WHEN google_search_month = $2 THEN google_search_count ELSE 0 END) AS google_search_count FROM users WHERE id = $1', [id, require('../webSearch').currentMonth()]),
+      query('SELECT name, phone, call_name, secretary_name, occupation_main, occupation_sub, occupation_detail, google_search_enabled, (CASE WHEN google_search_month = $2 THEN google_search_count ELSE 0 END) AS google_search_count FROM users WHERE id = $1', [id, require('../webSearch').currentMonth()]),
       query(
         `SELECT
            (SELECT count(*)::int FROM memories WHERE owner_id = $1) AS memories_n,
@@ -35,7 +36,9 @@ router.get('/summary', async (req, res) => {
     const s = sizes.rows[0];
     const parts = Object.keys(LABELS).map((k) => ({ key: k, label: LABELS[k], count: s[k + '_n'], bytes: Number(s[k + '_b']) }));
     res.json({
-      profile: { name: row.name, phone: row.phone, callName: row.call_name || '', secretaryName: row.secretary_name },
+      profile: { name: row.name, phone: row.phone, callName: row.call_name || '', secretaryName: row.secretary_name, occupationMain: row.occupation_main || '', occupationSub: row.occupation_sub || '', occupationDetail: row.occupation_detail || '' },
+      occupationOptions: occ.OCCUPATIONS,
+      occupationOther: occ.OTHER_SUB,
       usage: { totalBytes: parts.reduce((a, p) => a + p.bytes, 0), quotaBytes: (L.user_data_quota_mb || 20) * 1048576, parts },
       google: { enabled: !!row.google_search_enabled, count: row.google_search_count, limit: L.google_search_limit || 100 },
     });
@@ -54,11 +57,18 @@ router.patch('/profile', async (req, res) => {
     const callRaw = typeof b.callName === 'string' ? b.callName.trim() : '';
     const callName = callRaw ? cleanShortName(callRaw) : null;     // ว่าง = กลับไปเรียกตามชื่อที่สมัคร
     const secretaryName = cleanShortName(b.secretaryName);
+    let o = null;                                                    // ไม่ส่งฟิลด์สถานะมา = ไม่แตะของเดิม
+    if ('occupationMain' in b) o = occ.validateOccupation(b.occupationMain, b.occupationSub, b.occupationDetail);
     const r = await query(
-      'UPDATE users SET name = $2, call_name = $3, secretary_name = $4 WHERE id = $1 RETURNING name, call_name, secretary_name',
-      [req.user.id, name, callName, secretaryName]
+      `UPDATE users SET name = $2, call_name = $3, secretary_name = $4,
+              occupation_main = CASE WHEN $5::boolean THEN $6 ELSE occupation_main END,
+              occupation_sub = CASE WHEN $5::boolean THEN $7 ELSE occupation_sub END,
+              occupation_detail = CASE WHEN $5::boolean THEN $8 ELSE occupation_detail END
+        WHERE id = $1 RETURNING name, call_name, secretary_name, occupation_main, occupation_sub, occupation_detail`,
+      [req.user.id, name, callName, secretaryName, !!o, o && o.main, o && o.sub, o && o.detail]
     );
-    res.json({ ok: true, profile: { name: r.rows[0].name, callName: r.rows[0].call_name || '', secretaryName: r.rows[0].secretary_name } });
+    const x = r.rows[0];
+    res.json({ ok: true, profile: { name: x.name, callName: x.call_name || '', secretaryName: x.secretary_name, occupationMain: x.occupation_main || '', occupationSub: x.occupation_sub || '', occupationDetail: x.occupation_detail || '' } });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

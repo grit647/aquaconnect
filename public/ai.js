@@ -124,13 +124,14 @@
   function profileBack(body) { sheetButton(body, '← กลับเมนูโปรไฟล์', showProfileMenu); }
   function showProfileMenu() {
     const body = openSheet('โปรไฟล์ของฉัน');
+    let whoEl = null;
     if (me) {
       const head = document.createElement('div'); head.className = 'menu-head';
       const av = document.createElement('div'); av.className = 'av'; avatarContent(av);
       const who = document.createElement('div'); who.className = 'who';
       const nm = document.createElement('b'); nm.textContent = me.callName || me.name;
       const sm = document.createElement('small'); sm.textContent = 'เลขา: ' + me.secretaryName;
-      who.append(nm, sm); head.append(av, who); body.appendChild(head);
+      who.append(nm, sm); head.append(av, who); body.appendChild(head); whoEl = who;
     }
     // แถบการใช้งาน 2 แถว ต่อจากรูปโปรไฟล์ (ข้อมูลส่วนตัว + การค้นหาด้วย Google) — แตะดูรายละเอียดได้
     const meters = document.createElement('div'); meters.className = 'meters'; body.appendChild(meters);
@@ -138,6 +139,9 @@
     sheetButton(body, '👥 กลุ่ม (เร็วๆ นี้)', showGroupsSoon);
     api('GET', '/api/me/summary').then((s) => {
       const u = s.usage; const g = s.google;
+      // สถานะปัจจุบัน (ถ้าเลือกไว้) แสดงใต้ชื่อ
+      const pf = s.profile || {};
+      if (whoEl && pf.occupationMain) { const st = document.createElement('small'); st.textContent = '🧭 ' + [pf.occupationSub || pf.occupationMain, pf.occupationDetail].filter(Boolean).join(' — '); whoEl.appendChild(st); }
       meters.appendChild(meterRow('💾 ข้อมูลส่วนตัว', fmtBytes(u.totalBytes) + ' / ' + fmtBytes(u.quotaBytes), u.totalBytes / u.quotaBytes, showDataUsage));
       meters.appendChild(meterRow('🔎 ค้นหาด้วย Google (เดือนนี้)' + (g.enabled ? '' : ' 🔒 ยังไม่ได้รับอนุญาต'), g.count + ' / ' + g.limit + ' ครั้ง', g.enabled ? g.count / g.limit : 0, showGoogleInfo, !g.enabled));
     }).catch(() => { /* โหลดแถบไม่ได้ก็ยังใช้เมนูอื่นได้ */ });
@@ -173,11 +177,36 @@
     const name = mk('ชื่อของคุณ (ชื่อที่ใช้สมัคร)', s.profile.name, 100);
     const call = mk('ชื่อที่ให้เลขาเรียกคุณ (สั้นๆ เช่น ชื่อเล่น — เว้นว่าง = เรียกตามชื่อสมัคร)', s.profile.callName, 20, 'เช่น พี่ต้น');
     const sec = mk('ชื่อของเลขา', s.profile.secretaryName, 20, 'เช่น น้องครีม');
+    // ---------- สถานะปัจจุบัน: หมวดหลัก → หัวข้อย่อย → รายละเอียด (เป็นฐานข้อมูลกลางสำหรับค้นหา/เชื่อมต่อในฟีเจอร์ต่อไป) ----------
+    const opts = s.occupationOptions || {};
+    const sectionHead = note(body, '🧭 สถานะปัจจุบันของคุณ'); sectionHead.style.cssText = 'color:var(--neon);font-weight:800;margin-top:8px';
+    note(body, 'เลือกให้ตรงกับคุณ เพื่อให้เลขารู้จักคุณมากขึ้น และเป็นฐานข้อมูลกลางสำหรับการค้นหาและเชื่อมต่อข้อมูลในฟีเจอร์ต่อๆ ไป (ตอนนี้เป็นข้อมูลส่วนตัว ยังไม่แสดงให้คนอื่นเห็น)');
+    const mkSel = (label) => { note(body, label); const e = document.createElement('select'); body.appendChild(e); return e; };
+    const fillSel = (sel, list, value, placeholder) => {
+      sel.textContent = '';
+      const p = document.createElement('option'); p.value = ''; p.textContent = placeholder; sel.appendChild(p);
+      list.forEach((x) => { const o = document.createElement('option'); o.value = x; o.textContent = x; sel.appendChild(o); });
+      sel.value = list.includes(value) ? value : '';
+    };
+    const occMain = mkSel('หมวดสถานะ / อาชีพ');
+    fillSel(occMain, Object.keys(opts), s.profile.occupationMain, '— ยังไม่ระบุ —');
+    const occSub = mkSel('หัวข้อย่อย');
+    const refreshSub = (keep) => {
+      const list = opts[occMain.value] || [];
+      fillSel(occSub, list, keep ? s.profile.occupationSub : '', list.length ? '— เลือกหัวข้อย่อย —' : '(เลือกหมวดก่อน)');
+      occSub.disabled = !list.length;
+    };
+    refreshSub(true);
+    occMain.addEventListener('change', () => refreshSub(false));
+    note(body, 'รายละเอียด (เช่น ชื่อสถานศึกษา สถานที่ทำงาน หรือสิ่งที่ทำ — ถ้าเลือก "อื่นๆ" ต้องกรอก)');
+    const occDetail = document.createElement('textarea'); occDetail.rows = 3; occDetail.maxLength = 200; occDetail.value = s.profile.occupationDetail || ''; occDetail.placeholder = 'เช่น สอนคณิตศาสตร์ ม.ต้น โรงเรียน…';
+    body.appendChild(occDetail);
     const msg = note(body, '');
     sheetButton(body, '💾 บันทึกโปรไฟล์', async () => {
       try {
-        const r = await api('PATCH', '/api/me/profile', { name: name.value, callName: call.value, secretaryName: sec.value });
+        const r = await api('PATCH', '/api/me/profile', { name: name.value, callName: call.value, secretaryName: sec.value, occupationMain: occMain.value, occupationSub: occSub.value, occupationDetail: occDetail.value });
         me.name = r.profile.name; me.callName = r.profile.callName || null; me.secretaryName = r.profile.secretaryName;
+        me.occupationMain = r.profile.occupationMain; me.occupationSub = r.profile.occupationSub; me.occupationDetail = r.profile.occupationDetail;
         renderAvatar();
         msg.textContent = '✓ บันทึกแล้วค่ะ';
       } catch (err) { msg.textContent = err.message; }
