@@ -315,7 +315,7 @@ router.post('/conversations/:id/messages', async (req, res) => {
 
     let result;
     try {
-      let tools = buildTools(req.user.id, conv.id);
+      let tools = buildTools(req.user.id, conv.id, { focusCategory });
       if (ext.hasExternal) tools = Object.fromEntries(Object.entries(tools).filter(([k]) => TOOLS_OK_WITH_EXTERNAL.has(k)));
       result = await ai.runAgent({ systemPrompt: ext.hasExternal ? systemPrompt + EXTERNAL_NOTE : systemPrompt, history, tools });
     } catch (err) {
@@ -323,10 +323,12 @@ router.post('/conversations/:id/messages', async (req, res) => {
       return res.status(502).json({ error: 'เลขาตอบไม่ได้ในตอนนี้ ลองส่งใหม่อีกครั้งนะครับ' });
     }
 
+    // โมเดลอาจเลียนแบบป้าย "[ข้อมูลจาก Google …]" ที่เราแปะในประวัติให้มันเห็น — ตัดป้ายนั้นออกก่อนบันทึก/แสดง (ผู้ใช้ไม่ควรเห็นป้ายภายใน)
+    result.text = result.text.replace(/^\s*\[ข้อมูลจาก Google[^\]]*\]\s*/, '');
     // บันทึกข้อความผู้ใช้ + คำตอบเลขา พร้อมกันเป็นก้อนเดียว (ถ้า AI พัง จะไม่มีข้อความค้างครึ่งๆ กลางๆ ให้ส่งซ้ำซ้อน)
     await withTransaction(async (c) => {
       await c.query('INSERT INTO messages (conversation_id, user_id, role, content, source) VALUES ($1, $2, $3, $4, $5)', [conv.id, req.user.id, 'user', storedContent, source]);
-      await c.query('INSERT INTO messages (conversation_id, user_id, role, content, source) VALUES ($1, $2, $3, $4, $5)', [conv.id, req.user.id, 'assistant', result.text, result.executed.some((e) => e.name === 'google_search' && e.result && e.result.ok) ? 'google' : 'text']);
+      await c.query('INSERT INTO messages (conversation_id, user_id, role, content, source) VALUES ($1, $2, $3, $4, $5)', [conv.id, req.user.id, 'assistant', result.text, result.executed.some((e) => e.name === 'search_the_web' && e.result && e.result.ok) ? 'google' : 'text']);
       await c.query(
         'UPDATE conversations SET last_message_at = now(), title = COALESCE(title, $2) WHERE id = $1',
         [conv.id, content.slice(0, 50)]

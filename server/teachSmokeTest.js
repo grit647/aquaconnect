@@ -140,7 +140,7 @@ async function call(method, path, body, cookie) {
   await call('POST', `/api/chat/conversations/${convF.id}/messages`, { content: 'อัปเดตรอบใหม่', focusCategory: 'กุ้ง' }, B.cookie);
   check('เลือกหมวดแล้วคุย → เลขาเห็นข้อมูลเดิมของหมวดนั้นและรู้ว่าเป็นการอัปเดต', lastChatPrompt.includes('คุยต่อ/อัปเดตข้อมูลในหมวด "กุ้ง"') && lastChatPrompt.includes('ปล่อยลูกกุ้งหนาแน่น 60'));
   await call('POST', `/api/chat/conversations/${convF.id}/messages`, { content: 'คุยทั่วไป' }, B.cookie);
-  check('ไม่ได้เลือกหมวด → ไม่มีโหมดอัปเดตหมวด', !lastChatPrompt.includes('คุยต่อ/อัปเดตข้อมูลในหมวด'));
+  check('ไม่ได้เลือกหมวด → ไม่มีโหมดอัปเดตหมวด', !lastChatPrompt.includes('**ตอนนี้ผู้ใช้เลือกคุยต่อ'));
   await call('POST', `/api/chat/conversations/${convF.id}/messages`, { content: 'หมวดคนอื่น', focusCategory: 'วิชาการ' }, B.cookie);
   check('เลือกหมวดที่ไม่มีของตัวเอง → ไม่เห็นข้อมูลของคนอื่น', lastChatPrompt.includes('ยังไม่มีข้อมูล เป็นหมวดใหม่') && !lastChatPrompt.includes('pH'));
 
@@ -217,7 +217,7 @@ async function call(method, path, body, cookie) {
   // ---------- โปรไฟล์ (กดรูปโปรไฟล์): สรุปขนาดข้อมูล + แก้โปรไฟล์ ----------
   check('ไม่ล็อกอินดูโปรไฟล์ไม่ได้ (401)', (await call('GET', '/api/me/summary')).status === 401);
   const sum = await call('GET', '/api/me/summary', null, A.cookie);
-  check('สรุปโปรไฟล์: มีขนาดข้อมูล (ไบต์) แยกตามส่วน และสิทธิ์ Google (ค่าเริ่มต้นปิด)', sum.status === 200 && sum.json.usage.totalBytes > 0 && sum.json.usage.parts.length === 4 && sum.json.usage.parts.find((p) => p.key === 'messages').count >= 4 && sum.json.google.enabled === false && sum.json.google.count === 0, JSON.stringify(sum.json.usage && sum.json.usage.totalBytes));
+  check('สรุปโปรไฟล์: มีขนาดข้อมูล (ไบต์) แยกตามส่วน และสิทธิ์ Google (ค่าเริ่มต้นเปิดให้ทุกคน)', sum.status === 200 && sum.json.usage.totalBytes > 0 && sum.json.usage.parts.length === 4 && sum.json.usage.parts.find((p) => p.key === 'messages').count >= 4 && sum.json.google.enabled === true && sum.json.google.count === 0, JSON.stringify(sum.json.usage && sum.json.usage.totalBytes));
   check('สรุปมีเพดานสำหรับวาดแถบ (โควตาข้อมูล MB และจำนวนครั้ง Google)', sum.json.usage.quotaBytes >= 1048576 && sum.json.google.limit >= 1, JSON.stringify([sum.json.usage.quotaBytes, sum.json.google.limit]));
   check('ขนาดรวมเท่าผลรวมแต่ละส่วน', sum.json.usage.totalBytes === sum.json.usage.parts.reduce((a, p) => a + p.bytes, 0));
   check('สรุปของ B ไม่ปนข้อมูลของ A (ชื่อ/เบอร์เป็นของ B)', (await call('GET', '/api/me/summary', null, B.cookie)).json.profile.phone === PHONES[1]);

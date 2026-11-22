@@ -22,7 +22,8 @@ const sent = [];
 line.setSenderForTests(async (path, body) => { sent.push({ path, body }); });
 
 let searchCalls = [];
-ai.setGoogleSearchForTests(async (q) => { searchCalls.push(q); return { text: 'ราคากุ้งขนาด 50 ตัวต่อกิโลกรัมอยู่ที่ราว 160 บาท', sources: [{ title: 'ตัวอย่าง', uri: 'https://example.com' }] }; });
+let topicsSeen = [];
+ai.setGoogleSearchForTests(async (q, topic) => { searchCalls.push(q); topicsSeen.push(topic || ''); return { text: 'ราคากุ้งขนาด 50 ตัวต่อกิโลกรัมอยู่ที่ราว 160 บาท', sources: [{ title: 'ตัวอย่าง', uri: 'https://example.com' }] }; });
 
 let lastContents = []; let lastPrompt = ''; let reflectSeen = null;
 ai.setCallModelForTests(async ({ systemPrompt, contents }) => {
@@ -31,14 +32,14 @@ ai.setCallModelForTests(async ({ systemPrompt, contents }) => {
   const last = contents[contents.length - 1];
   const fr = last.parts.find((p) => p.functionResponse);
   if (fr) {
-    if (fr.functionResponse.name === 'google_search' && fr.functionResponse.response && fr.functionResponse.response.ok && lastText(contents).includes('แล้วจำไว้')) {
+    if (fr.functionResponse.name === 'search_the_web' && fr.functionResponse.response && fr.functionResponse.response.ok && lastText(contents).includes('แล้วจำไว้')) {
       return { parts: [{ functionCall: { name: 'save_memory', args: { category: 'ทั่วไป', content: 'ราคากุ้งจาก Google 160 บาท' } } }], usage: {} };
     }
     return { parts: [{ text: 'สรุปให้แล้วค่ะ' }], usage: {} };
   }
   const text = (last.parts[0] && last.parts[0].text) || '';
-  if (text.includes('ค้นเลย')) return { parts: [{ functionCall: { name: 'google_search', args: { query: 'ราคากุ้งวันนี้' } } }], usage: {} };
-  if (text.includes('ค้นสั้น')) return { parts: [{ functionCall: { name: 'google_search', args: { query: 'ab' } } }], usage: {} };
+  if (text.includes('ค้นเลย')) return { parts: [{ functionCall: { name: 'search_the_web', args: { query: 'ราคากุ้งวันนี้' } } }], usage: {} };
+  if (text.includes('ค้นสั้น')) return { parts: [{ functionCall: { name: 'search_the_web', args: { query: 'ab' } } }], usage: {} };
   return { parts: [{ text: 'สวัสดีค่ะ' }], usage: {} };
 });
 function lastText(contents) {
@@ -72,6 +73,7 @@ const lastReply = () => { const r = sent.filter((s) => s.path === '/message/repl
   await query('UPDATE users SET is_admin = true, line_user_id = $2 WHERE phone = $1', [PHONES[0], LINE_ADMIN]);
   await query('UPDATE users SET line_user_id = $2 WHERE phone = $1', [PHONES[1], LINE_U]);
   await query('UPDATE users SET line_user_id = $2 WHERE phone = $1', [PHONES[2], LINE_V]);
+  await query('UPDATE users SET google_search_enabled = false WHERE phone = ANY($1)', [[PHONES[1], PHONES[2]]]);   // ค่าเริ่มต้นเปิดให้ทุกคนแล้ว — ปิดไว้ก่อนเพื่อทดสอบขั้นตอนขอสิทธิ์
   const uid = async (ph) => (await query('SELECT id FROM users WHERE phone = $1', [ph])).rows[0].id;
   const idU = await uid(PHONES[1]); const idV = await uid(PHONES[2]);
   check('สมัครผู้ใช้ทดสอบ 3 คน', Ad.status === 200 && U.status === 200 && V.status === 200);
@@ -131,6 +133,15 @@ const lastReply = () => { const r = sent.filter((s) => s.path === '/message/repl
   reflectSeen = null;
   await reflect.reflectConversation(idU, convU.id);
   check('ตอนเลขาไตร่ตรองบทสนทนา ข้อความจาก Google ถูกติดป้ายห้ามบันทึก', reflectSeen && JSON.stringify(reflectSeen).includes('ข้อมูลภายนอกจาก Google ห้ามบันทึก'));
+
+  // ---------- ค้นตามหัวข้อ: เลือกหมวดไว้ → ค้นเฉพาะเรื่องที่เกี่ยวกับหมวดนั้น / ไม่เลือก → อิสระ ----------
+  topicsSeen = [];
+  await call('POST', `/api/chat/conversations/${convU.id}/messages`, { content: 'ค้นเลย', focusCategory: 'กุ้ง' }, U.cookie);
+  await say(U.cookie, convU, 'ค้นเลย');
+  check('เลือกหมวดไว้ → ส่งหัวข้อไปกำกับการค้น / ไม่เลือก → ค้นอิสระ (ไม่มีหัวข้อกำกับ)', topicsSeen.length === 2 && topicsSeen[0] === 'กุ้ง' && topicsSeen[1] === '', JSON.stringify(topicsSeen));
+  check('prompt: ผู้ใช้สั่งค้นเอง = ยืนยันในตัว ไม่ต้องถามซ้ำ + มีกฎค้นเฉพาะหัวข้อที่เลือก', lastPrompt.includes('ถือว่าเป็นการยืนยันในตัวแล้ว') && lastPrompt.includes('ค้นเฉพาะข้อมูลที่เกี่ยวข้องกับหัวข้อนั้นเท่านั้น'));
+  // ป้ายภายในที่โมเดลเลียนแบบ ต้องถูกตัดก่อนแสดงผู้ใช้ — จำลองโดยดูผ่านคำตอบจริงจากเซิร์ฟเวอร์ไม่ได้ จึงทดสอบ regex เดียวกัน
+  check('ตัดป้ายภายใน "[ข้อมูลจาก Google …]" ออกจากต้นคำตอบ', '[ข้อมูลจาก Google — ข้อมูลภายนอก ห้ามบันทึกลงความจำ] ราคากุ้ง 160'.replace(/^\s*\[ข้อมูลจาก Google[^\]]*\]\s*/, '') === 'ราคากุ้ง 160');
 
   // ---------- โควตา/คำค้นไม่ผ่าน ----------
   const calls2 = searchCalls.length;

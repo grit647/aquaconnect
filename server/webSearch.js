@@ -72,7 +72,7 @@ async function decideRequest(adminUserId, requestId, approve) {
 }
 
 // ค้นจริง: ต้องมีสิทธิ์ + ไม่เกินโควตา — คืน { ok, findings, sources } หรือ { needsApproval } / { error }
-async function search(userId, rawQuery) {
+async function search(userId, rawQuery, opts = {}) {
   const q = String(rawQuery || '').split(/\s+/).join(' ').trim();
   if (q.length < 3) return { error: 'ระบุสิ่งที่จะค้นให้ชัดเจนก่อน (อย่างน้อย 3 ตัวอักษร)' };
   if (q.length > MAX_QUERY_CHARS) return { error: `คำค้นยาวเกิน ${MAX_QUERY_CHARS} ตัวอักษร ย่อให้เหลือเฉพาะเรื่องที่ต้องการ` };
@@ -87,7 +87,7 @@ async function search(userId, rawQuery) {
   const limit = await getLimit();
   if (usedThisMonth >= limit) return { error: `ใช้สิทธิ์ค้นหาด้วย Google ครบ ${limit} ครั้งในเดือนนี้แล้ว (รีเซ็ตทุกวันที่ 1) ให้แจ้งผู้ใช้รอเดือนหน้า หรือติดต่อแอดมินเพื่อเพิ่มโควตา` };
   let out;
-  try { out = await ai.googleSearch(q); } catch (err) { console.error('google search failed:', err.message); return { error: 'ค้นข้อมูลไม่สำเร็จในตอนนี้ ลองใหม่อีกครั้งภายหลัง' }; }
+  try { out = await ai.googleSearch(q, opts.topic || ''); } catch (err) { console.error('google search failed:', err.message); return { error: 'ค้นข้อมูลไม่สำเร็จในตอนนี้ ลองใหม่อีกครั้งภายหลัง' }; }
   // นับเฉพาะที่ค้นสำเร็จ — ถ้าเป็นเดือนใหม่เริ่มนับที่ 1
   await query('UPDATE users SET google_search_count = CASE WHEN google_search_month = $2 THEN google_search_count + 1 ELSE 1 END, google_search_month = $2 WHERE id = $1', [userId, month]);
   return { ok: true, searched: q, findings: out.text || '(ไม่พบข้อมูลที่เชื่อถือได้)', sources: (out.sources || []).map((x) => x.title).filter(Boolean) };   // ส่งแค่ชื่อเว็บให้เลขา (ลิงก์ยาวมากกิน token)
