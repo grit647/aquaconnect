@@ -18,6 +18,12 @@ const SETTINGS = {
   free_access_minutes: { label: 'หมวดฟรี: ใช้ข้อมูลได้กี่นาทีต่อการอนุญาต 1 ครั้ง', min: 1, max: 240 },
   user_data_quota_mb: { label: 'โควตาข้อมูลส่วนตัวต่อคน (MB) — แสดงแถบในเมนูโปรไฟล์', min: 1, max: 1000 },
   google_search_limit: { label: 'ค้นหาด้วย Google ได้สูงสุดกี่ครั้งต่อคนต่อเดือน (รีเซ็ตทุกวันที่ 1)', min: 1, max: 100000 },
+  group_ai_per_hour:  { label: 'เลขา AI พูดในกลุ่มได้กี่ข้อความต่อชั่วโมง (ต่อเลขา ต่อกลุ่ม)', min: 0, max: 200 },
+  group_ai_per_day:   { label: 'เลขา AI พูดในกลุ่มได้กี่ข้อความต่อวัน (ต่อเลขา ทุกกลุ่มรวม)', min: 0, max: 1000 },
+  group_ai_chain_max: { label: 'เลขา AI ตอบเลขา AI ต่อกันได้กี่ชั้น (กันวนลูป)', min: 1, max: 10 },
+  group_ai_session_minutes: { label: 'ช่วงให้เลขาคุยกันเอง ยาวกี่นาที', min: 1, max: 15 },
+  group_ai_sessions_per_day: { label: 'กลุ่มเริ่มช่วงให้เลขาคุยกันเองได้กี่ครั้งต่อ 24 ชม.', min: 1, max: 50 },
+  group_ai_session_max_messages: { label: 'ช่วงเลขาคุยกันเอง พูดได้รวมกี่ข้อความ (เพดานค่า AI)', min: 2, max: 200 },
   topup_min:        { label: 'เติมเครดิตขั้นต่ำต่อครั้ง (บาท)', min: 1, max: 10000 },
   topup_max:        { label: 'เติมเครดิตสูงสุดต่อครั้ง (บาท)', min: 100, max: 100000 },
 };

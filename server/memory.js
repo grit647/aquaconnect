@@ -65,7 +65,7 @@ async function getMemoryContext(userId) {
 }
 
 // บันทึกความจำลงหมวด — ถ้ายังไม่มีหมวดนี้จะสร้างให้เป็น "ส่วนตัว" เสมอ (เปิดให้คนอื่นเห็นได้ต่อเมื่อเจ้าของสั่งเท่านั้น)
-async function saveMemory(userId, categoryName, content, conversationId) {
+async function saveMemory(userId, categoryName, content, conversationId, sourceGroupId) {
   const name = cleanCategoryName(categoryName);
   const text = String(content || '').trim();
   if (!text) throw new Error('เนื้อหาความจำห้องว่าง');
@@ -84,8 +84,8 @@ async function saveMemory(userId, categoryName, content, conversationId) {
       created = true;
     }
     const m = await c.query(
-      'INSERT INTO memories (category_id, owner_id, content, source_conversation_id) VALUES ($1, $2, $3, $4) RETURNING id',
-      [cat.rows[0].id, userId, text, conversationId || null]
+      'INSERT INTO memories (category_id, owner_id, content, source_conversation_id, source_group_id) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+      [cat.rows[0].id, userId, text, conversationId || null, sourceGroupId || null]
     );
     return { memoryId: m.rows[0].id, category: cat.rows[0].name, createdCategory: created };
   });

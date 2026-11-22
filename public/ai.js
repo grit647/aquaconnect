@@ -311,18 +311,35 @@
   }
   // ============================ กลุ่มสนทนา (เต็มจอ) ============================
   // หน้าแรกกลุ่ม → [สร้างกลุ่มใหม่ (ผู้สร้างเป็นแอดมิน สร้างได้ 2 กลุ่ม)] / [ดูกลุ่มทั้งหมด → ขอเข้าร่วม → ผู้สร้างอนุญาต] → แชทกลุ่ม (รูปโปรไฟล์ทุกข้อความ)
-  const grp = { view: 'home', groupId: null, name: '', lastId: 0, timer: null, info: null, back: null, nextTarget: null };
+  const grp = { view: 'home', groupId: null, name: '', lastId: 0, timer: null, sessTimer: null, info: null, back: null, nextTarget: null };
   const gEl = (id) => document.getElementById(id);
   function grpAvatar(name, pic) {
     const d = document.createElement('div'); d.className = 'gav';
     const initial = () => { d.textContent = String(name || '?').trim().charAt(0) || '?'; };
-    if (pic && LINE_PIC_RE.test(pic)) {
+    if (pic && (LINE_PIC_RE.test(pic) || /^\/api\/groups\/[0-9a-f-]+\/ai-avatar\/[0-9a-f-]+/.test(pic))) {
       const img = document.createElement('img'); img.alt = ''; img.referrerPolicy = 'no-referrer';
       img.onerror = initial; img.src = pic; d.appendChild(img);
     } else initial();
     return d;
   }
-  function grpStopPoll() { if (grp.timer) { clearInterval(grp.timer); grp.timer = null; } }
+  function grpStopPoll() { if (grp.timer) { clearInterval(grp.timer); grp.timer = null; } grpUpdateSession(null); }
+  // แถบ "เลขาคุยกันเอง — เหลือ mm:ss" (ข้อมูลช่วงมากับการดึงข้อความทุก 4 วินาที) + ปุ่มหยุด
+  function grpUpdateSession(sess) {
+    const bar = gEl('grpSession');
+    if (grp.sessTimer) { clearInterval(grp.sessTimer); grp.sessTimer = null; }
+    if (!sess) { bar.hidden = true; return; }
+    const endAt = Date.now() + sess.secondsLeft * 1000;
+    const paint = () => {
+      const left = Math.max(0, Math.round((endAt - Date.now()) / 1000));
+      gEl('grpSessText').textContent = '🤖 เลขาคุยกันเองอยู่ · เหลือ ' + String(Math.floor(left / 60)).padStart(2, '0') + ':' + String(left % 60).padStart(2, '0') + (sess.topic ? ' · หัวข้อ: ' + sess.topic : '');
+    };
+    paint(); bar.hidden = false;
+    grp.sessTimer = setInterval(paint, 1000);
+  }
+  gEl('grpSessStop').addEventListener('click', async () => {
+    if (!grp.groupId) return;
+    try { await api('DELETE', '/api/groups/' + grp.groupId + '/ai-session'); } catch (err) { alert(err.message); }
+  });
   function grpFrame(title, back, showMenu) {
     gEl('grpTitle').textContent = title;
     grp.back = back || null;
@@ -498,9 +515,10 @@
   // ---------- แชทกลุ่ม ----------
   function fmtGTime(iso) { try { return new Date(iso).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }); } catch (e) { return ''; } }
   function grpAddMsg(log, m) {
-    const row = document.createElement('div'); row.className = 'gmsg' + (m.mine ? ' mine' : '');
+    if (m.isSystem) { const d = document.createElement('div'); d.className = 'gsys'; d.textContent = m.content; log.appendChild(d); return; }
+    const row = document.createElement('div'); row.className = 'gmsg' + (m.mine ? ' mine' : '') + (m.isAi ? ' ai' : '');
     const bub = document.createElement('div'); bub.className = 'gbub';
-    const nm = document.createElement('div'); nm.className = 'gname'; nm.textContent = m.name;
+    const nm = document.createElement('div'); nm.className = 'gname'; nm.textContent = m.isAi ? '🤖 ' + m.name + ' · เลขาของ ' + m.ownerName : m.name;
     const tx = document.createElement('div'); tx.className = 'gtext'; tx.textContent = m.content;
     const tm = document.createElement('div'); tm.className = 'gtime'; tm.textContent = fmtGTime(m.createdAt);
     bub.append(nm, tx, tm);
@@ -524,7 +542,7 @@
     const lab = document.createElement('label'); lab.className = 'chk';
     const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = !!info.mySettings.aiJoin;
     const lt = document.createElement('div'); lt.innerHTML = ''; const b1 = document.createElement('b'); b1.textContent = 'ร่วมคุยในกลุ่มนี้';
-    const sm = document.createElement('small'); sm.textContent = 'ให้เลขาของคุณเข้ามาร่วมคุยในกลุ่ม (การคุยของเลขากำลังพัฒนา ตอนนี้เก็บการตั้งค่าไว้ก่อน)';
+    const sm = document.createElement('small'); sm.textContent = 'เลขาของคุณจะพูดในกลุ่มเอง เมื่อมีคนเรียกชื่อเลขา หรือมีข้อความที่ตรงกับหัวข้อด้านล่าง (ไม่เอาข้อมูลส่วนตัวของคุณมาพูด และมีเพดานจำนวนข้อความ)';
     lt.append(b1, sm); lab.append(cb, lt); card.appendChild(lab);
     const tl = document.createElement('div'); tl.className = 'sec'; tl.textContent = 'หัวข้อที่จะคุย / ที่สนใจ'; card.appendChild(tl);
     const topic = document.createElement('input'); topic.type = 'text'; topic.maxLength = 100; topic.value = info.mySettings.aiTopic || ''; card.appendChild(topic);
@@ -551,6 +569,18 @@
       sum.disabled = false; sum.textContent = '📝 สรุปการสนทนา';
     });
     card.append(sum, res, msg);
+    const sesTitle = document.createElement('div'); sesTitle.className = 'sec'; sesTitle.textContent = 'ให้เลขาคุยกันเอง (สวิตช์ 5 นาที)'; card.appendChild(sesTitle);
+    const sesNote = document.createElement('div'); sesNote.className = 'gnote2';
+    sesNote.textContent = 'เปิดช่วงให้เลขา AI ที่ร่วมคุยในกลุ่มนี้ผลัดกันคุยกันเองประมาณ 5 นาที เพื่อทำความรู้จักกัน (หัวข้อด้านบนใช้เป็นหัวข้อชวนคุย) ครบเวลาระบบปิดเอง แล้วเลขาแต่ละตัวจดบันทึกว่าได้รู้จักใครบ้าง (เลขาตัวอื่นและสมาชิก) ลงหมวด "💬 ข้อมูลแชท" ของเจ้าของ — ต้องมีเลขาร่วมคุยอย่างน้อย 2 ตัว และติ๊ก "ร่วมคุย" ของคุณก่อน';
+    card.appendChild(sesNote);
+    const sesMsg = document.createElement('div'); sesMsg.className = 'gnote2';
+    const sesBtn = document.createElement('button'); sesBtn.type = 'button'; sesBtn.className = 'allbtn'; sesBtn.textContent = '▶ เริ่มให้เลขาคุยกันเอง 5 นาที';
+    sesBtn.addEventListener('click', async () => {
+      sesBtn.disabled = true; sesMsg.textContent = '';
+      try { await api('PATCH', '/api/groups/' + groupId + '/ai-settings', { aiJoin: cb.checked, aiTopic: topic.value }); await api('POST', '/api/groups/' + groupId + '/ai-session', { topic: topic.value }); closeGrpAiPanel(); }
+      catch (err) { sesMsg.textContent = err.message; sesBtn.disabled = false; }
+    });
+    card.append(sesBtn, sesMsg);
   }
   function closeGrpAiPanel() { const o = gEl('grpPopOverlay'); o.hidden = true; o.classList.remove('above'); }
   gEl('grpAi').addEventListener('click', openGrpAiPanel);
@@ -658,6 +688,7 @@
         if (grp.groupId !== groupId) return;
         const atBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 80;
         r.messages.forEach((m) => { grpAddMsg(body, m); grp.lastId = Math.max(grp.lastId, m.id); });
+        grpUpdateSession(r.session);
         if (r.messages.length && (first || atBottom)) stick();
         if (first && !r.messages.length) gNote(body, 'ยังไม่มีข้อความ — พิมพ์ทักทายเป็นคนแรกได้เลย');
       } catch (err) { if (first) { gNote(body, err.message); gEl('grpComposer').hidden = true; } }

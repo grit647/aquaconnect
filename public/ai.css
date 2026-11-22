@@ -417,3 +417,13 @@ body {
 .gmsg.priv .gname { color: var(--neon2); }
 .gmsg.priv.mine .gname { display: block; }
 .gmsg .gprivtag { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+/* ข้อความของเลขา AI ในกลุ่ม + ข้อความระบบ + แถบช่วงเลขาคุยกันเอง */
+.gmsg.ai .gbub { border: 1px solid var(--neon2); background: rgba(167, 139, 250, 0.14); }
+.gmsg.ai .gname { color: var(--neon2); }
+.gmsg.ai .gav { border-color: var(--neon2); box-shadow: 0 0 8px rgba(167, 139, 250, 0.5); }
+.gsys { align-self: center; max-width: 92%; text-align: center; font-size: 12px; color: var(--muted); padding: 4px 12px; border-radius: 999px; background: rgba(255, 255, 255, 0.05); }
+#grpSession { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: rgba(167, 139, 250, 0.16); border-bottom: 1px solid var(--neon2); font-size: 13px; }
+#grpSession[hidden] { display: none; }
+#grpSession span { flex: 1; min-width: 0; }
+#grpSession button { border: 1px solid var(--neon2); background: transparent; color: var(--neon2); border-radius: 999px; padding: 4px 14px; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; flex-shrink: 0; }

@@ -42,8 +42,22 @@ router.get('/:id', async (req, res) => {
 router.post('/requests/:rid/decide', async (req, res) => {
   try { res.json({ ok: true, ...(await groups.decideJoin(req.user.id, req.params.rid, !!(req.body && req.body.approve === true))) }); } catch (err) { fail(res, err); }
 });
+router.get('/:id/ai-avatar/:uid', async (req, res) => {
+  try {
+    const img = await groups.aiAvatarForGroup(req.user.id, req.params.id, req.params.uid);
+    if (!img) return res.status(404).end();
+    res.set({ 'Content-Type': img.mime, 'Cache-Control': 'private, max-age=86400', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'" });
+    res.send(img.bytes);
+  } catch (err) { res.status(404).end(); }
+});
+router.post('/:id/ai-session', async (req, res) => {
+  try { res.json({ ok: true, session: await groups.startAiSession(req.user.id, req.params.id, req.body && req.body.topic) }); } catch (err) { fail(res, err); }
+});
+router.delete('/:id/ai-session', async (req, res) => {
+  try { res.json({ ok: true, ...(await groups.stopAiSession(req.user.id, req.params.id)) }); } catch (err) { fail(res, err); }
+});
 router.get('/:id/messages', async (req, res) => {
-  try { res.json({ messages: await groups.listMessages(req.user.id, req.params.id, req.query.after) }); } catch (err) { res.status(403).json({ error: err.message }); }
+  try { res.json({ messages: await groups.listMessages(req.user.id, req.params.id, req.query.after), session: await groups.aiSessionInfo(req.user.id, req.params.id) }); } catch (err) { res.status(403).json({ error: err.message }); }
 });
 router.post('/:id/messages', async (req, res) => {
   try { res.json({ ok: true, ...(await groups.postMessage(req.user.id, req.params.id, req.body && req.body.content)) }); } catch (err) { fail(res, err); }

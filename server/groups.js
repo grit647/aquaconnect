@@ -4,6 +4,7 @@ const { query, withTransaction } = require('./db');
 const line = require('./line');
 const ai = require('./ai');
 const memory = require('./memory');
+const groupAi = require('./groupAi');
 
 const MAX_GROUPS_PER_USER = 2;   // สร้างกลุ่มได้คนละกี่กลุ่ม
 const MAX_JOINED_PER_USER = 3;   // เข้าร่วมกลุ่มของคนอื่นได้คนละกี่กลุ่ม (ไม่นับกลุ่มที่ตัวเองสร้าง)
@@ -158,6 +159,7 @@ async function postMessage(userId, groupId, raw) {
   if (text.length > MAX_MESSAGE_CHARS) throw new Error(`ข้อความยาวเกิน ${MAX_MESSAGE_CHARS} ตัวอักษร`);
   checkRate(userId);
   const r = await query('INSERT INTO chat_group_messages (group_id, user_id, content) VALUES ($1, $2, $3) RETURNING id, created_at', [groupId, userId, text]);
+  setImmediate(() => groupAi.schedule(groupId, Number(r.rows[0].id)));   // เลขาที่ร่วมคุยอาจตอบเอง (ดู groupAi.js)
   return { id: Number(r.rows[0].id), createdAt: r.rows[0].created_at };
 }
 
@@ -165,11 +167,45 @@ async function postMessage(userId, groupId, raw) {
 async function listMessages(userId, groupId, afterId) {
   if (!(await memberRole(userId, groupId))) throw new Error('คุณไม่ได้เป็นสมาชิกกลุ่มนี้');
   const after = Number(afterId);
+  const cols = `m.id, m.user_id, m.content, m.created_at, m.is_ai, m.is_system, ${DISPLAY} AS owner_name, u.secretary_name, u.ai_avatar_at, u.line_picture_url AS picture`;
   const sql = Number.isFinite(after) && after > 0
-    ? `SELECT m.id, m.user_id, m.content, m.created_at, ${DISPLAY} AS name, u.line_picture_url AS picture FROM chat_group_messages m JOIN users u ON u.id = m.user_id WHERE m.group_id = $1 AND m.id > $2 ORDER BY m.id ASC LIMIT 100`
-    : `SELECT * FROM (SELECT m.id, m.user_id, m.content, m.created_at, ${DISPLAY} AS name, u.line_picture_url AS picture FROM chat_group_messages m JOIN users u ON u.id = m.user_id WHERE m.group_id = $1 AND $2::bigint IS NOT NULL ORDER BY m.id DESC LIMIT 50) t ORDER BY id ASC`;
+    ? `SELECT ${cols} FROM chat_group_messages m JOIN users u ON u.id = m.user_id WHERE m.group_id = $1 AND m.id > $2 ORDER BY m.id ASC LIMIT 100`
+    : `SELECT * FROM (SELECT ${cols} FROM chat_group_messages m JOIN users u ON u.id = m.user_id WHERE m.group_id = $1 AND $2::bigint IS NOT NULL ORDER BY m.id DESC LIMIT 50) t ORDER BY id ASC`;
   const r = await query(sql, [groupId, Number.isFinite(after) && after > 0 ? after : 0]);
-  return r.rows.map((m) => ({ id: Number(m.id), userId: m.user_id, name: m.name, picture: picOf(m.picture), content: m.content, createdAt: m.created_at, mine: m.user_id === userId }));
+  return r.rows.map((m) => {
+    if (m.is_system) return { id: Number(m.id), isSystem: true, isAi: false, name: '', content: m.content, createdAt: m.created_at, mine: false };
+    if (m.is_ai) return { id: Number(m.id), userId: m.user_id, isAi: true, name: m.secretary_name, ownerName: m.owner_name, picture: m.ai_avatar_at ? `/api/groups/${groupId}/ai-avatar/${m.user_id}?v=${new Date(m.ai_avatar_at).getTime()}` : null, content: m.content, createdAt: m.created_at, mine: false, myAi: m.user_id === userId };
+    return { id: Number(m.id), userId: m.user_id, isAi: false, name: m.owner_name, picture: picOf(m.picture), content: m.content, createdAt: m.created_at, mine: m.user_id === userId };
+  });
+}
+
+// รูป AI ของเลขาที่ "ร่วมคุย" ในกลุ่มนี้ — ให้เฉพาะสมาชิกกลุ่มเดียวกันดูได้ (เจ้าของเปิดให้เลขามาพูดในกลุ่มเอง รูปจึงเห็นในกลุ่มนี้)
+async function aiAvatarForGroup(requesterId, groupId, ownerId) {
+  if (!(await memberRole(requesterId, groupId))) return null;
+  if (!UUID_RE.test(String(ownerId))) return null;
+  const r = await query(
+    `SELECT u.ai_avatar, u.ai_avatar_mime FROM chat_group_members mem JOIN users u ON u.id = mem.user_id
+      WHERE mem.group_id = $1 AND mem.user_id = $2 AND mem.ai_join AND u.ai_avatar IS NOT NULL`, [groupId, ownerId]);
+  return r.rows[0] ? { bytes: r.rows[0].ai_avatar, mime: r.rows[0].ai_avatar_mime } : null;
+}
+
+// ช่วง "เลขาคุยกันเอง" (สวิตช์ 5 นาที): สมาชิกที่ร่วมคุยเริ่ม — ผู้เริ่มหรือแอดมินกลุ่มกดหยุดได้
+async function startAiSession(userId, groupId, topic) {
+  if (!(await memberRole(userId, groupId))) throw new Error('คุณไม่ได้เป็นสมาชิกกลุ่มนี้');
+  return groupAi.startSession(userId, groupId, topic);
+}
+async function stopAiSession(userId, groupId) {
+  const role = await memberRole(userId, groupId);
+  if (!role) throw new Error('คุณไม่ได้เป็นสมาชิกกลุ่มนี้');
+  const s = await groupAi.activeSession(groupId);
+  if (!s) throw new Error('ตอนนี้ไม่มีช่วงให้เลขาคุยกันเอง');
+  if (role !== 'admin' && s.startedBy !== userId) throw new Error('เฉพาะผู้เริ่มหรือแอดมินกลุ่มเท่านั้นที่กดหยุดได้');
+  await groupAi.stopSession(groupId);
+  return { stopped: true };
+}
+async function aiSessionInfo(userId, groupId) {
+  if (!(await memberRole(userId, groupId))) throw new Error('คุณไม่ได้เป็นสมาชิกกลุ่มนี้');
+  return groupAi.activeSession(groupId);
 }
 
 // สมาชิกออกจากกลุ่ม (ผู้สร้างออกไม่ได้ ต้องลบกลุ่ม)
@@ -194,7 +230,7 @@ async function contextForSecretary(userId, groupId) {
   if (!(await memberRole(userId, groupId))) return null;
   const g = await query('SELECT name FROM chat_groups WHERE id = $1', [groupId]);
   const r = await query(
-    `SELECT * FROM (SELECT ${DISPLAY} AS name, m.content, m.id FROM chat_group_messages m JOIN users u ON u.id = m.user_id
+    `SELECT * FROM (SELECT ${groupAi.SENDER} AS name, m.content, m.id FROM chat_group_messages m JOIN users u ON u.id = m.user_id
                      WHERE m.group_id = $1 ORDER BY m.id DESC LIMIT 25) t ORDER BY id ASC`, [groupId]);
   let text = r.rows.map((m) => `${m.name}: ${String(m.content).slice(0, 300)}`).join('\n');
   if (text.length > 5000) text = text.slice(-5000);
@@ -226,7 +262,7 @@ async function summarizeToMemory(userId, groupId, rawTopic) {
   const topic = oneLine(rawTopic).slice(0, 100);
   const g = await query('SELECT name FROM chat_groups WHERE id = $1', [groupId]);
   const msgs = await query(
-    `SELECT * FROM (SELECT ${DISPLAY} AS name, m.content, m.created_at, m.id FROM chat_group_messages m JOIN users u ON u.id = m.user_id
+    `SELECT * FROM (SELECT ${groupAi.SENDER} AS name, m.content, m.created_at, m.id FROM chat_group_messages m JOIN users u ON u.id = m.user_id
                      WHERE m.group_id = $1 ORDER BY m.id DESC LIMIT 80) t ORDER BY id ASC`, [groupId]);
   if (msgs.rows.length < 3) throw new Error('ยังมีข้อความน้อยเกินไปที่จะสรุป (ต้องมีอย่างน้อย 3 ข้อความ)');
   let transcript = msgs.rows.map((m) => `${m.name}: ${String(m.content).slice(0, 300)}`).join('\n');
@@ -334,4 +370,4 @@ async function respondInvite(userId, inviteId, accept) {
   return { accepted: !!accept, groupId: out.group_id, groupName: out.name };
 }
 
-module.exports = { contextForSecretary, setAiSettings, summarizeToMemory, listInviteCandidates, inviteUser, myInvites, respondInvite, createGroup, listGroups, requestJoin, decideJoin, getGroup, postMessage, listMessages, leaveGroup, deleteGroup, MAX_GROUPS_PER_USER, MAX_JOINED_PER_USER, MAX_MESSAGE_CHARS };
+module.exports = { startAiSession, stopAiSession, aiSessionInfo, aiAvatarForGroup, contextForSecretary, setAiSettings, summarizeToMemory, listInviteCandidates, inviteUser, myInvites, respondInvite, createGroup, listGroups, requestJoin, decideJoin, getGroup, postMessage, listMessages, leaveGroup, deleteGroup, MAX_GROUPS_PER_USER, MAX_JOINED_PER_USER, MAX_MESSAGE_CHARS };

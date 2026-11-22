@@ -45,6 +45,7 @@ app.get('/api/health', async (req, res) => {
     await query('SELECT 1');
     // คนยิง /api/health (UptimeRobot ทุก 5 นาที) = ปลุกเซิร์ฟเวอร์ + ตรวจนัดที่ถึงเวลาเตือนแล้วส่งไลน์ (ไม่รอผล ไม่ให้ health ช้า)
     runDueReminders().catch((e) => console.error('[reminders]', e.message));
+    require('./groupAi').endDueSessions().catch((e) => console.error('[group-ai]', e.message));   // ปิดช่วงเลขาคุยกันเองที่ครบเวลา (และจดความรู้จักกัน)
     res.json({ ok: true });
   } catch (err) {
     console.error('health check failed:', err.message);
@@ -68,6 +69,7 @@ if (require.main === module) {
   app.listen(PORT, () => console.log(`AquaConnect server running on port ${PORT}`));
   // ตัวจับเวลาแจ้งเตือนนัดหมายทุก 1 นาที (เฉพาะตอนรันจริง ไม่ทำงานตอนชุดทดสอบ require ไฟล์นี้)
   setInterval(() => runDueReminders().catch((e) => console.error('[reminders]', e.message)), 60000);
+  setInterval(() => require('./groupAi').endDueSessions().catch((e) => console.error('[group-ai]', e.message)), 60000);
 }
 
 module.exports = app;
