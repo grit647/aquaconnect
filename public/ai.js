@@ -196,7 +196,7 @@
     if (onClick) { d.style.cursor = 'pointer'; d.addEventListener('click', onClick); }
     return d;
   }
-  document.getElementById('aiBadge').addEventListener('click', () => { openSheet('โปรไฟล์ของฉัน'); showProfileEdit(); });
+  document.getElementById('aiBadge').addEventListener('click', () => { if (window.aqTick) window.aqTick.open(); });
   async function loadSummary(body) {
     try { return await api('GET', '/api/me/summary'); } catch (err) { note(body, err.message); return null; }
   }
@@ -778,8 +778,9 @@
   const STATE_TEXT = { idle: 'พร้อมคุยค่ะ', thinking: 'เลขากำลังคิด...', speaking: 'เลขากำลังพูด...', listening: 'กำลังฟังอยู่ค่ะ...' };
   let botState = 'idle';
   function setBotState(s) {
+    const prevState = botState;
     botState = s;
-    if (window.aqTick) window.aqTick.set(s === 'thinking');
+    if (window.aqTick) window.aqTick.state(prevState, s);
     botStage.className = 'state-' + s;
     $('stateLabel').textContent = STATE_TEXT[s] || '';
     const bot = $('bot');

@@ -432,12 +432,13 @@ body {
 .gmsg.ai.mine .gname { display: block; }
 .gmsg.ai.mine .gbub { background: rgba(139, 92, 246, 0.32); border: 1px solid var(--neon2); }
 
-/* เสียงประมวลผล: ปุ่มฟันเฟืองมุมขวาล่าง */
-#tickGear { position: fixed; right: 14px; bottom: 14px; z-index: 75; width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--neon2); background: rgba(15, 20, 45, 0.85); color: #fff; font-size: 18px; cursor: pointer; display: none; }
-body:not(.auth-mode) #tickGear { display: block; }
-#tickPop { position: fixed; right: 14px; bottom: 60px; z-index: 76; width: 230px; padding: 12px; border-radius: 12px; border: 1px solid var(--neon2); background: #0f1430; color: #fff; font-size: 13px; }
-#tickPop[hidden] { display: none; }
-#tickPop .tt { font-weight: 700; margin-bottom: 4px; }
-#tickPop .tn { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
+/* เสียงประมวลผล: ฟันเฟืองเล็กที่มุมรูปเลขา AI + หน้าต่างตั้งค่ากลางจอ */
+#tickGear { position: absolute; left: 30px; top: -8px; width: 22px; height: 22px; border-radius: 50%; background: rgba(15, 20, 45, 0.95); border: 1px solid var(--neon2); font-size: 12px; line-height: 20px; text-align: center; pointer-events: none; }
+#tickOverlay { position: fixed; inset: 0; z-index: 90; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.55); padding: 20px; }
+#tickPop { width: 100%; max-width: 320px; padding: 16px; border-radius: 14px; border: 1px solid var(--neon2); background: #0f1430; color: #fff; font-size: 14px; }
+#tickPop .tt { font-weight: 700; font-size: 16px; margin-bottom: 6px; }
+#tickPop .tn { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
 #tickPop input { width: 100%; }
-#tickPop .tv { margin-top: 4px; text-align: center; }
+#tickPop .tv { margin: 6px 0 12px; text-align: center; }
+#tickPop .tb { display: flex; gap: 8px; }
+#tickPop .tb button { flex: 1; border: 1px solid var(--neon2); background: transparent; color: var(--neon2); border-radius: 999px; padding: 8px 4px; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
