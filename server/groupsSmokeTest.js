@@ -18,12 +18,15 @@ let lastToolNames = [];
 let groupAiText = 'SKIP';                 // คำตอบของเลขาในกลุ่ม (string หรือ function(prompt))
 const groupAiPrompts = [];                // prompt ที่เลขาในกลุ่มได้รับ (ไว้ตรวจว่าไม่มีข้อมูลส่วนตัวหลุด)
 let relCalls = 0;
+let agendaReply = '{"issues":["ราคากุ้งช่วงนี้","การดูแลน้ำในบ่อ","โรคที่พบบ่อย"]}';
+let agendaCalls = 0;
 ai.setCallModelForTests(async ({ systemPrompt, contents, toolDeclarations }) => {
   lastToolNames = (toolDeclarations || []).map((t) => t.name);
   if (systemPrompt.includes('กำลังจดบันทึกส่วนตัวว่าเพิ่งได้ "รู้จัก"')) {
     relCalls++;
     return { parts: [{ text: '{"people":[{"name":"ผู้ชมทดสอบ","note":"สนใจเรื่องกุ้งและชอบทักทายก่อน"}]}' }], usage: {} };
   }
+  if (systemPrompt.includes('ช่วยตั้ง "ประเด็นสนทนา"')) { agendaCalls++; return { parts: [{ text: agendaReply }], usage: {} }; }
   if (systemPrompt.includes('กำลังร่วมสนทนาในกลุ่มแชท')) {
     groupAiPrompts.push(systemPrompt + '\n' + JSON.stringify(contents));
     const t = typeof groupAiText === 'function' ? groupAiText(systemPrompt) : groupAiText;
@@ -280,13 +283,46 @@ const lastReply = () => { const r = sent.filter((s) => s.path === '/message/repl
   const sessRow = (await query('SELECT id, started_at FROM chat_group_ai_sessions WHERE group_id = $1 ORDER BY started_at DESC LIMIT 1', [gid])).rows[0];
   await gai.recordRelationships(gid, { started_at: sessRow.started_at });
   check('จดซ้ำเรื่องเดิมไม่ซ้ำซ้อน (กันความจำบวม)', (await query("SELECT count(*)::int n FROM memories WHERE owner_id = $1 AND content LIKE '[รู้จักกัน]%'", [uidB])).rows[0].n === 1);
+  // ---------- ช่วงคุยกันเอง: ความเร็ว + ประเด็นให้คุย (ไม่ให้วนซ้ำแนวเดิม) ----------
+  gai.setPaceForTests(null, null, null);
+  check('ความเร็วเริ่มต้นของช่วงคุยกันเองช้าลง = 20 วินาที/ข้อความ (เดิม 9 วินาทีเร็วเกินไป)', (await gai.getPaceMs()) === 20000, String(await gai.getPaceMs()));
+  gai.setPaceForTests(0, 4, 2);
+  check('แยกประเด็นที่เจ้าของพิมพ์ (ขึ้นบรรทัดใหม่/; คั่น) เป็นรายข้อ ไม่เกิน 5', JSON.stringify(gai.parseIssues('ราคากุ้ง; โรคกุ้ง\n  อาหารกุ้ง  ;;')) === JSON.stringify(['ราคากุ้ง', 'โรคกุ้ง', 'อาหารกุ้ง']) && gai.parseIssues('a;bb;cc;dd;ee;ff;gg').length === 5);
+  await query('DELETE FROM chat_group_ai_sessions WHERE group_id = $1 AND ended_at IS NOT NULL', [gid]);
+  const runSession = async (topic) => {
+    const base = groupAiPrompts.length; const a0 = agendaCalls;
+    const r = await call('POST', `/api/groups/${gid}/ai-session`, { topic }, A.cookie);
+    await waitFor(async () => (await query("SELECT 1 FROM chat_group_ai_sessions WHERE group_id = $1 AND ended_at IS NOT NULL", [gid])).rows.length === 1, 12000);
+    await gai.flushAll(gid);
+    const row = (await query('SELECT agenda, ended_reason FROM chat_group_ai_sessions WHERE group_id = $1', [gid])).rows[0];
+    const out = { status: r.status, agenda: row ? JSON.parse(row.agenda || '[]') : [], prompts: groupAiPrompts.slice(base), agendaCalls: agendaCalls - a0 };
+    await query('DELETE FROM chat_group_ai_sessions WHERE group_id = $1', [gid]);
+    return out;
+  };
+  const own = await runSession('ราคากุ้ง; โรคกุ้ง');
+  check('เจ้าของใส่ประเด็นเอง (2 ข้อ) → ใช้ประเด็นนั้นเลย ไม่ต้องเรียก AI ตั้งประเด็น', own.status === 200 && JSON.stringify(own.agenda) === JSON.stringify(['ราคากุ้ง', 'โรคกุ้ง']) && own.agendaCalls === 0, JSON.stringify([own.agenda, own.agendaCalls]));
+  const auto = await runSession('');
+  check('เจ้าของไม่ใส่ประเด็น → เลขาตั้ง 3 ประเด็นเอง เก็บไว้ และประกาศในห้อง', auto.agenda.length === 3 && auto.agenda[0] === 'ราคากุ้งช่วงนี้' && auto.agendaCalls === 1, JSON.stringify([auto.agenda, auto.agendaCalls]));
+  check('ประกาศ "📋 ประเด็นที่เลขาชวนคุย" ในห้องแชท (คนจริงเห็นและเข้าร่วมได้)', (await call('GET', `/api/groups/${gid}/messages`, null, A.cookie)).json.messages.some((m) => m.isSystem && m.content.includes('📋 ประเด็นที่เลขาชวนคุย') && m.content.includes('การดูแลน้ำในบ่อ')));
+  const pr = auto.prompts;
+  check('ทุกตาพูดรู้ประเด็นปัจจุบัน (▶ ตอนนี้อยู่ประเด็นที่ N) และขยับทีละ 2 ข้อความ (ตั้งไว้ทดสอบ)', pr.length >= 4 && pr[0].includes('ตอนนี้อยู่ประเด็นที่ 1: ราคากุ้งช่วงนี้') && pr[1].includes('ตอนนี้อยู่ประเด็นที่ 1') && pr[2].includes('ตอนนี้อยู่ประเด็นที่ 2: การดูแลน้ำในบ่อ') && pr[3].includes('ตอนนี้อยู่ประเด็นที่ 2'), JSON.stringify(pr.map((x) => (/ตอนนี้อยู่ประเด็นที่ (\d)/.exec(x) || [])[1])));
+  check('2 ข้อความแรกทักทายแนะนำตัวสั้นๆ ได้ แต่หลังจากนั้น **ห้ามทักทาย/แนะนำตัวซ้ำ** ให้ลงประเด็น (กันคำตอบวนแนวเดิม)', pr[0].includes('ทักทายและแนะนำตัวสั้นๆ ได้') && pr[1].includes('ทักทายและแนะนำตัวสั้นๆ ได้') && pr[2].includes('ห้ามทักทายหรือแนะนำตัวซ้ำ') && !pr[2].includes('ทักทายและแนะนำตัวสั้นๆ ได้') && pr[3].includes('ห้ามทักทายหรือแนะนำตัวซ้ำ'));
+  check('จากตาที่ 2 เป็นต้นไป บอกเลขาว่าตัวเองเพิ่งพูดอะไรไป (ห้ามพูดซ้ำ) + ให้ให้เนื้อหา/ความเห็นต่อยอด ไม่ใช่คล้อยตามอย่างเดียว', pr[2].includes('สิ่งที่คุณเพิ่งพูดไปแล้ว') && pr[2].includes('สวัสดีครับ ยินดีที่ได้รู้จักนะครับ') && pr[0].includes('ความเห็น') && pr[0].includes('คล้อยตามอย่างเดียว'));
+  agendaReply = 'ขอโทษ ตอบเป็นข้อความธรรมดา ไม่ใช่ JSON';
+  const fb = await runSession('');
+  check('ถ้าเลขาตั้งประเด็นไม่สำเร็จ (ตอบไม่เป็น JSON) → ใช้ประเด็นสำรอง 3 ข้อ ไม่ล้ม', fb.agenda.length === 3 && fb.agenda[0].includes('ตลาด') && fb.agendaCalls === 1, JSON.stringify(fb.agenda));
+  agendaReply = '{"issues":["ราคากุ้งช่วงนี้","การดูแลน้ำในบ่อ","โรคที่พบบ่อย"]}';
+  gai.setPaceForTests(0, 4);
+  await query("DELETE FROM memories WHERE owner_id = ANY($1) AND content LIKE '[รู้จักกัน]%'", [[idA1, uidB]]);
+  await runSession('ทำความรู้จักกัน');
+
   // เลขารู้จักคนในกลุ่มนี้ และไม่เอาของกลุ่มอื่นมาใช้
   const g2id = g2.json.group.id;
   await query("INSERT INTO memories (category_id, owner_id, content, source_group_id) SELECT id, owner_id, '[รู้จักกัน] คนกลุ่มอื่น: ความลับของอีกกลุ่ม', $2 FROM memory_categories WHERE owner_id = $1 AND name = 'ข้อมูลแชท'", [uidB, g2id]);
   await agePast(); groupAiText = 'ยินดีครับ';
   await humanSay(A.cookie, 'น้องบี จำได้ไหมว่าเมื่อกี้คุยอะไรกัน');
-  const kp = groupAiPrompts[groupAiPrompts.length - 1];
-  check('เลขาจำคนที่เคยรู้จักในกลุ่มนี้ได้ (อยู่ใน prompt) แต่ไม่ดึงความรู้จักจากกลุ่มอื่นมาปน', kp.includes('ผู้ชมทดสอบ') && kp.includes('สนใจเรื่องกุ้ง') && !kp.includes('ความลับของอีกกลุ่ม'));
+  const kp = groupAiPrompts.filter((x) => x.includes('คุณคือ "น้องบี"')).pop() || '';   // prompt ของเลขาของ B (ตัวที่ถูกเรียกชื่อ) — เลขาของ A ก็อาจถูกถามด้วยในรอบเดียวกัน
+  check('เลขาจำคนที่เคยรู้จักในกลุ่มนี้ได้ (อยู่ใน prompt) แต่ไม่ดึงความรู้จักจากกลุ่มอื่นมาปน', kp.includes('ผู้ชมทดสอบ') && kp.includes('สนใจเรื่องกุ้ง') && !kp.includes('ความลับของอีกกลุ่ม'), JSON.stringify({ hasKnownBlock: kp.includes('สิ่งที่คุณรู้จักคนในกลุ่มนี้'), notes: (await query("SELECT count(*)::int n FROM memories WHERE owner_id = $1 AND content LIKE '[รู้จักกัน]%' AND source_group_id = $2", [uidB, gid])).rows[0].n, promptsTail: groupAiPrompts.length }));
 
   // หยุดเอง / ครบเวลา / เพดานครั้งต่อวัน
   gai.setPaceForTests(60000, 30);

@@ -24,6 +24,8 @@ const SETTINGS = {
   group_ai_session_minutes: { label: 'ช่วงให้เลขาคุยกันเอง ยาวกี่นาที', min: 1, max: 15 },
   group_ai_sessions_per_day: { label: 'กลุ่มเริ่มช่วงให้เลขาคุยกันเองได้กี่ครั้งต่อ 24 ชม.', min: 1, max: 50 },
   group_ai_session_max_messages: { label: 'ช่วงเลขาคุยกันเอง พูดได้รวมกี่ข้อความ (เพดานค่า AI)', min: 2, max: 200 },
+  group_ai_session_pace_sec: { label: 'ช่วงเลขาคุยกันเอง: เลขาพูดห่างกันกี่วินาที (มาก = ช้า)', min: 3, max: 120 },
+  group_ai_msgs_per_issue: { label: 'ช่วงเลขาคุยกันเอง: คุยประเด็นละกี่ข้อความก่อนขยับประเด็น', min: 1, max: 20 },
   topup_min:        { label: 'เติมเครดิตขั้นต่ำต่อครั้ง (บาท)', min: 1, max: 10000 },
   topup_max:        { label: 'เติมเครดิตสูงสุดต่อครั้ง (บาท)', min: 100, max: 100000 },
 };

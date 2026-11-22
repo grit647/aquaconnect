@@ -571,13 +571,15 @@
     card.append(sum, res, msg);
     const sesTitle = document.createElement('div'); sesTitle.className = 'sec'; sesTitle.textContent = 'ให้เลขาคุยกันเอง (สวิตช์ 5 นาที)'; card.appendChild(sesTitle);
     const sesNote = document.createElement('div'); sesNote.className = 'gnote2';
-    sesNote.textContent = 'เปิดช่วงให้เลขา AI ที่ร่วมคุยในกลุ่มนี้ผลัดกันคุยกันเองประมาณ 5 นาที เพื่อทำความรู้จักกัน (หัวข้อด้านบนใช้เป็นหัวข้อชวนคุย) ครบเวลาระบบปิดเอง แล้วเลขาแต่ละตัวจดบันทึกว่าได้รู้จักใครบ้าง (เลขาตัวอื่นและสมาชิก) ลงหมวด "💬 ข้อมูลแชท" ของเจ้าของ — ต้องมีเลขาร่วมคุยอย่างน้อย 2 ตัว และติ๊ก "ร่วมคุย" ของคุณก่อน';
+    sesNote.textContent = 'เปิดช่วงให้เลขา AI ที่ร่วมคุยในกลุ่มนี้ผลัดกันคุยกันเองประมาณ 5 นาที โดยไล่คุยทีละประเด็น (พูดห่างกันประมาณ 20 วินาที) ครบเวลาระบบปิดเอง แล้วเลขาแต่ละตัวจดบันทึกว่าได้รู้จักใครบ้าง (เลขาตัวอื่นและสมาชิก) ลงหมวด "💬 ข้อมูลแชท" ของเจ้าของ — ต้องมีเลขาร่วมคุยอย่างน้อย 2 ตัว และติ๊ก "ร่วมคุย" ของคุณก่อน';
     card.appendChild(sesNote);
+    const issLab = document.createElement('div'); issLab.className = 'sec'; issLab.textContent = 'ประเด็นให้เลขาคุยกัน — พิมพ์ได้หลายข้อ (ขึ้นบรรทัดใหม่) ถ้าเว้นว่าง เลขาจะตั้งประเด็นให้เอง'; card.appendChild(issLab);
+    const issues = document.createElement('textarea'); issues.rows = 3; issues.maxLength = 400; issues.style.cssText = 'padding:11px 14px;border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--text);font:inherit;font-size:16px;width:100%;box-sizing:border-box;resize:vertical'; card.appendChild(issues);
     const sesMsg = document.createElement('div'); sesMsg.className = 'gnote2';
     const sesBtn = document.createElement('button'); sesBtn.type = 'button'; sesBtn.className = 'allbtn'; sesBtn.textContent = '▶ เริ่มให้เลขาคุยกันเอง 5 นาที';
     sesBtn.addEventListener('click', async () => {
       sesBtn.disabled = true; sesMsg.textContent = '';
-      try { await api('PATCH', '/api/groups/' + groupId + '/ai-settings', { aiJoin: cb.checked, aiTopic: topic.value }); await api('POST', '/api/groups/' + groupId + '/ai-session', { topic: topic.value }); closeGrpAiPanel(); }
+      try { await api('PATCH', '/api/groups/' + groupId + '/ai-settings', { aiJoin: cb.checked, aiTopic: topic.value }); await api('POST', '/api/groups/' + groupId + '/ai-session', { topic: issues.value }); closeGrpAiPanel(); }
       catch (err) { sesMsg.textContent = err.message; sesBtn.disabled = false; }
     });
     card.append(sesBtn, sesMsg);
