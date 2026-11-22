@@ -132,6 +132,38 @@
     scrollToBottom();
     return div;
   }
+  // ---------- สิ่งที่เลขาสรุปว่าเจ้าของสอน (ให้เจ้าของกดยืนยัน/ไม่ใช่) ----------
+  const shownProposals = new Set();
+  function showProposals(list) {
+    (list || []).forEach((p) => {
+      if (shownProposals.has(p.id)) return;
+      shownProposals.add(p.id);
+      const card = document.createElement('div');
+      card.className = 'proposal-card';
+      const t = document.createElement('div');
+      t.className = 'pp-text';
+      t.textContent = '💡 เลขาสรุปว่าคุณสอนไว้: ' + p.content;
+      const row = document.createElement('div');
+      row.className = 'pp-row';
+      const decide = async (accept) => {
+        row.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+        try {
+          await api('POST', '/api/chat/proposals/' + p.id + '/decide', { accept });
+          card.className = 'chip-saved';
+          card.textContent = accept ? '✓ เลขาจำไว้แล้ว ในหมวด "ความสามารถเลขา"' : 'ไม่จำข้อนี้';
+        } catch (err) { card.remove(); }
+      };
+      const yes = document.createElement('button'); yes.type = 'button'; yes.textContent = '✓ จำไว้'; yes.addEventListener('click', () => decide(true));
+      const no = document.createElement('button'); no.type = 'button'; no.className = 'pp-no'; no.textContent = '✕ ไม่ใช่'; no.addEventListener('click', () => decide(false));
+      row.appendChild(yes); row.appendChild(no);
+      card.appendChild(t); card.appendChild(row);
+      logEl.appendChild(card);
+      scrollToBottom();
+    });
+  }
+  async function fetchProposals() {
+    try { showProposals((await api('GET', '/api/chat/proposals')).proposals); } catch (e) { /* ไม่มีก็ข้าม */ }
+  }
   function addSavedChip(category) {
     const chip = document.createElement('div');
     chip.className = 'chip-saved';
@@ -318,11 +350,13 @@
     setBotState('thinking');
     let replyText = null;
     try {
-      const { reply, savedMemories, createdEvents } = await api('POST', '/api/chat/conversations/' + conversationId + '/messages', { content: text, source: source || 'text', askRequestId: connected ? connected.requestId : undefined, attachments: files.length ? files : undefined });
+      const { reply, savedMemories, createdEvents, proposals } = await api('POST', '/api/chat/conversations/' + conversationId + '/messages', { content: text, source: source || 'text', askRequestId: connected ? connected.requestId : undefined, attachments: files.length ? files : undefined });
       typing.remove();
       addBubble('assistant', reply);
       (savedMemories || []).forEach((m) => addSavedChip(m.category));
       (createdEvents || []).forEach(addEventChip);
+      showProposals(proposals);
+      setTimeout(fetchProposals, 9000); // เลขาไตร่ตรองเบื้องหลัง — ดึงข้อเสนอใหม่มาให้ยืนยัน
       replyText = reply;
       if (voiceMode) vCaption(null, reply);
       if (files.length) { pendingFiles = []; renderTray(); }
@@ -758,6 +792,7 @@
     }
     sheetButton(body, '➕ เริ่มหัวข้อใหม่', async () => { try { await newConversation(); } catch (err) { addBubble('error', err.message); } });
     sheetButton(body, '🗂️ หัวข้อที่เคยคุย', showTopics);
+    sheetButton(body, '💡 ให้เลขาทบทวนสิ่งที่ฉันสอน', async () => { closeSheet(); try { const r = await api('POST', '/api/chat/reflect', {}); showProposals(r.proposals); if (!r.proposals.length) addBubble('assistant', 'ตอนนี้ยังไม่มีอะไรใหม่ที่เลขาอยากจดไว้ค่ะ คุยกันอีกสักพักแล้วลองใหม่นะคะ'); } catch (err) { addBubble('error', err.message); } });
     sheetButton(body, '📅 ปฏิทิน & เตือน' + (dueCount ? ' (' + dueCount + ')' : ''), () => { closeSheet(); openCal(); });
     sheetButton(body, '🎙️ คุยด้วยเสียงต่อเนื่อง (ใช้กับหูฟังบลูทูธ)', () => { closeSheet(); enterVoiceMode(false); });
     if (!isStandalone()) sheetButton(body, '📲 ติดตั้งไอคอนบนหน้าจอหลัก', installApp);

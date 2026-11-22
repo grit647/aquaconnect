@@ -3,9 +3,26 @@
 const { query, withTransaction } = require('./db');
 
 const MAX_ITEMS_PER_CATEGORY = 5;     // ใส่เข้า prompt หมวดละกี่รายการล่าสุด
+const SELF_ITEMS_IN_PROMPT = 15;      // หมวดตัวเลขาใส่มากกว่า (เลขาต้อง "มองเห็น" สิ่งที่ถูกสอนครบ ไม่งั้นถูกสอนซ้ำ)
+const MAX_PENDING_PROPOSALS = 5;
 const MAX_CONTEXT_CHARS = 6000;       // เพดานความยาวความจำที่ใส่เข้า prompt ต่อครั้ง (คุมค่า token)
 const MAX_CONTENT_CHARS = 4000;
 const MAX_CATEGORY_NAME = 40;
+
+// 2 หมวดหลักที่ทุกคนมีตั้งแต่เริ่มใช้งาน: "ทั่วไป" (ความจำทั่วไป) และ "ความสามารถเลขา" (สิ่งที่เจ้าของสอนเลขา:
+// ตัวตน/บทเรียน/ความฝัน) — หมวดความสามารถเลขาเป็นส่วนตัวเสมอ ห้ามเปิดแชร์/ขาย
+const GENERAL_CATEGORY = 'ทั่วไป';
+const SKILL_CATEGORY = 'ความสามารถเลขา';
+const MAIN_CATEGORIES = [GENERAL_CATEGORY, SKILL_CATEGORY];
+const SELF_NAMES = [SKILL_CATEGORY];
+const SELF_KINDS = { persona: 'ตัวตน', lesson: 'บทเรียน', dream: 'ความฝัน' };
+const isSelfCategory = (name) => SELF_NAMES.some((n) => n.toLowerCase() === String(name || '').trim().toLowerCase());
+
+async function ensureMainCategories(userId) {
+  for (const name of MAIN_CATEGORIES) {
+    await query('INSERT INTO memory_categories (owner_id, name) VALUES ($1, $2) ON CONFLICT (owner_id, name) DO NOTHING', [userId, name]);
+  }
+}
 
 function cleanCategoryName(raw) {
   const name = String(raw || '').replace(/\s+/g, ' ').trim();
@@ -15,15 +32,16 @@ function cleanCategoryName(raw) {
 }
 
 // ความจำล่าสุดของผู้ใช้ จัดเป็นข้อความพร้อมแปะใน system prompt ('' ถ้ายังไม่มี)
+// หมวดตัวเลขา (สิ่งที่เจ้าของสอน) มาก่อนและใส่ได้มากกว่า — เป็นสิ่งที่เลขาต้องทำตามทุกครั้งที่คุย
 async function getMemoryContext(userId) {
   const r = await query(
     `SELECT c.name, m.content
        FROM (SELECT *, row_number() OVER (PARTITION BY category_id ORDER BY created_at DESC) AS rn
                FROM memories WHERE owner_id = $1) m
        JOIN memory_categories c ON c.id = m.category_id
-      WHERE m.rn <= $2
+      WHERE m.rn <= CASE WHEN c.name = ANY($3) THEN $4::int ELSE $2::int END
       ORDER BY c.name, m.created_at DESC`,
-    [userId, MAX_ITEMS_PER_CATEGORY]
+    [userId, MAX_ITEMS_PER_CATEGORY, SELF_NAMES, SELF_ITEMS_IN_PROMPT]
   );
   if (!r.rows.length) return '';
 
@@ -32,9 +50,11 @@ async function getMemoryContext(userId) {
     if (!byCat.has(row.name)) byCat.set(row.name, []);
     byCat.get(row.name).push(row.content);
   }
+  const entries = [...byCat.entries()].sort((a, b) => Number(isSelfCategory(b[0])) - Number(isSelfCategory(a[0])));
   let out = '';
-  for (const [name, items] of byCat) {
-    const block = `[หมวด: ${name}]\n${items.map((i) => `- ${i}`).join('\n')}\n\n`;
+  for (const [name, items] of entries) {
+    const head = isSelfCategory(name) ? `[สิ่งที่เจ้าของสอนคุณ — หมวด: ${name} — ทำตามเสมอ]` : `[หมวด: ${name}]`;
+    const block = `${head}\n${items.map((i) => `- ${i}`).join('\n')}\n\n`;
     if (out.length + block.length > MAX_CONTEXT_CHARS) { out += '(ความจำเก่ากว่านี้มีอีก ใช้เครื่องมือ recall_memories ดึงเพิ่มได้)\n'; break; }
     out += block;
   }
@@ -97,4 +117,60 @@ async function recallMemories(userId, categoryName, limit = 20) {
   return r.rows;
 }
 
-module.exports = { getMemoryContext, saveMemory, listCategories, recallMemories };
+// ---------- ข้อเสนอให้จำ (เลขาไตร่ตรองแล้วเสนอ เจ้าของยืนยันก่อนบันทึกจริง) ----------
+const oneLine = (s) => String(s || '').split(/\s+/).join(' ').trim();
+const normText = (s) => oneLine(s).toLowerCase();
+
+async function listPendingProposals(userId) {
+  const r = await query(
+    "SELECT id, category, content, created_at FROM memory_proposals WHERE owner_id = $1 AND status = 'pending' ORDER BY created_at ASC LIMIT 10",
+    [userId]
+  );
+  return r.rows;
+}
+
+// items: [{ category: 'persona'|'lesson'|'dream', summary }] — กรองหมวดแปลก/ซ้ำ/สั้นหรือยาวเกิน และจำกัดจำนวนที่ค้างรอ
+async function createProposals(userId, conversationId, items) {
+  const pending = await listPendingProposals(userId);
+  const existing = await query(
+    `SELECT m.content FROM memories m JOIN memory_categories c ON c.id = m.category_id
+      WHERE m.owner_id = $1 AND c.name = ANY($2)`,
+    [userId, SELF_NAMES]
+  );
+  const seen = new Set([...pending.map((p) => normText(p.content)), ...existing.rows.map((x) => normText(x.content))]);
+  const created = [];
+  for (const it of Array.isArray(items) ? items : []) {
+    if (pending.length + created.length >= MAX_PENDING_PROPOSALS) break;
+    const kind = SELF_KINDS[String(it && it.category)];
+    const raw = oneLine(it && (it.summary || it.content));
+    if (!kind || raw.length < 8 || raw.length > 480) continue;
+    const category = SKILL_CATEGORY;
+    const text = `[${kind}] ${raw}`;
+    if (seen.has(normText(text))) continue;
+    seen.add(normText(text));
+    const r = await query(
+      'INSERT INTO memory_proposals (owner_id, category, content, source_conversation_id) VALUES ($1, $2, $3, $4) RETURNING id, category, content',
+      [userId, category, text, conversationId || null]
+    );
+    created.push(r.rows[0]);
+  }
+  return created;
+}
+
+// ยืนยัน (accept=true → บันทึกเป็นความจำในหมวดส่วนตัวของเจ้าของ) หรือปฏิเสธ — ตัดสินได้เฉพาะข้อเสนอของตัวเองที่ยังรออยู่
+async function decideProposal(userId, proposalId, accept) {
+  const r = await query(
+    `UPDATE memory_proposals SET status = $3, decided_at = now()
+      WHERE id = $1 AND owner_id = $2 AND status = 'pending'
+      RETURNING category, content, source_conversation_id`,
+    [proposalId, userId, accept ? 'accepted' : 'rejected']
+  );
+  if (!r.rows[0]) throw new Error('ไม่พบข้อเสนอนี้ หรือตัดสินไปแล้ว');
+  if (accept) await saveMemory(userId, r.rows[0].category, r.rows[0].content, r.rows[0].source_conversation_id);
+  return { category: r.rows[0].category, accepted: !!accept };
+}
+
+module.exports = {
+  getMemoryContext, saveMemory, listCategories, recallMemories,
+  GENERAL_CATEGORY, SKILL_CATEGORY, MAIN_CATEGORIES, SELF_NAMES, isSelfCategory, ensureMainCategories, listPendingProposals, createProposals, decideProposal,
+};

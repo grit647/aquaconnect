@@ -4,7 +4,8 @@ const { query, withTransaction } = require('../db');
 const { requireAuth } = require('../auth');
 const ai = require('../ai');
 const { buildSystemPrompt, buildTools } = require('../secretary');
-const { getMemoryContext, listCategories } = require('../memory');
+const { getMemoryContext, listCategories, listPendingProposals, decideProposal } = require('../memory');
+const { maybeReflect, reflectConversation } = require('../reflect');
 const sharing = require('../sharing');
 const attachments = require('../attachments');
 const { nowText } = require('../calendar');
@@ -123,6 +124,30 @@ router.get('/categories', async (req, res) => {
   }
 });
 
+// ---------- สิ่งที่เลขาสรุปว่าเจ้าของสอน (รอเจ้าของยืนยัน) ----------
+router.get('/proposals', async (req, res) => {
+  try { res.json({ proposals: await listPendingProposals(req.user.id) }); } catch (err) { console.error('proposals error:', err.message); res.status(500).json({ error: 'โหลดข้อเสนอไม่สำเร็จ' }); }
+});
+router.post('/proposals/:id/decide', async (req, res) => {
+  try {
+    const r = await decideProposal(req.user.id, String(req.params.id), req.body && req.body.accept === true);
+    res.json({ ok: true, ...r });
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
+// ให้เลขาทบทวนบทสนทนาล่าสุดเดี๋ยวนี้ (กดเอง) — กันกดรัวคุมค่า AI: คนละครั้งต่อ 30 วินาที
+const reflectLast = new Map();
+router.post('/reflect', async (req, res) => {
+  const now = Date.now();
+  if (now - (reflectLast.get(req.user.id) || 0) < 30000) return res.status(429).json({ error: 'รอสักครู่ แล้วลองใหม่นะครับ' });
+  reflectLast.set(req.user.id, now);
+  try {
+    const conv = await query('SELECT id FROM conversations WHERE user_id = $1 ORDER BY last_message_at DESC LIMIT 1', [req.user.id]);
+    if (!conv.rows[0]) return res.json({ proposals: [], created: 0 });
+    const created = await reflectConversation(req.user.id, conv.rows[0].id);
+    res.json({ proposals: await listPendingProposals(req.user.id), created: created.length });
+  } catch (err) { console.error('reflect route error:', err.message); res.status(500).json({ error: 'ทบทวนไม่สำเร็จ ลองใหม่อีกครั้ง' }); }
+});
+
 router.get('/conversations', async (req, res) => {
   try {
     const r = await query(
@@ -228,7 +253,7 @@ router.post('/conversations/:id/messages', async (req, res) => {
     const storedContent = content + (ext.names.length ? '\n[แนบ: ' + ext.names.join(', ') + ']' : '');
 
     // ข้อมูลผู้ใช้สดจากฐานข้อมูล (ชื่อเลขา/บุคลิก) + ประวัติการคุยล่าสุด + ความจำ
-    const [u, hist, memoryContext, pendingRequests] = await Promise.all([
+    const [u, hist, memoryContext, pendingRequests, pendingProposals] = await Promise.all([
       query("SELECT name, secretary_name, secretary_persona FROM users WHERE id = $1 AND status = 'active'", [req.user.id]),
       query(
         `SELECT role, content FROM (
@@ -238,6 +263,7 @@ router.post('/conversations/:id/messages', async (req, res) => {
       ),
       getMemoryContext(req.user.id),
       pendingCount(req.user.id),
+      listPendingProposals(req.user.id),
     ]);
     const user = u.rows[0];
     if (!user) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบก่อน' });
@@ -249,6 +275,7 @@ router.post('/conversations/:id/messages', async (req, res) => {
       memoryContext,
       pendingRequests,
       nowText: nowText(),
+      pendingProposals,
     });
     const history = [...hist.rows.filter((m) => m.role !== 'system'), { role: 'user', content: storedContent, extraParts: ext.parts }];
 
@@ -276,7 +303,10 @@ router.post('/conversations/:id/messages', async (req, res) => {
       .filter((e) => e.name === 'save_memory' && e.result && e.result.ok)
       .map((e) => ({ category: e.result.category, createdNewCategory: e.result.createdNewCategory }));
     const createdEvents = result.executed.filter((e) => e.name === 'create_event' && e.result && e.result.ok).map((e) => e.result.event);
-    res.json({ reply: result.text, savedMemories, createdEvents });
+    // ไตร่ตรองเบื้องหลังเมื่อคุยครบรอบ (ไม่หน่วงคำตอบ) — ข้อเสนอใหม่จะโผล่ให้ยืนยันในรอบถัดไป/ตอนแอปถามข้อเสนอ
+    maybeReflect(req.user.id, conv.id).catch(() => { /* ไม่กระทบการคุย */ });
+    const decided = result.executed.filter((e) => (e.name === 'confirm_memory_proposal' || e.name === 'reject_memory_proposal') && e.result && !e.result.error).length;
+    res.json({ reply: result.text, savedMemories, createdEvents, proposals: decided ? await listPendingProposals(req.user.id) : pendingProposals });
   } catch (err) {
     console.error('POST message error:', err);
     res.status(500).json({ error: 'เกิดข้อผิดพลาดฝั่งเซิร์ฟเวอร์ ลองใหม่อีกครั้ง' });

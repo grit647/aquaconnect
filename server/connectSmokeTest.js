@@ -164,7 +164,8 @@ async function cleanup() {
   const frAp = await call('POST', '/api/connect/decide', { requestId: fr.json.requestId, decision: 'approve' }, ownerC);
   const frRow = (await query('SELECT status, expires_at, decided_at FROM access_requests WHERE id = $1', [fr.json.requestId])).rows[0];
   const mins = (new Date(frRow.expires_at) - new Date(frRow.decided_at)) / 60000;
-  check('เจ้าของอนุญาตหมวดฟรี → ตั้งเวลาหมดอายุ 15 นาทีให้เอง', frAp.status === 200 && frRow.status === 'approved' && Math.abs(mins - 15) < 0.1, mins + ' นาที');
+  const cfgMins = Number(((await query("SELECT value FROM app_settings WHERE key = 'free_access_minutes'")).rows[0] || {}).value) || 15; // ค่าที่แอดมินตั้งไว้จริง (ไม่ผูกกับเลข 15 ตายตัว)
+  check('เจ้าของอนุญาตหมวดฟรี → ตั้งเวลาหมดอายุตามค่าที่แอดมินตั้ง (free_access_minutes) ให้เอง', frAp.status === 200 && frRow.status === 'approved' && Math.abs(mins - cfgMins) < 0.1, mins + ' นาที');
   check('คำตอบอนุญาตบอกเวลาหมดอายุ (หน้าจอใช้นับถอยหลัง)', !!frAp.json.expiresAt);
   const frMine = (await call('GET', '/api/connect/mine', null, askerC)).json.outgoing.find((r) => r.request_id === fr.json.requestId);
   check('ผู้ขอเห็นสถานะ approved + เวลาหมดอายุ (ให้หน้าจอเชื่อมต่ออัตโนมัติ)', frMine && frMine.status === 'approved' && !!frMine.expires_at && !!frMine.decided_at);

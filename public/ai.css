@@ -277,3 +277,8 @@ body {
 #pipGuide button { width: 100%; border: 0; border-radius: 999px; padding: 12px; font: inherit; font-size: 16px; font-weight: 800; background: linear-gradient(135deg, var(--neon2), #8b5cf6); color: #06101f; cursor: pointer; }
 #pipGuide .pg-n { display: block; margin-top: 12px; font-size: 13px; color: #8d98c4; }
 #ttsToggle[hidden] { display: none; }
+
+.proposal-card { align-self: stretch; margin: 6px 12px; padding: 10px 12px; border: 1px solid var(--neon2); border-radius: 14px; background: rgba(167, 139, 250, 0.12); font-size: 14px; }
+.proposal-card .pp-row { display: flex; gap: 8px; margin-top: 8px; }
+.proposal-card button { flex: 1; border: 0; border-radius: 999px; padding: 8px; font: inherit; font-weight: 700; cursor: pointer; background: var(--neon2); color: #06101f; }
+.proposal-card button.pp-no { background: transparent; border: 1px solid var(--muted, #8d98c4); color: var(--muted, #8d98c4); }
