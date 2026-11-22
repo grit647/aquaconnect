@@ -117,7 +117,41 @@
       el.textContent = me && me.name ? me.name.trim().charAt(0) : '?';
     }
   }
-  function renderAvatar() { avatarContent($('avatar')); }
+  function renderAvatar() { avatarContent($('avatar')); renderAiBadge(); }
+  // รูป AI ส่วนตัว + ชื่อที่ตั้งไว้ แสดงใต้รูปโปรไฟล์เจ้าของ (แตะแล้วเปิดหน้าแก้โปรไฟล์) — ไม่มีรูปแสดงตัวอักษรแรกของชื่อ
+  function aiImgInto(el, size) {
+    el.textContent = '';
+    const nm = (me && me.secretaryName) || 'AI';
+    if (me && me.aiAvatarUrl) {
+      const img = document.createElement('img'); img.alt = ''; img.src = me.aiAvatarUrl;
+      img.onerror = () => { el.textContent = nm.trim().charAt(0) || 'AI'; };
+      el.appendChild(img);
+    } else el.textContent = nm.trim().charAt(0) || 'AI';
+  }
+  function renderAiBadge() {
+    const b = document.getElementById('aiBadge'); if (!b || !me) return;
+    aiImgInto(b.querySelector('.aiimg'));
+    b.querySelector('.ainame').textContent = me.secretaryName || 'เลขา';
+  }
+  // ย่อรูปที่เลือกให้เป็นสี่เหลี่ยมจัตุรัส 256×256 (ครอปกลางภาพ) แล้วแปลงเป็น data URL — เล็กพอเก็บในฐานข้อมูล
+  function resizeToDataUrl(file, size) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const s = Math.min(img.width, img.height);
+          const cv = document.createElement('canvas'); cv.width = size; cv.height = size;
+          cv.getContext('2d').drawImage(img, (img.width - s) / 2, (img.height - s) / 2, s, s, 0, 0, size, size);
+          let q = 0.85; let out = cv.toDataURL('image/jpeg', q);
+          while (out.length * 0.75 > 100 * 1024 && q > 0.4) { q -= 0.15; out = cv.toDataURL('image/jpeg', q); }
+          URL.revokeObjectURL(url); resolve(out);
+        } catch (e) { reject(e); }
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('อ่านรูปไม่ได้ ลองเลือกไฟล์รูป JPG/PNG')); };
+      img.src = url;
+    });
+  }
 
   // ---------- โปรไฟล์ (กดรูปโปรไฟล์): อัปเดตโปรไฟล์ / ขนาดข้อมูลส่วนตัว / กลุ่ม / ค้นหาด้วย Google ----------
   const fmtBytes = (b) => (b >= 1048576 ? (b / 1048576).toFixed(2) + ' MB' : (b / 1024).toFixed(1) + ' KB');
@@ -162,6 +196,7 @@
     if (onClick) { d.style.cursor = 'pointer'; d.addEventListener('click', onClick); }
     return d;
   }
+  document.getElementById('aiBadge').addEventListener('click', () => { openSheet('โปรไฟล์ของฉัน'); showProfileEdit(); });
   async function loadSummary(body) {
     try { return await api('GET', '/api/me/summary'); } catch (err) { note(body, err.message); return null; }
   }
@@ -177,6 +212,32 @@
     const name = mk('ชื่อของคุณ (ชื่อที่ใช้สมัคร)', s.profile.name, 100);
     const call = mk('ชื่อที่ให้เลขาเรียกคุณ (สั้นๆ เช่น ชื่อเล่น — เว้นว่าง = เรียกตามชื่อสมัคร)', s.profile.callName, 20, 'เช่น พี่ต้น');
     const sec = mk('ชื่อของเลขา', s.profile.secretaryName, 20, 'เช่น น้องครีม');
+    // รูป AI ส่วนตัว: เลือกรูป → ย่อ → อัปโหลดทันที (เห็นใต้รูปโปรไฟล์ของคุณพร้อมชื่อเลขา)
+    note(body, 'รูป AI ส่วนตัวของคุณ (แสดงใต้รูปโปรไฟล์พร้อมชื่อเลขา เห็นเฉพาะคุณ)');
+    const pickRow = document.createElement('div'); pickRow.className = 'aipick'; body.appendChild(pickRow);
+    const prev = document.createElement('div'); prev.className = 'aiprev'; pickRow.appendChild(prev);
+    const paintPrev = () => aiImgInto(prev);
+    paintPrev();
+    const btns = document.createElement('div'); btns.className = 'aibtns'; pickRow.appendChild(btns);
+    const fileIn = document.createElement('input'); fileIn.type = 'file'; fileIn.accept = 'image/jpeg,image/png,image/webp'; fileIn.hidden = true; pickRow.appendChild(fileIn);
+    const avMsg = document.createElement('div'); avMsg.className = 'empty'; avMsg.style.fontSize = '13px';
+    const avPick = document.createElement('button'); avPick.type = 'button'; avPick.textContent = '🖼️ เลือกรูป'; btns.appendChild(avPick);
+    const avDel = document.createElement('button'); avDel.type = 'button'; avDel.textContent = '🗑️ ลบรูป'; btns.appendChild(avDel);
+    body.appendChild(avMsg);
+    avPick.addEventListener('click', () => fileIn.click());
+    fileIn.addEventListener('change', async () => {
+      const f = fileIn.files && fileIn.files[0]; fileIn.value = '';
+      if (!f) return;
+      avMsg.textContent = 'กำลังอัปโหลด...';
+      try {
+        const dataUrl = await resizeToDataUrl(f, 256);
+        const r = await api('PUT', '/api/me/ai-avatar', { image: dataUrl });
+        me.aiAvatarUrl = r.aiAvatarUrl; paintPrev(); renderAiBadge(); avMsg.textContent = '✓ เปลี่ยนรูป AI แล้วค่ะ';
+      } catch (err) { avMsg.textContent = err.message; }
+    });
+    avDel.addEventListener('click', async () => {
+      try { await api('DELETE', '/api/me/ai-avatar'); me.aiAvatarUrl = null; paintPrev(); renderAiBadge(); avMsg.textContent = 'ลบรูป AI แล้วค่ะ'; } catch (err) { avMsg.textContent = err.message; }
+    });
     // ---------- สถานะปัจจุบัน: หมวดหลัก → หัวข้อย่อย → รายละเอียด (เป็นฐานข้อมูลกลางสำหรับค้นหา/เชื่อมต่อในฟีเจอร์ต่อไป) ----------
     const opts = s.occupationOptions || {};
     let locked = !!s.profile.occupationMain;   // บันทึกไว้แล้ว → แสดงเป็นแถบเทา (อ่านอย่างเดียว) ต้องกด "แก้ไข" ก่อนถึงจะแก้ได้
@@ -215,7 +276,7 @@
     syncOther(false);
     const msg = note(body, '');
     // โหมดดู (ล็อก แถบเทา) ↔ โหมดแก้ไข: ช่องทั้งหมดถูกล็อกจนกว่าจะกด "แก้ไข" แล้วบันทึกเสร็จจะล็อกกลับ
-    const controls = [name, call, sec, occMain, occSub, occDetail];
+    const controls = [name, call, sec, avPick, avDel, occMain, occSub, occDetail];
     const saveBtn = sheetButton(body, '💾 บันทึกโปรไฟล์', async () => {
       try {
         const r = await api('PATCH', '/api/me/profile', { name: name.value, callName: call.value, secretaryName: sec.value, occupationMain: occMain.value, occupationSub: occSub.value, occupationDetail: occDetail.value });
@@ -319,7 +380,12 @@
     }
     const mkSlot = (g, extra) => {
       const b = document.createElement('button'); b.type = 'button'; b.className = 'slot';
-      const c = document.createElement('div'); c.className = 'circ'; c.style.background = grpColor(g.name); c.textContent = String(g.name).trim().charAt(0) || '?';
+      const c = document.createElement('div'); c.className = 'circ'; c.style.background = grpColor(g.name);
+      if (g.ownerPicture && LINE_PIC_RE.test(g.ownerPicture)) {
+        const im = document.createElement('img'); im.alt = ''; im.referrerPolicy = 'no-referrer'; im.src = g.ownerPicture;
+        im.onerror = () => { im.remove(); c.textContent = String(g.name).trim().charAt(0) || '?'; };
+        c.appendChild(im);
+      } else c.textContent = String(g.name).trim().charAt(0) || '?';
       if (g.pendingRequests) { const dot = document.createElement('span'); dot.className = 'dot'; dot.textContent = g.pendingRequests; c.appendChild(dot); }
       const col = document.createElement('div'); col.style.cssText = 'flex:1;min-width:0';
       const nm = document.createElement('div'); nm.className = 'nm'; nm.textContent = g.name;
@@ -383,7 +449,9 @@
       const c = document.createElement('div'); c.className = 'gcard';
       const t = document.createElement('b'); t.textContent = g.name; c.appendChild(t);
       if (g.description) { const d = document.createElement('div'); d.textContent = g.description; c.appendChild(d); }
-      const s = document.createElement('small'); s.textContent = '👥 ' + g.members + ' คน · ผู้สร้าง: ' + g.ownerName; c.appendChild(s);
+      const orow = document.createElement('div'); orow.className = 'orow';
+      const osm = document.createElement('small'); osm.textContent = '👥 ' + g.members + ' คน · ผู้สร้าง: ' + g.ownerName;
+      orow.append(grpAvatar(g.ownerName, g.ownerPicture), osm); c.appendChild(orow);
       if (g.myRole) gBtn(c, '💬 เข้าแชทกลุ่ม', () => grpChat(g.id, g.name), 'ok');
       else if (g.pending) { const b = gBtn(c, '⏳ รอผู้สร้างอนุญาต', () => {}); b.disabled = true; }
       else gBtn(c, '🙋 ขอเข้าร่วมกลุ่ม', async (e) => {
@@ -823,7 +891,7 @@
       // (ข้อเสนอให้จำ/สรุปแยกหมวด จะถามตอนกลับเข้าแอป ไม่โผล่กลางบทสนทนา — ไม่ให้ดูซ้ำซาก)
       if (!convTitle) convTitle = text.slice(0, 50);   // เซิร์ฟเวอร์ตั้งชื่อหัวข้อจากข้อความแรกเหมือนกัน
       updateTopic();
-      if (profile) { if (profile.secretaryName) me.secretaryName = profile.secretaryName; if (profile.callName !== undefined) me.callName = profile.callName; }   // ผู้ใช้เพิ่งตั้งชื่อเลขา/ชื่อที่ให้เรียก
+      if (profile) { if (profile.secretaryName) me.secretaryName = profile.secretaryName; if (profile.callName !== undefined) me.callName = profile.callName; renderAiBadge(); }   // ผู้ใช้เพิ่งตั้งชื่อเลขา/ชื่อที่ให้เรียก
       replyText = reply;
       if (voiceMode) vCaption(null, reply);
       if (files.length) { pendingFiles = []; renderTray(); }

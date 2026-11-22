@@ -41,7 +41,7 @@ async function createGroup(userId, rawName, rawDesc) {
 // กลุ่มทั้งหมด + สถานะของฉัน (member/admin/pending/none) + จำนวนสมาชิก + ชื่อผู้สร้าง
 async function listGroups(userId) {
   const r = await query(
-    `SELECT g.id, g.name, g.description, g.owner_id, ${DISPLAY} AS owner_name,
+    `SELECT g.id, g.name, g.description, g.owner_id, ${DISPLAY} AS owner_name, u.line_picture_url AS owner_picture,
             (SELECT count(*)::int FROM chat_group_members m WHERE m.group_id = g.id) AS members,
             (SELECT role FROM chat_group_members m WHERE m.group_id = g.id AND m.user_id = $1) AS my_role,
             EXISTS (SELECT 1 FROM chat_group_requests q WHERE q.group_id = g.id AND q.user_id = $1 AND q.status = 'pending') AS pending,
@@ -53,7 +53,7 @@ async function listGroups(userId) {
   const mine = r.rows.filter((g) => g.owner_id === userId).length;
   const joined = r.rows.filter((g) => g.my_role === 'member').length;
   return {
-    groups: r.rows.map((g) => ({ id: g.id, name: g.name, description: g.description, ownerName: g.owner_name, members: g.members, myRole: g.my_role || null, pending: g.pending, pendingRequests: g.pending_requests, isOwner: g.owner_id === userId })),
+    groups: r.rows.map((g) => ({ id: g.id, name: g.name, description: g.description, ownerName: g.owner_name, ownerPicture: picOf(g.owner_picture), members: g.members, myRole: g.my_role || null, pending: g.pending, pendingRequests: g.pending_requests, isOwner: g.owner_id === userId })),
     createdByMe: mine, maxCreate: MAX_GROUPS_PER_USER, joinedByMe: joined, maxJoin: MAX_JOINED_PER_USER,
   };
 }

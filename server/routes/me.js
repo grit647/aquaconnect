@@ -6,8 +6,44 @@ const { requireAuth } = require('../auth');
 const { cleanShortName } = require('../secretary');
 const occ = require('../occupations');
 
+// รูป AI ส่วนตัว: รับ data URL (JPEG/PNG/WebP) ที่หน้าเว็บย่อแล้ว — ตรวจ "ไบต์หัวไฟล์จริง" ไม่เชื่อ MIME ที่ส่งมา และจำกัดขนาด
+const MAX_AVATAR_BYTES = 120 * 1024;
+function sniffImage(buf) {
+  if (buf.length > 12 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'image/jpeg';
+  if (buf.length > 12 && buf.slice(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png';
+  if (buf.length > 12 && buf.slice(0, 4).toString('latin1') === 'RIFF' && buf.slice(8, 12).toString('latin1') === 'WEBP') return 'image/webp';
+  return null;
+}
+const aiAvatarUrl = (at) => (at ? '/api/me/ai-avatar?v=' + new Date(at).getTime() : null);
+
 const router = express.Router();
 router.use(requireAuth);
+
+// รูป AI ของตัวเอง (ไม่รับ id จากผู้ใช้ → ดูรูปของคนอื่นไม่ได้)
+router.get('/ai-avatar', async (req, res) => {
+  try {
+    const r = await query('SELECT ai_avatar, ai_avatar_mime FROM users WHERE id = $1', [req.user.id]);
+    if (!r.rows[0] || !r.rows[0].ai_avatar) return res.status(404).end();
+    res.set({ 'Content-Type': r.rows[0].ai_avatar_mime, 'Cache-Control': 'private, max-age=86400', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'" });
+    res.send(r.rows[0].ai_avatar);
+  } catch (err) { console.error('ai-avatar get error:', err.message); res.status(500).end(); }
+});
+router.put('/ai-avatar', async (req, res) => {
+  try {
+    const m = /^data:image\/(?:jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$/.exec(String((req.body && req.body.image) || ''));
+    if (!m) return res.status(400).json({ error: 'รูปต้องเป็นไฟล์ JPEG, PNG หรือ WebP' });
+    const buf = Buffer.from(m[1], 'base64');
+    if (buf.length > MAX_AVATAR_BYTES) return res.status(400).json({ error: 'รูปใหญ่เกินไป (ไม่เกิน 120 KB หลังย่อ)' });
+    const mime = sniffImage(buf);
+    if (!mime) return res.status(400).json({ error: 'ไฟล์ไม่ใช่รูปภาพที่รองรับ' });
+    const r = await query('UPDATE users SET ai_avatar = $2, ai_avatar_mime = $3, ai_avatar_at = now() WHERE id = $1 RETURNING ai_avatar_at', [req.user.id, buf, mime]);
+    res.json({ ok: true, aiAvatarUrl: aiAvatarUrl(r.rows[0].ai_avatar_at) });
+  } catch (err) { console.error('ai-avatar put error:', err.message); res.status(500).json({ error: 'บันทึกรูปไม่สำเร็จ' }); }
+});
+router.delete('/ai-avatar', async (req, res) => {
+  try { await query('UPDATE users SET ai_avatar = NULL, ai_avatar_mime = NULL, ai_avatar_at = NULL WHERE id = $1', [req.user.id]); res.json({ ok: true }); }
+  catch (err) { console.error('ai-avatar delete error:', err.message); res.status(500).json({ error: 'ลบรูปไม่สำเร็จ' }); }
+});
 
 const LABELS = { memories: 'ความจำ', messages: 'ข้อความแชท', events: 'ปฏิทินและเตือน', proposals: 'ข้อเสนอรอยืนยัน' };
 
@@ -15,7 +51,7 @@ router.get('/summary', async (req, res) => {
   try {
     const id = req.user.id;
     const [u, sizes, lim] = await Promise.all([
-      query('SELECT name, phone, call_name, secretary_name, occupation_main, occupation_sub, occupation_detail, google_search_enabled, (CASE WHEN google_search_month = $2 THEN google_search_count ELSE 0 END) AS google_search_count FROM users WHERE id = $1', [id, require('../webSearch').currentMonth()]),
+      query('SELECT name, phone, call_name, secretary_name, occupation_main, occupation_sub, occupation_detail, ai_avatar_at, google_search_enabled, (CASE WHEN google_search_month = $2 THEN google_search_count ELSE 0 END) AS google_search_count FROM users WHERE id = $1', [id, require('../webSearch').currentMonth()]),
       query(
         `SELECT
            (SELECT count(*)::int FROM memories WHERE owner_id = $1) AS memories_n,
@@ -36,7 +72,7 @@ router.get('/summary', async (req, res) => {
     const s = sizes.rows[0];
     const parts = Object.keys(LABELS).map((k) => ({ key: k, label: LABELS[k], count: s[k + '_n'], bytes: Number(s[k + '_b']) }));
     res.json({
-      profile: { name: row.name, phone: row.phone, callName: row.call_name || '', secretaryName: row.secretary_name, occupationMain: row.occupation_main || '', occupationSub: row.occupation_sub || '', occupationDetail: row.occupation_detail || '' },
+      profile: { name: row.name, phone: row.phone, callName: row.call_name || '', secretaryName: row.secretary_name, aiAvatarUrl: aiAvatarUrl(row.ai_avatar_at), occupationMain: row.occupation_main || '', occupationSub: row.occupation_sub || '', occupationDetail: row.occupation_detail || '' },
       occupationOptions: occ.OCCUPATIONS,
       occupationOther: occ.OTHER_SUB,
       usage: { totalBytes: parts.reduce((a, p) => a + p.bytes, 0), quotaBytes: (L.user_data_quota_mb || 20) * 1048576, parts },

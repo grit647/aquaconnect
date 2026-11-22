@@ -366,3 +366,21 @@ body {
 #grpPopCard .slot.empty .circ { background: transparent; border: 2px dashed var(--muted); color: var(--muted); font-size: 22px; }
 #grpPopCard .slot .dot { position: absolute; top: -3px; right: -3px; min-width: 18px; height: 18px; border-radius: 999px; background: var(--danger); color: #fff; font-size: 11px; line-height: 18px; text-align: center; padding: 0 4px; }
 #grpPopCard .allbtn { border: 1px solid var(--neon); background: transparent; color: var(--neon); border-radius: 14px; padding: 11px; font: inherit; font-weight: 700; cursor: pointer; margin-top: 4px; }
+
+/* ใต้รูปโปรไฟล์เจ้าของ: รูป AI ส่วนตัว + ชื่อที่ตั้งไว้ (ยกรูปเจ้าของ/ปุ่มกลุ่ม/ชิปสถานะขึ้นเพื่อเว้นที่ด้านล่าง) */
+#avatar { bottom: 66px; }
+#connToggle { bottom: 78px; }
+#groupsBtn { bottom: 126px; }
+#aiBadge { position: absolute; left: 10px; bottom: 10px; z-index: 4; display: flex; align-items: center; gap: 8px; cursor: pointer; max-width: 70%; }
+#aiBadge .aiimg { width: 46px; height: 46px; border-radius: 50%; overflow: hidden; border: 2px solid var(--neon2); box-shadow: 0 0 12px rgba(167, 139, 250, 0.5); background: var(--panel2); display: flex; align-items: center; justify-content: center; font-weight: 800; color: var(--neon2); font-size: 15px; flex-shrink: 0; }
+#aiBadge .aiimg img { width: 100%; height: 100%; object-fit: cover; display: block; }
+#aiBadge .ainame { padding: 3px 10px; border-radius: 999px; background: rgba(19, 26, 48, 0.85); border: 1px solid var(--line); font-size: 12px; font-weight: 700; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* รูปเจ้าของกลุ่มในวงกลมกลุ่ม */
+#grpPopCard .slot .circ img, .gcard .oav img { width: 100%; height: 100%; object-fit: cover; display: block; border-radius: 50%; }
+.gcard .orow { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+.gcard .orow .gav { width: 26px; height: 26px; font-size: 12px; }
+/* ตัวอัปโหลดรูป AI ในหน้าอัปเดตโปรไฟล์ */
+#sheetBody .aipick { display: flex; align-items: center; gap: 12px; }
+#sheetBody .aipick .aiprev { width: 72px; height: 72px; border-radius: 50%; overflow: hidden; border: 2px solid var(--neon2); background: var(--panel2); display: flex; align-items: center; justify-content: center; font-weight: 800; color: var(--neon2); font-size: 22px; flex-shrink: 0; }
+#sheetBody .aipick .aiprev img { width: 100%; height: 100%; object-fit: cover; display: block; }
+#sheetBody .aipick .aibtns { display: flex; flex-direction: column; gap: 8px; flex: 1; }

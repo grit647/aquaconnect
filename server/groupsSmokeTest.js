@@ -59,6 +59,7 @@ const lastReply = () => { const r = sent.filter((s) => s.path === '/message/repl
   const listC = await call('GET', '/api/groups', null, C.cookie);
   const seen = listC.json.groups.find((g) => g.id === gid);
   check('ดูกลุ่มทั้งหมดได้ (ชื่อ/คำอธิบาย/จำนวนสมาชิก/ผู้สร้าง) และสถานะของ C = ยังไม่เข้าร่วม', seen && seen.members === 1 && seen.description === 'คุยเรื่องกุ้ง' && seen.myRole === null && seen.pending === false && seen.ownerName === 'ผู้สร้าง เอ', JSON.stringify(seen));
+  check('รายการกลุ่มมีรูปโปรไฟล์ของเจ้าของกลุ่ม (เฉพาะรูปจากโดเมนรูปของ LINE)', seen && seen.ownerPicture === 'https://profile.line-scdn.net/abc123/pic-a', JSON.stringify(seen && seen.ownerPicture));
   check('คนนอกอ่านแชท/ข้อมูลกลุ่ม/ส่งข้อความไม่ได้', (await call('GET', `/api/groups/${gid}/messages`, null, C.cookie)).status === 403 && (await call('GET', `/api/groups/${gid}`, null, C.cookie)).status === 403 && (await call('POST', `/api/groups/${gid}/messages`, { content: 'แอบ' }, C.cookie)).status === 400);
   const j1 = await call('POST', `/api/groups/${gid}/join`, {}, B.cookie);
   const j2 = await call('POST', `/api/groups/${gid}/join`, {}, B.cookie);

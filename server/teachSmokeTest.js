@@ -229,6 +229,26 @@ async function call(method, path, body, cookie) {
     && (await call('PATCH', '/api/me/profile', { name: 'x'.repeat(101), secretaryName: 'ครีม' }, A.cookie)).status === 400
     && (await call('PATCH', '/api/me/profile', { name: 'ชื่อ <b>', secretaryName: 'ครีม' }, A.cookie)).status === 400
     && (await call('PATCH', '/api/me/profile', { name: 'ชื่อ', secretaryName: 'ชื่อเลขาที่ยาวเกินยี่สิบตัวอักษรแน่ๆ' }, A.cookie)).status === 400);
+  // ---------- รูป AI ส่วนตัว ----------
+  const PNG1 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+  const rawGet = (ck) => fetch(BASE + '/api/me/ai-avatar', { headers: ck ? { Cookie: ck } : {} });
+  check('ยังไม่มีรูป AI → GET 404 และสรุปโปรไฟล์ aiAvatarUrl = null / ไม่ล็อกอินดูไม่ได้ (401)', (await rawGet(A.cookie)).status === 404 && sum.json.profile.aiAvatarUrl === null && (await rawGet()).status === 401);
+  const putOk = await call('PUT', '/api/me/ai-avatar', { image: PNG1 }, A.cookie);
+  check('อัปโหลดรูป AI (PNG) ได้ → ได้ลิงก์รูป', putOk.status === 200 && /^\/api\/me\/ai-avatar\?v=\d+$/.test(putOk.json.aiAvatarUrl || ''), JSON.stringify(putOk.json));
+  const got = await rawGet(A.cookie); const gotBuf = Buffer.from(await got.arrayBuffer());
+  check('GET ได้รูปเดิมกลับมา (image/png, nosniff, ไม่เปิดให้เบราว์เซอร์เดาชนิด)', got.status === 200 && got.headers.get('content-type') === 'image/png' && got.headers.get('x-content-type-options') === 'nosniff' && gotBuf.equals(Buffer.from(PNG1.split(',')[1], 'base64')));
+  check('B ดูรูป AI ของ A ไม่ได้ (ไม่มี id ให้ระบุ; ของ B ยังไม่มี → 404)', (await rawGet(B.cookie)).status === 404);
+  const meAv = await call('GET', '/api/auth/me', null, A.cookie);
+  check('/api/auth/me ส่งลิงก์รูป AI กลับมา (กลับเข้าแอปแล้วยังเห็น) และสรุปโปรไฟล์ก็มี', /ai-avatar\?v=/.test((meAv.json.user || {}).aiAvatarUrl || '') && /ai-avatar\?v=/.test((await call('GET', '/api/me/summary', null, A.cookie)).json.profile.aiAvatarUrl || ''));
+  check('ไฟล์ที่ไม่ใช่รูปจริง/SVG/ชนิดแปลก → ปฏิเสธ (ตรวจไบต์หัวไฟล์ ไม่เชื่อ MIME)',
+    (await call('PUT', '/api/me/ai-avatar', { image: 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=' }, A.cookie)).status === 400
+    && (await call('PUT', '/api/me/ai-avatar', { image: 'data:image/png;base64,' + Buffer.from('<script>alert(1)</script>.....................').toString('base64') }, A.cookie)).status === 400
+    && (await call('PUT', '/api/me/ai-avatar', { image: 'not a data url' }, A.cookie)).status === 400
+    && (await call('PUT', '/api/me/ai-avatar', {}, A.cookie)).status === 400);
+  const big = Buffer.concat([Buffer.from(PNG1.split(',')[1], 'base64'), Buffer.alloc(130 * 1024, 7)]).toString('base64');
+  check('รูปใหญ่เกิน 120 KB → ปฏิเสธ และรูปเดิมยังอยู่', (await call('PUT', '/api/me/ai-avatar', { image: 'data:image/png;base64,' + big }, A.cookie)).status === 400 && (await rawGet(A.cookie)).status === 200);
+  check('ลบรูป AI ได้ → GET 404', (await call('DELETE', '/api/me/ai-avatar', null, A.cookie)).status === 200 && (await rawGet(A.cookie)).status === 404);
+
   // ---------- สถานะปัจจุบัน (หมวดอาชีพ → หัวข้อย่อย → รายละเอียด) ----------
   check('สรุปโปรไฟล์ส่งรายการหมวดสถานะ 9 หมวด (รวมที่ปรึกษา/นักวิชาการ ที่หัวข้อย่อยคือสาขาหลักอื่นๆ และ "อื่นๆ" อยู่ท้ายสุด) ให้หน้าจอ', Object.keys(sum.json.occupationOptions || {}).length === 9 && sum.json.occupationOptions['ที่ปรึกษา / นักวิชาการ / นักพัฒนาข้อมูล'].includes('บุคลากรทางการแพทย์') && sum.json.occupationOptions['ที่ปรึกษา / นักวิชาการ / นักพัฒนาข้อมูล'].includes('เกษตรกร / ประมง / ปศุสัตว์') && !sum.json.occupationOptions['ที่ปรึกษา / นักวิชาการ / นักพัฒนาข้อมูล'].includes('อื่นๆ / ไม่ได้ประกอบอาชีพ') && Object.keys(sum.json.occupationOptions).pop() === 'อื่นๆ / ไม่ได้ประกอบอาชีพ' && sum.json.occupationOptions['ข้าราชการ / รัฐวิสาหกิจ'].includes('ครู/อาจารย์/บุคลากรทางการศึกษา') && sum.json.profile.occupationMain === '');
   const okOcc = await call('PATCH', '/api/me/profile', { name: 'ทดสอบ สอน ใหม่', callName: '', secretaryName: 'ครีม', occupationMain: 'ข้าราชการ / รัฐวิสาหกิจ', occupationSub: 'ครู/อาจารย์/บุคลากรทางการศึกษา', occupationDetail: 'สอนคณิตศาสตร์ ม.ต้น' }, A.cookie);
