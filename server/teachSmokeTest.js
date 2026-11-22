@@ -56,7 +56,7 @@ async function call(method, path, body, cookie) {
   check('สมัครผู้ใช้ทดสอบ 2 คน', A.status === 200 && B.status === 200);
 
   const cats = (await query("SELECT c.name, c.visibility FROM memory_categories c JOIN users u ON u.id = c.owner_id WHERE u.phone = $1 ORDER BY c.name", [PHONES[0]])).rows;
-  check('สมัครแล้วมี 2 หมวดหลัก: ทั่วไป + ความสามารถเลขา (ส่วนตัว)', cats.length === 2 && cats.some((c) => c.name === 'ทั่วไป') && cats.some((c) => c.name === 'ความสามารถเลขา') && cats.every((c) => c.visibility === 'private'), JSON.stringify(cats));
+  check('สมัครแล้วมี 3 หมวดหลัก: ทั่วไป + ความสามารถเลขา + ข้อมูลแชท (ส่วนตัว)', cats.length === 3 && cats.some((c) => c.name === 'ข้อมูลแชท') && cats.some((c) => c.name === 'ทั่วไป') && cats.some((c) => c.name === 'ความสามารถเลขา') && cats.every((c) => c.visibility === 'private'), JSON.stringify(cats));
 
   const uidA = (await query('SELECT id FROM users WHERE phone = $1', [PHONES[0]])).rows[0].id;
   const uidB = (await query('SELECT id FROM users WHERE phone = $1', [PHONES[1]])).rows[0].id;
@@ -132,7 +132,7 @@ async function call(method, path, body, cookie) {
   check('รายการหมวดเรียง "ทั่วไป" แล้ว "ความสามารถเลขา" ไว้บนสุดเสมอ', listed[0].name === 'ทั่วไป' && listed[1].name === 'ความสามารถเลขา', JSON.stringify(listed.map((c) => c.name)));
   await memory.saveMemory(uidB, 'กุ้ง', 'หมวดชื่อ ก. ควรอยู่ใต้หมวดหลัก', conv2.id);
   const listed2 = (await call('GET', '/api/connect/my-categories', null, B.cookie)).json.categories;
-  check('หน้าตั้งค่าข้อมูลก็เรียงหมวดหลักไว้บนสุด แม้ชื่ออื่นเรียงก่อนตามตัวอักษร', listed2[0].name === 'ทั่วไป' && listed2[1].name === 'ความสามารถเลขา' && listed2.length === 3, JSON.stringify(listed2.map((c) => c.name)));
+  check('หน้าตั้งค่าข้อมูลก็เรียงหมวดหลักไว้บนสุด แม้ชื่ออื่นเรียงก่อนตามตัวอักษร', listed2[0].name === 'ทั่วไป' && listed2[1].name === 'ความสามารถเลขา' && listed2[2].name === 'ข้อมูลแชท' && listed2.length === 4, JSON.stringify(listed2.map((c) => c.name)));
 
   // ---------- เลือกหัวข้อ → คุยต่อ/อัปเดตในหมวดนั้น ----------
   await memory.saveMemory(uidB, 'กุ้ง', 'ข้อมูลเดิม: ปล่อยลูกกุ้งหนาแน่น 60 ตัวต่อตารางเมตร');

@@ -101,9 +101,9 @@ async function call(method, path, body, cookie) {
   check('ไฟล์เสียงใหญ่เกินเพดาน → 413', big.status === 413, String(big.status));
 
   const cats = await call('GET', '/api/chat/categories', null, A.cookie);
-  check('รายการหมวดของ A มี 2 หมวดหลัก + "วิชาการ" 1 รายการ', cats.status === 200 && cats.json.categories.length === 3 && cats.json.categories.some((c) => c.name === 'วิชาการ' && c.memories === 1) && cats.json.categories.some((c) => c.name === 'ทั่วไป') && cats.json.categories.some((c) => c.name === 'ความสามารถเลขา'), JSON.stringify(cats.json.categories));
+  check('รายการหมวดของ A มี 2 หมวดหลัก + "วิชาการ" 1 รายการ', cats.status === 200 && cats.json.categories.length === 4 && cats.json.categories.some((c) => c.name === 'วิชาการ' && c.memories === 1) && cats.json.categories.some((c) => c.name === 'ข้อมูลแชท') && cats.json.categories.some((c) => c.name === 'ทั่วไป') && cats.json.categories.some((c) => c.name === 'ความสามารถเลขา'), JSON.stringify(cats.json.categories));
   const catsB = await call('GET', '/api/chat/categories', null, B.cookie);
-  check('B เห็นแค่ 2 หมวดหลักของตัวเอง (ไม่เห็นหมวดของ A)', catsB.status === 200 && catsB.json.categories.length === 2 && !catsB.json.categories.some((c) => c.name === 'วิชาการ'));
+  check('B เห็นแค่ 3 หมวดหลักของตัวเอง (ไม่เห็นหมวดของ A)', catsB.status === 200 && catsB.json.categories.length === 3 && !catsB.json.categories.some((c) => c.name === 'วิชาการ'));
 
   let hitTrLimit = false;
   for (let i = 0; i < 40 && !hitTrLimit; i++) {

@@ -13,7 +13,10 @@ const MAX_CATEGORY_NAME = 40;
 // ตัวตน/บทเรียน/ความฝัน) — หมวดความสามารถเลขาเป็นส่วนตัวเสมอ ห้ามเปิดแชร์/ขาย
 const GENERAL_CATEGORY = 'ทั่วไป';
 const SKILL_CATEGORY = 'ความสามารถเลขา';
-const MAIN_CATEGORIES = [GENERAL_CATEGORY, SKILL_CATEGORY];
+const CHAT_CATEGORY = 'ข้อมูลแชท';          // สรุปบทสนทนากลุ่ม (ส่วนตัวเสมอ เพราะมีคำพูดของคนอื่นปนอยู่)
+const MAIN_CATEGORIES = [GENERAL_CATEGORY, SKILL_CATEGORY, CHAT_CATEGORY];
+const PRIVATE_ONLY_NAMES = [SKILL_CATEGORY, CHAT_CATEGORY];   // เปิดแชร์/ขายไม่ได้
+const isPrivateOnly = (name) => PRIVATE_ONLY_NAMES.some((n) => n.toLowerCase() === String(name || '').trim().toLowerCase());
 const SELF_NAMES = [SKILL_CATEGORY];
 const SELF_KINDS = { persona: 'ตัวตน', lesson: 'บทเรียน', dream: 'ความฝัน' };
 const isSelfCategory = (name) => SELF_NAMES.some((n) => n.toLowerCase() === String(name || '').trim().toLowerCase());
@@ -93,7 +96,7 @@ async function listCategories(userId) {
     `SELECT c.name, c.visibility, count(m.id)::int AS memories
        FROM memory_categories c LEFT JOIN memories m ON m.category_id = c.id
       WHERE c.owner_id = $1
-      GROUP BY c.id ORDER BY array_position(ARRAY['ทั่วไป','ความสามารถเลขา']::text[], c.name) NULLS LAST, c.name`,
+      GROUP BY c.id ORDER BY array_position(ARRAY['ทั่วไป','ความสามารถเลขา','ข้อมูลแชท']::text[], c.name) NULLS LAST, c.name`,
     [userId]
   );
   return r.rows;
@@ -223,5 +226,5 @@ async function decideProposal(userId, proposalId, accept) {
 
 module.exports = {
   getMemoryContext, saveMemory, listCategories, recallMemories,
-  GENERAL_CATEGORY, SKILL_CATEGORY, MAIN_CATEGORIES, SELF_NAMES, isSelfCategory, ensureMainCategories, listPendingProposals, createProposals, createKnowledgeProposals, decideProposal, deleteCategory,
+  GENERAL_CATEGORY, SKILL_CATEGORY, CHAT_CATEGORY, MAIN_CATEGORIES, isPrivateOnly, SELF_NAMES, isSelfCategory, ensureMainCategories, listPendingProposals, createProposals, createKnowledgeProposals, decideProposal, deleteCategory,
 };

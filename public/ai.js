@@ -344,7 +344,7 @@
   // ---------- popup เล็กกลางจอ: กลุ่มที่สร้าง (≤2) / กลุ่มที่เข้าร่วม (≤3) → แตะกลุ่มเพื่อเข้าหน้าสนทนา ----------
   const GRP_COLORS = ['#22d3ee', '#a78bfa', '#34d399', '#f59e0b', '#fb7185', '#60a5fa'];
   const grpColor = (name) => { let h = 0; for (const ch of String(name || '')) h = (h * 31 + ch.charCodeAt(0)) % 997; return GRP_COLORS[h % GRP_COLORS.length]; };
-  function closeGroupPopup() { gEl('grpPopOverlay').hidden = true; }
+  function closeGroupPopup() { gEl('grpPopOverlay').hidden = true; gEl('grpPopOverlay').classList.remove('above'); }
   gEl('grpPopOverlay').addEventListener('click', (e) => { if (e.target === gEl('grpPopOverlay')) closeGroupPopup(); });
   async function openGroupPopup() {
     const card = gEl('grpPopCard'); card.textContent = '';
@@ -507,11 +507,90 @@
     row.append(grpAvatar(m.name, m.picture), bub);
     log.appendChild(row);
   }
+  // ---------- เลขาของฉันในห้องแชทกลุ่ม: ติ๊ก "ร่วมคุย" + หัวข้อ + ปุ่ม "สรุปการสนทนา" (บันทึกลงหมวด "ข้อมูลแชท") ----------
+  async function openGrpAiPanel() {
+    const groupId = grp.groupId; if (!groupId) return;
+    const overlay = gEl('grpPopOverlay'); const card = gEl('grpPopCard');
+    overlay.classList.add('above'); overlay.hidden = false; card.textContent = '';
+    const head = document.createElement('div'); head.className = 'pt';
+    const hl = document.createElement('div'); hl.className = 'aihead';
+    const pic = document.createElement('div'); pic.className = 'gav'; aiImgInto(pic);
+    const ttl = document.createElement('span'); ttl.textContent = (me && me.secretaryName) || 'เลขา';
+    hl.append(pic, ttl);
+    const x = document.createElement('button'); x.type = 'button'; x.textContent = '✕'; x.setAttribute('aria-label', 'ปิด'); x.addEventListener('click', closeGrpAiPanel);
+    head.append(hl, x); card.appendChild(head);
+    let info;
+    try { info = await api('GET', '/api/groups/' + groupId); } catch (err) { const e = document.createElement('div'); e.className = 'gnote2'; e.textContent = err.message; card.appendChild(e); return; }
+    const lab = document.createElement('label'); lab.className = 'chk';
+    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = !!info.mySettings.aiJoin;
+    const lt = document.createElement('div'); lt.innerHTML = ''; const b1 = document.createElement('b'); b1.textContent = 'ร่วมคุยในกลุ่มนี้';
+    const sm = document.createElement('small'); sm.textContent = 'ให้เลขาของคุณเข้ามาร่วมคุยในกลุ่ม (การคุยของเลขากำลังพัฒนา ตอนนี้เก็บการตั้งค่าไว้ก่อน)';
+    lt.append(b1, sm); lab.append(cb, lt); card.appendChild(lab);
+    const tl = document.createElement('div'); tl.className = 'sec'; tl.textContent = 'หัวข้อที่จะคุย / ที่สนใจ'; card.appendChild(tl);
+    const topic = document.createElement('input'); topic.type = 'text'; topic.maxLength = 100; topic.value = info.mySettings.aiTopic || ''; card.appendChild(topic);
+    const msg = document.createElement('div'); msg.className = 'gnote2';
+    const save = document.createElement('button'); save.type = 'button'; save.className = 'allbtn'; save.textContent = '💾 บันทึกการตั้งค่า';
+    save.addEventListener('click', async () => {
+      save.disabled = true; msg.textContent = '';
+      try { await api('PATCH', '/api/groups/' + groupId + '/ai-settings', { aiJoin: cb.checked, aiTopic: topic.value }); msg.textContent = '✓ บันทึกแล้วค่ะ'; } catch (err) { msg.textContent = err.message; }
+      save.disabled = false;
+    });
+    card.appendChild(save);
+    const sumTitle = document.createElement('div'); sumTitle.className = 'sec'; sumTitle.textContent = 'สรุปการสนทนา'; card.appendChild(sumTitle);
+    const sumNote = document.createElement('div'); sumNote.className = 'gnote2';
+    sumNote.textContent = 'ให้เลขาสรุปแชทกลุ่มนี้ (ล่าสุดไม่เกิน 80 ข้อความ; ถ้าใส่หัวข้อ จะสรุปเฉพาะเรื่องนั้น) แล้วบันทึกลงหมวด "💬 ข้อมูลแชท" ของคุณ — เป็นข้อมูลส่วนตัว เปิดแชร์/ขายไม่ได้';
+    card.appendChild(sumNote);
+    const res = document.createElement('div');
+    const sum = document.createElement('button'); sum.type = 'button'; sum.className = 'allbtn'; sum.textContent = '📝 สรุปการสนทนา';
+    sum.addEventListener('click', async () => {
+      sum.disabled = true; sum.textContent = 'เลขากำลังสรุป...'; res.textContent = ''; res.className = '';
+      try {
+        const r = await api('POST', '/api/groups/' + groupId + '/summarize', { topic: topic.value });
+        res.className = 'sumres'; res.textContent = '✓ บันทึกลงหมวด "' + r.category + '" แล้วค่ะ\n\n' + r.summary;
+      } catch (err) { res.className = 'gnote2'; res.textContent = err.message; }
+      sum.disabled = false; sum.textContent = '📝 สรุปการสนทนา';
+    });
+    card.append(sum, res, msg);
+  }
+  function closeGrpAiPanel() { const o = gEl('grpPopOverlay'); o.hidden = true; o.classList.remove('above'); }
+  gEl('grpAi').addEventListener('click', openGrpAiPanel);
+
+  // ไมค์ในห้องแชทกลุ่ม: แตะเริ่มอัด แตะอีกครั้งหยุด → ถอดเสียงเป็นข้อความลงช่องพิมพ์ (ผู้ใช้กดส่งเอง)
+  let grpRec = null;
+  gEl('grpMic').addEventListener('click', async () => {
+    const btn = gEl('grpMic');
+    if (grpRec) { grpRec.recorder.stop(); return; }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) { alert('เบราว์เซอร์นี้ยังอัดเสียงไม่ได้ — พิมพ์แทนได้ค่ะ'); return; }
+    let stream;
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); } catch (e) { alert('ยังไม่ได้อนุญาตใช้ไมค์ — เปิดสิทธิ์ไมค์ของเบราว์เซอร์ก่อนนะคะ'); return; }
+    const chunks = [];
+    const rec = new MediaRecorder(stream);
+    grpRec = { recorder: rec, timer: setTimeout(() => { if (grpRec) rec.stop(); }, 30000) };
+    btn.classList.add('rec');
+    rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+    rec.onstop = async () => {
+      clearTimeout(grpRec && grpRec.timer); grpRec = null; btn.classList.remove('rec');
+      stream.getTracks().forEach((t) => t.stop());
+      const blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' });
+      if (!blob.size) return;
+      btn.disabled = true; btn.textContent = '…';
+      try {
+        const audio = await blobToBase64(blob);
+        const { text } = await api('POST', '/api/chat/transcribe', { audio, mimeType: blob.type || 'audio/webm' });
+        if (text && text.trim()) { const inp = gEl('grpInput'); inp.value = (inp.value ? inp.value + ' ' : '') + text.trim(); inp.focus(); }
+        else alert('ไม่ได้ยินเสียงชัดๆ ลองพูดใหม่อีกครั้งนะคะ');
+      } catch (err) { alert(err.message); }
+      btn.disabled = false; btn.textContent = '🎤';
+    };
+    rec.start();
+  });
+
   async function grpChat(groupId, name) {
     grpStopPoll();
     grp.groupId = groupId; grp.name = name || 'กลุ่ม'; grp.lastId = 0;
     const body = grpFrame('💬 ' + (name || 'กลุ่ม'), grpBackToPopup, true);
     gEl('grpComposer').hidden = false;
+    aiImgInto(gEl('grpAi'));
     const stick = () => { body.scrollTop = body.scrollHeight; };
     const load = async (first) => {
       if (grp.groupId !== groupId) return;
@@ -1746,8 +1825,8 @@
   $('connEnd').addEventListener('click', () => endConnected(false));
 
   // 2 หมวดหลัก (ทั่วไป / ความสามารถเลขา) แยกสีและไอคอนให้เห็นชัด อยู่บนสุดเสมอ (เรียงจากเซิร์ฟเวอร์)
-  const catIcon = (n) => (n === 'ทั่วไป' ? '📘' : n === 'ความสามารถเลขา' ? '🧠' : '📁');
-  const mainCatClass = (n) => (n === 'ทั่วไป' ? 'cat-general' : n === 'ความสามารถเลขา' ? 'cat-skill' : '');
+  const catIcon = (n) => (n === 'ทั่วไป' ? '📘' : n === 'ความสามารถเลขา' ? '🧠' : n === 'ข้อมูลแชท' ? '💬' : '📁');
+  const mainCatClass = (n) => (n === 'ทั่วไป' ? 'cat-general' : n === 'ความสามารถเลขา' ? 'cat-skill' : n === 'ข้อมูลแชท' ? 'cat-chat' : '');
   function pcard(body, title, sub, extraCls) {
     const d = document.createElement('div'); d.className = 'pcard' + (extraCls ? ' ' + extraCls : '');
     const b = document.createElement('b'); b.textContent = title; d.appendChild(b);
@@ -1933,7 +2012,7 @@
         try { if (await saveCategorySetting(c, 'paid', unit.value, v)) reload(); } catch (err) { note(body, err.message); }
       }, c.visibility === 'paid' ? 'ok' : '');
       // ลบเนื้อหาทั้งหมดของหมวด (หมวดหลักลบตัวหมวดไม่ได้ ล้างได้เฉพาะเนื้อหา) — ต้องยืนยันก่อนเสมอ
-      const isMain = c.name === 'ทั่วไป' || c.name === 'ความสามารถเลขา';
+      const isMain = c.name === 'ทั่วไป' || c.name === 'ความสามารถเลขา' || c.name === 'ข้อมูลแชท';
       const rowDel = document.createElement('div'); rowDel.className = 'row2'; d.appendChild(rowDel);
       miniBtn(rowDel, isMain ? '🗑️ ล้างเนื้อหาทั้งหมด' : '🗑️ ลบหมวดและเนื้อหาทั้งหมด', () => confirmDeleteCategory(c, isMain), 'danger');
     });

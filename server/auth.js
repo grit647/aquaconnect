@@ -151,7 +151,7 @@ router.post('/register', async (req, res) => {
       );
       await c.query('INSERT INTO credit_balances (user_id) VALUES ($1)', [r.rows[0].id]);
       // 2 หมวดหลักตั้งแต่เริ่มใช้งาน: ทั่วไป + ความสามารถเลขา (สิ่งที่เจ้าของสอนเลขา)
-      await c.query("INSERT INTO memory_categories (owner_id, name) VALUES ($1, 'ทั่วไป'), ($1, 'ความสามารถเลขา') ON CONFLICT (owner_id, name) DO NOTHING", [r.rows[0].id]);
+      await c.query("INSERT INTO memory_categories (owner_id, name) VALUES ($1, 'ทั่วไป'), ($1, 'ความสามารถเลขา'), ($1, 'ข้อมูลแชท') ON CONFLICT (owner_id, name) DO NOTHING", [r.rows[0].id]);
       return r.rows[0];
     });
 

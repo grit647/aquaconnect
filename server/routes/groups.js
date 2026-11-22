@@ -27,6 +27,12 @@ router.get('/:id/invite-candidates', async (req, res) => {
 router.post('/:id/invites', async (req, res) => {
   try { res.json({ ok: true, ...(await groups.inviteUser(req.user.id, req.params.id, req.body && req.body.userId)) }); } catch (err) { fail(res, err); }
 });
+router.patch('/:id/ai-settings', async (req, res) => {
+  try { res.json({ ok: true, ...(await groups.setAiSettings(req.user.id, req.params.id, !!(req.body && req.body.aiJoin === true), req.body && req.body.aiTopic)) }); } catch (err) { fail(res, err); }
+});
+router.post('/:id/summarize', async (req, res) => {
+  try { res.json({ ok: true, ...(await groups.summarizeToMemory(req.user.id, req.params.id, req.body && req.body.topic)) }); } catch (err) { fail(res, err); }
+});
 router.post('/:id/join', async (req, res) => {
   try { res.json({ ok: true, ...(await groups.requestJoin(req.user.id, req.params.id)) }); } catch (err) { fail(res, err); }
 });

@@ -24,7 +24,7 @@ async function expireOld() {
 // ---------- เจ้าของตั้งสถานะหมวด ----------
 async function setCategoryVisibility(userId, categoryName, visibility, priceType, price) {
   if (!['private', 'free', 'paid'].includes(visibility)) throw new Error('สถานะต้องเป็น private, free หรือ paid');
-  if (visibility !== 'private' && require('./memory').isSelfCategory(categoryName)) throw new Error('หมวดนี้คือสิ่งที่คุณสอนเลขา เป็นตัวตนของคุณ จึงเป็นส่วนตัวเสมอ เปิดแชร์หรือขายไม่ได้');
+  if (visibility !== 'private' && require('./memory').isPrivateOnly(categoryName)) throw new Error('หมวดนี้เป็นข้อมูลส่วนตัวเสมอ (สิ่งที่คุณสอนเลขา / สรุปแชทกลุ่ม) เปิดแชร์หรือขายไม่ได้');
   let pt = null; let pr = null;
   if (visibility === 'paid') {
     pt = priceType;
