@@ -198,9 +198,20 @@
     };
     refreshSub(true);
     occMain.addEventListener('change', () => refreshSub(false));
-    note(body, 'รายละเอียด (เช่น ชื่อสถานศึกษา สถานที่ทำงาน หรือสิ่งที่ทำ — ถ้าเลือก "อื่นๆ" ต้องกรอก)');
-    const occDetail = document.createElement('textarea'); occDetail.rows = 3; occDetail.maxLength = 200; occDetail.value = s.profile.occupationDetail || ''; occDetail.placeholder = 'เช่น สอนคณิตศาสตร์ ม.ต้น โรงเรียน…';
+    const detailLabel = note(body, 'รายละเอียด (เช่น ชื่อสถานศึกษา สถานที่ทำงาน หรือสิ่งที่ทำ)');
+    const occDetail = document.createElement('textarea'); occDetail.rows = 3; occDetail.maxLength = 200; occDetail.value = s.profile.occupationDetail || '';
     body.appendChild(occDetail);
+    // เลือก "อื่นๆ (โปรดระบุ)" → เปลี่ยนป้ายเป็นให้พิมพ์ระบุตรงช่องนี้ และพาเคอร์เซอร์ไปรอให้พิมพ์เลย
+    const OTHER = s.occupationOther || 'อื่นๆ (โปรดระบุ)';
+    const syncOther = (focus) => {
+      const isOther = occSub.value === OTHER;
+      detailLabel.textContent = isOther ? '✍️ โปรดระบุ (พิมพ์สาขา/สิ่งที่คุณทำที่ช่องนี้ — จำเป็นต้องกรอก)' : 'รายละเอียด (เช่น ชื่อสถานศึกษา สถานที่ทำงาน หรือสิ่งที่ทำ)';
+      detailLabel.style.color = isOther ? 'var(--neon)' : '';
+      if (isOther && focus) { occDetail.focus(); occDetail.scrollIntoView({ block: 'center' }); }
+    };
+    occSub.addEventListener('change', () => syncOther(true));
+    occMain.addEventListener('change', () => syncOther(false));
+    syncOther(false);
     const msg = note(body, '');
     sheetButton(body, '💾 บันทึกโปรไฟล์', async () => {
       try {
