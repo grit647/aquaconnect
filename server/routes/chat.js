@@ -48,7 +48,7 @@ function attachLimited(userId) {
   return null;
 }
 // เครื่องมือที่ยังให้เลขาใช้ได้ในข้อความที่มีไฟล์/ลิงก์แนบ — ตัดเครื่องมือที่เปลี่ยนการแชร์/สิทธิ์/เงิน เพราะเนื้อหาจากภายนอกอาจแอบสั่งให้ทำ (prompt injection)
-const TOOLS_OK_WITH_EXTERNAL = new Set(['save_memory', 'list_categories', 'recall_memories', 'check_credit_balance']);
+const TOOLS_OK_WITH_EXTERNAL = new Set(['platform_guide', 'save_memory', 'list_categories', 'recall_memories', 'check_credit_balance']);
 // ผู้ใช้กำลังคุยกับเลขาจาก "ห้องแชทกลุ่ม" (เลือกส่งถึงเลขา ไม่ได้ส่งเข้ากลุ่ม)
 const GROUP_NOTE = (name, text) => `
 
@@ -304,8 +304,10 @@ router.post('/conversations/:id/messages', async (req, res) => {
     // หมวดที่ผู้ใช้เลือกคุยต่อ/อัปเดต: โหลดข้อมูลเดิมของหมวดนั้นให้เลขาเห็น (ของใครของมัน — ค้นตาม userId เท่านั้น)
     let focusBlock = '';
     if (focusCategory) {
-      const old = await recallMemories(req.user.id, focusCategory, 15).catch(() => []);
-      focusBlock = [`หมวด "${focusCategory}" ข้อมูลเดิม ${old.length} รายการ:`, ...(old.length ? old.map((o) => '- ' + o.content) : ['(ยังไม่มีข้อมูล เป็นหมวดใหม่)'])].join('\n');
+      const isGuide = require('../memory').isGuideCategory(focusCategory);
+      const old = isGuide ? [] : await recallMemories(req.user.id, focusCategory, 15).catch(() => []);
+      if (isGuide) focusBlock = 'หมวดนี้คือคู่มือการใช้งานแพลตฟอร์ม (ทีมงานเขียน อ่านอย่างเดียว) — ผู้ใช้อยากให้คุณอธิบายวิธีใช้แอป ตอบจากคู่มือนี้เท่านั้น ห้ามบันทึก/อัปเดตข้อมูลลงหมวดนี้ และไม่ต้องถามว่าจะอัปเดตหมวด:\n' + require('../platformGuide').fullText();
+      else focusBlock = [`หมวด "${focusCategory}" ข้อมูลเดิม ${old.length} รายการ:`, ...(old.length ? old.map((o) => '- ' + o.content) : ['(ยังไม่มีข้อมูล เป็นหมวดใหม่)'])].join('\n');
     }
     if (!user) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบก่อน' });
 

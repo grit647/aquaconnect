@@ -442,3 +442,5 @@ body {
 #tickPop .tv { margin: 6px 0 12px; text-align: center; }
 #tickPop .tb { display: flex; gap: 8px; }
 #tickPop .tb button { flex: 1; border: 1px solid var(--neon2); background: transparent; color: var(--neon2); border-radius: 999px; padding: 8px 4px; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
+
+#sheetBody button.cat-guide, .pcard.cat-guide { border-color: #38bdf8; background: rgba(56, 189, 248, 0.14); }

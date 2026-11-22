@@ -52,6 +52,8 @@ router.post('/enabled', async (req, res) => {
 });
 
 // ---------- ตั้งค่าข้อมูลของฉัน: ดูจำนวนเนื้อหาในแต่ละหมวด + ตั้งส่วนตัว/ฟรี/เสียเงิน (ราคาต่อชั่วโมงหรือต่อคำถาม) ----------
+const memoryLib = require('../memory');
+const guideLib = require('../platformGuide');
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 router.get('/my-categories', async (req, res) => {
@@ -60,13 +62,13 @@ router.get('/my-categories', async (req, res) => {
       query(`SELECT c.id, c.name, c.description, c.visibility, c.price_type, c.price_credits,
                     (SELECT count(*)::int FROM memories m WHERE m.category_id = c.id) AS items,
                     (SELECT max(m.created_at) FROM memories m WHERE m.category_id = c.id) AS last_at
-               FROM memory_categories c WHERE c.owner_id = $1 ORDER BY array_position(ARRAY['ทั่วไป','ความสามารถเลขา','ข้อมูลแชท']::text[], c.name) NULLS LAST, c.name`, [req.user.id]),
+               FROM memory_categories c WHERE c.owner_id = $1 ORDER BY array_position(ARRAY['ทั่วไป','ความสามารถเลขา','ข้อมูลแชท','การใช้งานแพลตฟอร์ม']::text[], c.name) NULLS LAST, c.name`, [req.user.id]),
       query("SELECT value FROM app_settings WHERE key = 'idle_timeout_min'"),
       query("SELECT value FROM app_settings WHERE key = 'free_access_minutes'"),
       sharing.getConnectEnabled(req.user.id),
     ]);
     res.json({
-      categories: c.rows.map((x) => ({ ...x, price_credits: x.price_credits === null ? null : Number(x.price_credits) })),
+      categories: c.rows.map((x) => ({ ...x, price_credits: x.price_credits === null ? null : Number(x.price_credits), ...(memoryLib.isGuideCategory(x.name) ? { items: guideLib.SECTIONS.length, readonly: true } : {}) })),
       blockMinutes: Number(idle.rows[0] && idle.rows[0].value) || 5,
       freeMinutes: Number(freeMin.rows[0] && freeMin.rows[0].value) || 15,
       connectEnabled: enabled,
@@ -83,6 +85,7 @@ router.get('/my-categories/:id/items', async (req, res) => {
     if (!UUID_RE.test(req.params.id)) return res.status(404).json({ error: 'ไม่พบหมวดนี้' });
     const own = await query('SELECT name FROM memory_categories WHERE id = $1 AND owner_id = $2', [req.params.id, req.user.id]);
     if (!own.rows[0]) return res.status(404).json({ error: 'ไม่พบหมวดนี้' });
+    if (memoryLib.isGuideCategory(own.rows[0].name)) return res.json({ category: own.rows[0].name, readonly: true, items: guideLib.SECTIONS.map((s) => ({ text: s.title + '\n' + s.text, created_at: null })) });
     const r = await query('SELECT content, created_at FROM memories WHERE category_id = $1 AND owner_id = $2 ORDER BY created_at DESC LIMIT 30', [req.params.id, req.user.id]);
     res.json({ category: own.rows[0].name, items: r.rows.map((x) => ({ text: String(x.content).slice(0, 500), created_at: x.created_at })) });
   } catch (err) {

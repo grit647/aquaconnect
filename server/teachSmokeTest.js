@@ -56,7 +56,7 @@ async function call(method, path, body, cookie) {
   check('สมัครผู้ใช้ทดสอบ 2 คน', A.status === 200 && B.status === 200);
 
   const cats = (await query("SELECT c.name, c.visibility FROM memory_categories c JOIN users u ON u.id = c.owner_id WHERE u.phone = $1 ORDER BY c.name", [PHONES[0]])).rows;
-  check('สมัครแล้วมี 3 หมวดหลัก: ทั่วไป + ความสามารถเลขา + ข้อมูลแชท (ส่วนตัว)', cats.length === 3 && cats.some((c) => c.name === 'ข้อมูลแชท') && cats.some((c) => c.name === 'ทั่วไป') && cats.some((c) => c.name === 'ความสามารถเลขา') && cats.every((c) => c.visibility === 'private'), JSON.stringify(cats));
+  check('สมัครแล้วมี 4 หมวดหลัก: ทั่วไป + ความสามารถเลขา + ข้อมูลแชท + การใช้งานแพลตฟอร์ม (ส่วนตัว)', cats.length === 4 && cats.some((c) => c.name === 'การใช้งานแพลตฟอร์ม') && cats.some((c) => c.name === 'ข้อมูลแชท') && cats.some((c) => c.name === 'ทั่วไป') && cats.some((c) => c.name === 'ความสามารถเลขา') && cats.every((c) => c.visibility === 'private'), JSON.stringify(cats));
 
   const uidA = (await query('SELECT id FROM users WHERE phone = $1', [PHONES[0]])).rows[0].id;
   const uidB = (await query('SELECT id FROM users WHERE phone = $1', [PHONES[1]])).rows[0].id;
@@ -132,7 +132,32 @@ async function call(method, path, body, cookie) {
   check('รายการหมวดเรียง "ทั่วไป" แล้ว "ความสามารถเลขา" ไว้บนสุดเสมอ', listed[0].name === 'ทั่วไป' && listed[1].name === 'ความสามารถเลขา', JSON.stringify(listed.map((c) => c.name)));
   await memory.saveMemory(uidB, 'กุ้ง', 'หมวดชื่อ ก. ควรอยู่ใต้หมวดหลัก', conv2.id);
   const listed2 = (await call('GET', '/api/connect/my-categories', null, B.cookie)).json.categories;
-  check('หน้าตั้งค่าข้อมูลก็เรียงหมวดหลักไว้บนสุด แม้ชื่ออื่นเรียงก่อนตามตัวอักษร', listed2[0].name === 'ทั่วไป' && listed2[1].name === 'ความสามารถเลขา' && listed2[2].name === 'ข้อมูลแชท' && listed2.length === 4, JSON.stringify(listed2.map((c) => c.name)));
+  check('หน้าตั้งค่าข้อมูลก็เรียงหมวดหลักไว้บนสุด แม้ชื่ออื่นเรียงก่อนตามตัวอักษร', listed2[0].name === 'ทั่วไป' && listed2[1].name === 'ความสามารถเลขา' && listed2[2].name === 'ข้อมูลแชท' && listed2[3].name === 'การใช้งานแพลตฟอร์ม' && listed2.length === 5, JSON.stringify(listed2.map((c) => c.name)));
+
+  // ---------- หมวดหลักที่ 4: คู่มือการใช้งานแพลตฟอร์ม (อ่านอย่างเดียว) ----------
+  const guideLib = require('./platformGuide');
+  const gcat = listed2.find((c) => c.name === 'การใช้งานแพลตฟอร์ม');
+  check('หมวด "การใช้งานแพลตฟอร์ม" โชว์จำนวนเป็นจำนวนหัวข้อคู่มือ + ติดป้ายอ่านอย่างเดียว', gcat && gcat.items === guideLib.SECTIONS.length && gcat.readonly === true && gcat.visibility === 'private', JSON.stringify(gcat));
+  const gitems = await call('GET', '/api/connect/my-categories/' + gcat.id + '/items', null, B.cookie);
+  check('ดูเนื้อหาหมวดคู่มือ → ได้ทุกหัวข้อพร้อมคำอธิบายปุ่ม/เมนู', gitems.status === 200 && gitems.json.readonly === true && gitems.json.items.length === guideLib.SECTIONS.length && gitems.json.items.some((i) => i.text.includes('เสียงประมวลผล')));
+  const gdel = await call('DELETE', '/api/connect/my-categories/' + gcat.id, null, B.cookie);
+  check('ล้าง/ลบหมวดคู่มือไม่ได้', gdel.status >= 400, JSON.stringify(gdel.json));
+  let gsave = null; try { await memory.saveMemory(uidB, 'การใช้งานแพลตฟอร์ม', 'ลองเขียนทับคู่มือ', null); } catch (e) { gsave = e.message; }
+  check('บันทึกความจำลงหมวดคู่มือไม่ได้ (เลขา/ผู้ใช้ก็เขียนไม่ได้)', !!gsave, gsave);
+  let gshare = null; try { await sharing.setCategoryVisibility(uidB, 'การใช้งานแพลตฟอร์ม', 'free'); } catch (e) { gshare = e.message; }
+  check('เปิดแชร์/ขายหมวดคู่มือไม่ได้', !!gshare, gshare);
+  check('recall หมวดคู่มือ → คืนหัวข้อทั้งหมด', (await memory.recallMemories(uidB, 'การใช้งานแพลตฟอร์ม')).length === guideLib.SECTIONS.length);
+  const gTitles = (q) => guideLib.search(q, 3).map((x) => x.title).join('|');
+  check('ค้นคู่มือ: "ปรับความดังเสียงติ๊ก" เจอหัวข้อเสียงประมวลผล', gTitles('ปรับความดังเสียงติ๊ก').includes('เสียงประมวลผล'), gTitles('ปรับความดังเสียงติ๊ก'));
+  check('ค้นคู่มือ: "เติมเครดิตยังไง" เจอหัวข้อเครดิต', gTitles('เติมเครดิตยังไง').includes('เครดิต'), gTitles('เติมเครดิตยังไง'));
+  check('ค้นคู่มือ: "ขอเข้ากลุ่ม" เจอหัวข้อกลุ่ม', gTitles('ขอเข้ากลุ่ม').includes('กลุ่มแชท'), gTitles('ขอเข้ากลุ่ม'));
+  check('ค้นคู่มือ: คำที่ไม่มีเลย → ว่าง (เลขาจะได้บอกว่ายังไม่มีข้อมูล)', gTitles('zzzqqq') === '');
+  const tools = require('./secretary').buildTools(uidB, null, {});
+  const gr = await tools.platform_guide.run({ topic: 'ตั้งปฏิทิน' });
+  check('เครื่องมือ platform_guide ใช้ได้ คืนหัวข้อที่เกี่ยวข้อง + รายการหัวข้อทั้งหมด', gr.found === true && gr.sections[0].title.includes('ปฏิทิน') && gr.otherTopics.length === guideLib.SECTIONS.length);
+  const gn = await tools.platform_guide.run({ topic: 'zzzqqq' });
+  check('platform_guide ไม่พบ → found=false พร้อมรายการหัวข้อ ไม่แต่งเอง', gn.found === false && gn.topics.length === guideLib.SECTIONS.length);
+  check('system prompt สั่งให้เรียก platform_guide เวลาถามวิธีใช้ และไม่ให้เดาชื่อปุ่ม', require('./secretary').buildSystemPrompt({ secretaryName: 'ทดสอบ', userName: 'ทดสอบ' }).includes('เรียก platform_guide ก่อนตอบ'));
 
   // ---------- เลือกหัวข้อ → คุยต่อ/อัปเดตในหมวดนั้น ----------
   await memory.saveMemory(uidB, 'กุ้ง', 'ข้อมูลเดิม: ปล่อยลูกกุ้งหนาแน่น 60 ตัวต่อตารางเมตร');

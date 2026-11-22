@@ -1,6 +1,7 @@
 // Memory Pack ของผู้ใช้แต่ละคน — หมวดหมู่ + ความจำ (ตาราง memory_categories / memories)
 // ทุกฟังก์ชันรับ userId จากฝั่งเซิร์ฟเวอร์เสมอ (ไม่เคยรับจาก AI/ผู้ใช้โดยตรง) กันเข้าถึงข้อมูลคนอื่น
 const { query, withTransaction } = require('./db');
+const guide = require('./platformGuide');
 
 const MAX_ITEMS_PER_CATEGORY = 5;     // ใส่เข้า prompt หมวดละกี่รายการล่าสุด
 const SELF_ITEMS_IN_PROMPT = 15;      // หมวดตัวเลขาใส่มากกว่า (เลขาต้อง "มองเห็น" สิ่งที่ถูกสอนครบ ไม่งั้นถูกสอนซ้ำ)
@@ -14,8 +15,10 @@ const MAX_CATEGORY_NAME = 40;
 const GENERAL_CATEGORY = 'ทั่วไป';
 const SKILL_CATEGORY = 'ความสามารถเลขา';
 const CHAT_CATEGORY = 'ข้อมูลแชท';          // สรุปบทสนทนากลุ่ม (ส่วนตัวเสมอ เพราะมีคำพูดของคนอื่นปนอยู่)
-const MAIN_CATEGORIES = [GENERAL_CATEGORY, SKILL_CATEGORY, CHAT_CATEGORY];
-const PRIVATE_ONLY_NAMES = [SKILL_CATEGORY, CHAT_CATEGORY];   // เปิดแชร์/ขายไม่ได้
+const GUIDE_CATEGORY = guide.GUIDE_CATEGORY;   // หมวดหลักที่ 4: คู่มือแพลตฟอร์ม (ทีมงานเขียน อ่านอย่างเดียว ไม่มีแถวใน memories)
+const isGuideCategory = (name) => String(name || '').trim().toLowerCase() === GUIDE_CATEGORY.toLowerCase();
+const MAIN_CATEGORIES = [GENERAL_CATEGORY, SKILL_CATEGORY, CHAT_CATEGORY, GUIDE_CATEGORY];
+const PRIVATE_ONLY_NAMES = [SKILL_CATEGORY, CHAT_CATEGORY, GUIDE_CATEGORY];   // เปิดแชร์/ขายไม่ได้
 const isPrivateOnly = (name) => PRIVATE_ONLY_NAMES.some((n) => n.toLowerCase() === String(name || '').trim().toLowerCase());
 const SELF_NAMES = [SKILL_CATEGORY];
 const SELF_KINDS = { persona: 'ตัวตน', lesson: 'บทเรียน', dream: 'ความฝัน' };
@@ -67,6 +70,7 @@ async function getMemoryContext(userId) {
 // บันทึกความจำลงหมวด — ถ้ายังไม่มีหมวดนี้จะสร้างให้เป็น "ส่วนตัว" เสมอ (เปิดให้คนอื่นเห็นได้ต่อเมื่อเจ้าของสั่งเท่านั้น)
 async function saveMemory(userId, categoryName, content, conversationId, sourceGroupId) {
   const name = cleanCategoryName(categoryName);
+  if (isGuideCategory(name)) throw new Error('หมวด "' + GUIDE_CATEGORY + '" เป็นคู่มือของระบบ บันทึกข้อมูลลงไม่ได้');
   const text = String(content || '').trim();
   if (!text) throw new Error('เนื้อหาความจำห้องว่าง');
   if (text.length > MAX_CONTENT_CHARS) throw new Error(`เนื้อหายาวเกิน ${MAX_CONTENT_CHARS} ตัวอักษร`);
@@ -96,15 +100,17 @@ async function listCategories(userId) {
     `SELECT c.name, c.visibility, count(m.id)::int AS memories
        FROM memory_categories c LEFT JOIN memories m ON m.category_id = c.id
       WHERE c.owner_id = $1
-      GROUP BY c.id ORDER BY array_position(ARRAY['ทั่วไป','ความสามารถเลขา','ข้อมูลแชท']::text[], c.name) NULLS LAST, c.name`,
+      GROUP BY c.id ORDER BY array_position(ARRAY['ทั่วไป','ความสามารถเลขา','ข้อมูลแชท','การใช้งานแพลตฟอร์ม']::text[], c.name) NULLS LAST, c.name`,
     [userId]
   );
-  return r.rows;
+  // หมวดคู่มือไม่มีแถวใน memories — นับเป็นจำนวนหัวข้อในคู่มือ
+  return r.rows.map((x) => (isGuideCategory(x.name) ? { ...x, memories: guide.SECTIONS.length } : x));
 }
 
 // ดึงความจำของหมวดหนึ่ง (หรือทุกหมวดถ้าไม่ระบุ) ล่าสุดก่อน — ไว้ให้ AI เรียกเมื่อความจำเยอะเกินที่ใส่ใน prompt ได้
 async function recallMemories(userId, categoryName, limit = 20) {
   const n = Math.min(Math.max(Number(limit) || 20, 1), 50);
+  if (categoryName && isGuideCategory(categoryName)) return guide.SECTIONS.map((s) => ({ category: GUIDE_CATEGORY, content: s.title + '\n' + s.text, created_at: null }));
   const params = [userId, n];
   let where = 'm.owner_id = $1';
   if (categoryName) {
@@ -197,6 +203,7 @@ async function deleteCategory(userId, categoryId) {
     const cat = await c.query('SELECT id, name FROM memory_categories WHERE id = $1 AND owner_id = $2 FOR UPDATE', [String(categoryId || ''), userId]);
     if (!cat.rows[0]) throw new Error('ไม่พบหมวดนี้ของคุณ');
     const name = cat.rows[0].name;
+    if (isGuideCategory(name)) throw new Error('หมวดนี้เป็นคู่มือของระบบ ลบหรือล้างเนื้อหาไม่ได้');
     const mem = await c.query('DELETE FROM memories WHERE category_id = $1 RETURNING id', [cat.rows[0].id]);
     await c.query("DELETE FROM memory_proposals WHERE owner_id = $1 AND status = 'pending' AND lower(category) = lower($2)", [userId, name]);
     const hist = await c.query('SELECT 1 FROM access_sessions WHERE category_id = $1 LIMIT 1', [cat.rows[0].id]);
@@ -226,5 +233,5 @@ async function decideProposal(userId, proposalId, accept) {
 
 module.exports = {
   getMemoryContext, saveMemory, listCategories, recallMemories,
-  GENERAL_CATEGORY, SKILL_CATEGORY, CHAT_CATEGORY, MAIN_CATEGORIES, isPrivateOnly, SELF_NAMES, isSelfCategory, ensureMainCategories, listPendingProposals, createProposals, createKnowledgeProposals, decideProposal, deleteCategory,
+  GENERAL_CATEGORY, SKILL_CATEGORY, CHAT_CATEGORY, GUIDE_CATEGORY, isGuideCategory, MAIN_CATEGORIES, isPrivateOnly, SELF_NAMES, isSelfCategory, ensureMainCategories, listPendingProposals, createProposals, createKnowledgeProposals, decideProposal, deleteCategory,
 };

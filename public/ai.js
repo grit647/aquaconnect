@@ -1923,8 +1923,8 @@
   $('connEnd').addEventListener('click', () => endConnected(false));
 
   // 2 หมวดหลัก (ทั่วไป / ความสามารถเลขา) แยกสีและไอคอนให้เห็นชัด อยู่บนสุดเสมอ (เรียงจากเซิร์ฟเวอร์)
-  const catIcon = (n) => (n === 'ทั่วไป' ? '📘' : n === 'ความสามารถเลขา' ? '🧠' : n === 'ข้อมูลแชท' ? '💬' : '📁');
-  const mainCatClass = (n) => (n === 'ทั่วไป' ? 'cat-general' : n === 'ความสามารถเลขา' ? 'cat-skill' : n === 'ข้อมูลแชท' ? 'cat-chat' : '');
+  const catIcon = (n) => (n === 'ทั่วไป' ? '📘' : n === 'ความสามารถเลขา' ? '🧠' : n === 'ข้อมูลแชท' ? '💬' : n === 'การใช้งานแพลตฟอร์ม' ? '📖' : '📁');
+  const mainCatClass = (n) => (n === 'ทั่วไป' ? 'cat-general' : n === 'ความสามารถเลขา' ? 'cat-skill' : n === 'ข้อมูลแชท' ? 'cat-chat' : n === 'การใช้งานแพลตฟอร์ม' ? 'cat-guide' : '');
   function pcard(body, title, sub, extraCls) {
     const d = document.createElement('div'); d.className = 'pcard' + (extraCls ? ' ' + extraCls : '');
     const b = document.createElement('b'); b.textContent = title; d.appendChild(b);
@@ -2047,7 +2047,10 @@
     try {
       const r = await api('GET', '/api/connect/my-categories/' + c.id + '/items');
       if (!r.items.length) note(body, 'ยังไม่มีเนื้อหาในหมวดนี้');
-      r.items.forEach((it) => pcard(body, new Date(it.created_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }), it.text));
+      r.items.forEach((it) => {
+        if (!it.created_at) { const nl = it.text.indexOf('\n'); pcard(body, '📖 ' + it.text.slice(0, nl), it.text.slice(nl + 1)); return; }   // คู่มือแพลตฟอร์ม: หัวข้อ + เนื้อหา
+        pcard(body, new Date(it.created_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }), it.text);
+      });
       if (r.items.length >= 30) note(body, 'แสดง 30 รายการล่าสุด');
     } catch (err) { note(body, err.message); }
     backButton(body, showDataSettings);
@@ -2089,6 +2092,7 @@
       const row = document.createElement('div'); row.className = 'row2'; d.appendChild(row);
       const reload = () => showDataSettings();
       miniBtn(row, 'ดูเนื้อหา', () => showCategoryItems(c));
+      if (c.readonly) { const ro = document.createElement('small'); ro.style.color = 'var(--muted)'; ro.textContent = 'คู่มือของระบบ — อ่านอย่างเดียว ลบ/แก้/แชร์ไม่ได้ (ถามเลขาได้เลยว่าใช้งานอย่างไร)'; d.appendChild(ro); return; }
       miniBtn(row, 'ส่วนตัว', async () => { try { if (await saveCategorySetting(c, 'private')) reload(); } catch (err) { note(body, err.message); } }, c.visibility === 'private' ? 'ok' : '');
       miniBtn(row, 'ฟรี', async () => { try { if (await saveCategorySetting(c, 'free')) reload(); } catch (err) { note(body, err.message); } }, c.visibility === 'free' ? 'ok' : '');
 

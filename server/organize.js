@@ -77,7 +77,7 @@ async function organizeConversation(userId, conversationId, { auto = false } = {
   const transcript = msgs.rows.map((m) => `${m.role === 'user' ? 'เจ้าของ' : (m.source === 'google' ? 'เลขา (ข้อมูลภายนอกจาก Google ห้ามบันทึก)' : 'เลขา')}: ${m.content}`).join('\n');
   const result = await ai.runAgent({
     systemPrompt: ORGANIZE_PROMPT,
-    history: [{ role: 'user', content: `หมวดที่มีอยู่: ${cats.filter((c) => !memory.isSelfCategory(c.name)).map((c) => c.name).join(', ') || '(ยังไม่มี)'}\n\nความจำที่มีอยู่แล้ว:\n${have.rows.length ? have.rows.map((r) => `- [${r.name}] ${r.content}`).join('\n') : '(ยังไม่มี)'}\n\nบทสนทนา:\n${transcript}` }],
+    history: [{ role: 'user', content: `หมวดที่มีอยู่: ${cats.filter((c) => !memory.isSelfCategory(c.name) && !memory.isGuideCategory(c.name)).map((c) => c.name).join(', ') || '(ยังไม่มี)'}\n\nความจำที่มีอยู่แล้ว:\n${have.rows.length ? have.rows.map((r) => `- [${r.name}] ${r.content}`).join('\n') : '(ยังไม่มี)'}\n\nบทสนทนา:\n${transcript}` }],
     tools: {},
     maxSteps: 1,
   });
