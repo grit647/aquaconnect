@@ -36,6 +36,7 @@ app.use('/api/credits', creditsRouter);
 app.use('/api/connect', connectRouter);
 app.use('/api/calendar', calendarRouter);
 app.use('/api/me', require('./routes/me'));
+app.use('/api/groups', require('./routes/groups'));
 app.use('/api/admin', adminRouter);
 
 // เช็คสุขภาพระบบ (ใช้กับ UptimeRobot ได้) — แตะฐานข้อมูลเบาๆ ด้วย ช่วยกันโปรเจกต์ Supabase แผนฟรีโดนพักจากไม่มีการใช้งาน

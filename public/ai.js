@@ -136,7 +136,7 @@
     // แถบการใช้งาน 2 แถว ต่อจากรูปโปรไฟล์ (ข้อมูลส่วนตัว + การค้นหาด้วย Google) — แตะดูรายละเอียดได้
     const meters = document.createElement('div'); meters.className = 'meters'; body.appendChild(meters);
     sheetButton(body, '✏️ อัปเดตโปรไฟล์', showProfileEdit);
-    sheetButton(body, '👥 กลุ่ม (เร็วๆ นี้)', showGroupsSoon);
+    sheetButton(body, '👥 กลุ่ม', () => { closeSheet(); openGroups(); });
     sheetButton(body, '🎥 สัมมนา / ประชุมออนไลน์ (เร็วๆ นี้)', showSeminarSoon);
     api('GET', '/api/me/summary').then((s) => {
       const u = s.usage; const g = s.google;
@@ -249,11 +249,173 @@
     }
     profileBack(body);
   }
-  function showGroupsSoon() {
-    const body = openSheet('กลุ่ม');
-    note(body, '👥 กลุ่มสนทนา (กำลังพัฒนา)\nเร็วๆ นี้คุณจะสร้างกลุ่มคุยกับคนอื่นได้ คล้ายกลุ่มไลน์ แต่คุยกันบนแพลตฟอร์มของเรา ไม่ใช่การส่งข้อความทางไลน์');
-    profileBack(body);
+  // ============================ กลุ่มสนทนา (เต็มจอ) ============================
+  // หน้าแรกกลุ่ม → [สร้างกลุ่มใหม่ (ผู้สร้างเป็นแอดมิน สร้างได้ 2 กลุ่ม)] / [ดูกลุ่มทั้งหมด → ขอเข้าร่วม → ผู้สร้างอนุญาต] → แชทกลุ่ม (รูปโปรไฟล์ทุกข้อความ)
+  const grp = { view: 'home', groupId: null, name: '', lastId: 0, timer: null, info: null, back: null };
+  const gEl = (id) => document.getElementById(id);
+  function grpAvatar(name, pic) {
+    const d = document.createElement('div'); d.className = 'gav';
+    const initial = () => { d.textContent = String(name || '?').trim().charAt(0) || '?'; };
+    if (pic && LINE_PIC_RE.test(pic)) {
+      const img = document.createElement('img'); img.alt = ''; img.referrerPolicy = 'no-referrer';
+      img.onerror = initial; img.src = pic; d.appendChild(img);
+    } else initial();
+    return d;
   }
+  function grpStopPoll() { if (grp.timer) { clearInterval(grp.timer); grp.timer = null; } }
+  function grpFrame(title, back, showMenu) {
+    gEl('grpTitle').textContent = title;
+    grp.back = back || null;
+    gEl('grpBack').hidden = !back;
+    gEl('grpMenu').hidden = !showMenu;
+    gEl('grpComposer').hidden = true;
+    gEl('grpBody').textContent = '';
+    return gEl('grpBody');
+  }
+  const gNote = (body, text) => { const d = document.createElement('div'); d.className = 'gnote'; d.textContent = text; body.appendChild(d); return d; };
+  const gBtn = (parent, label, onClick, cls) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'gact' + (cls ? ' ' + cls : ''); b.textContent = label; b.addEventListener('click', onClick); parent.appendChild(b); return b; };
+  function openGroups() { gEl('grpOverlay').hidden = false; grpHome(); }
+  function closeGroups() { grpStopPoll(); gEl('grpOverlay').hidden = true; grp.groupId = null; }
+  gEl('grpClose').addEventListener('click', closeGroups);
+  gEl('grpBack').addEventListener('click', () => { grpStopPoll(); if (grp.back) grp.back(); });
+
+  async function grpHome() {
+    grpStopPoll();
+    const body = grpFrame('👥 กลุ่ม', null, false);
+    let data = { createdByMe: 0, maxCreate: 2, groups: [] };
+    try { data = await api('GET', '/api/groups'); } catch (err) { gNote(body, err.message); }
+    const left = data.maxCreate - data.createdByMe;
+    gBtn(body, '➕ สร้างกลุ่มใหม่  (สร้างแล้ว ' + data.createdByMe + '/' + data.maxCreate + ')', () => grpCreate(left), 'ok');
+    gBtn(body, '📋 ดูกลุ่มทั้งหมด  (' + data.groups.length + ' กลุ่ม)', grpList);
+    const mine = data.groups.filter((g) => g.myRole);
+    if (mine.length) {
+      gNote(body, 'กลุ่มของฉัน');
+      mine.forEach((g) => gBtn(body, '💬 ' + g.name + (g.pendingRequests ? '  🔔 ' + g.pendingRequests + ' คำขอ' : ''), () => grpChat(g.id, g.name)));
+    }
+  }
+
+  function grpCreate(left) {
+    const body = grpFrame('สร้างกลุ่มใหม่', grpHome, false);
+    if (left <= 0) { gNote(body, 'คุณสร้างกลุ่มครบ 2 กลุ่มแล้ว ถ้าอยากสร้างใหม่ ให้ลบกลุ่มเดิมก่อน (ผู้สร้างลบกลุ่มได้ที่เมนู ⋯ ในหน้าแชทกลุ่ม)'); return; }
+    gNote(body, 'คุณจะเป็นแอดมินของกลุ่มนี้ คนอื่นต้องขอเข้าร่วมและคุณเป็นคนกดอนุญาต • สร้างได้คนละไม่เกิน 2 กลุ่ม (เหลืออีก ' + left + ' กลุ่ม)');
+    gNote(body, 'ชื่อกลุ่ม');
+    const name = document.createElement('input'); name.type = 'text'; name.maxLength = 40; body.appendChild(name);
+    gNote(body, 'คำอธิบายกลุ่ม (ไม่บังคับ)');
+    const desc = document.createElement('textarea'); desc.rows = 3; desc.maxLength = 200; body.appendChild(desc);
+    const msg = gNote(body, '');
+    gBtn(body, '✓ สร้างกลุ่ม', async (e) => {
+      const btn = e.currentTarget; btn.disabled = true; msg.textContent = '';
+      try { const r = await api('POST', '/api/groups', { name: name.value, description: desc.value }); grpChat(r.group.id, r.group.name); }
+      catch (err) { msg.textContent = err.message; btn.disabled = false; }
+    }, 'ok');
+  }
+
+  async function grpList() {
+    const body = grpFrame('กลุ่มทั้งหมด', grpHome, false);
+    let data;
+    try { data = await api('GET', '/api/groups'); } catch (err) { gNote(body, err.message); return; }
+    if (!data.groups.length) gNote(body, 'ยังไม่มีกลุ่ม — ลองสร้างกลุ่มแรกได้เลย');
+    data.groups.forEach((g) => {
+      const c = document.createElement('div'); c.className = 'gcard';
+      const t = document.createElement('b'); t.textContent = g.name; c.appendChild(t);
+      if (g.description) { const d = document.createElement('div'); d.textContent = g.description; c.appendChild(d); }
+      const s = document.createElement('small'); s.textContent = '👥 ' + g.members + ' คน · ผู้สร้าง: ' + g.ownerName; c.appendChild(s);
+      if (g.myRole) gBtn(c, '💬 เข้าแชทกลุ่ม', () => grpChat(g.id, g.name), 'ok');
+      else if (g.pending) { const b = gBtn(c, '⏳ รอผู้สร้างอนุญาต', () => {}); b.disabled = true; }
+      else gBtn(c, '🙋 ขอเข้าร่วมกลุ่ม', async (e) => {
+        const btn = e.currentTarget; btn.disabled = true;
+        try { await api('POST', '/api/groups/' + g.id + '/join', {}); btn.textContent = '⏳ ส่งคำขอแล้ว รอผู้สร้างอนุญาต'; }
+        catch (err) { btn.textContent = err.message; }
+      });
+      body.appendChild(c);
+    });
+  }
+
+  // ---------- แชทกลุ่ม ----------
+  function fmtGTime(iso) { try { return new Date(iso).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }); } catch (e) { return ''; } }
+  function grpAddMsg(log, m) {
+    const row = document.createElement('div'); row.className = 'gmsg' + (m.mine ? ' mine' : '');
+    const bub = document.createElement('div'); bub.className = 'gbub';
+    const nm = document.createElement('div'); nm.className = 'gname'; nm.textContent = m.name;
+    const tx = document.createElement('div'); tx.className = 'gtext'; tx.textContent = m.content;
+    const tm = document.createElement('div'); tm.className = 'gtime'; tm.textContent = fmtGTime(m.createdAt);
+    bub.append(nm, tx, tm);
+    row.append(grpAvatar(m.name, m.picture), bub);
+    log.appendChild(row);
+  }
+  async function grpChat(groupId, name) {
+    grpStopPoll();
+    grp.groupId = groupId; grp.name = name || 'กลุ่ม'; grp.lastId = 0;
+    const body = grpFrame('💬 ' + (name || 'กลุ่ม'), grpHome, true);
+    gEl('grpComposer').hidden = false;
+    const stick = () => { body.scrollTop = body.scrollHeight; };
+    const load = async (first) => {
+      if (grp.groupId !== groupId) return;
+      try {
+        const r = await api('GET', '/api/groups/' + groupId + '/messages' + (grp.lastId ? '?after=' + grp.lastId : ''));
+        if (grp.groupId !== groupId) return;
+        const atBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 80;
+        r.messages.forEach((m) => { grpAddMsg(body, m); grp.lastId = Math.max(grp.lastId, m.id); });
+        if (r.messages.length && (first || atBottom)) stick();
+        if (first && !r.messages.length) gNote(body, 'ยังไม่มีข้อความ — พิมพ์ทักทายเป็นคนแรกได้เลย');
+      } catch (err) { if (first) { gNote(body, err.message); gEl('grpComposer').hidden = true; } }
+    };
+    await load(true);
+    grp.timer = setInterval(() => { if (document.visibilityState === 'visible') load(false); }, 4000);
+  }
+  gEl('grpComposer').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const input = gEl('grpInput'); const text = input.value.trim();
+    if (!text || !grp.groupId) return;
+    const send = gEl('grpSend'); send.disabled = true;
+    try {
+      await api('POST', '/api/groups/' + grp.groupId + '/messages', { content: text });
+      input.value = '';
+      const r = await api('GET', '/api/groups/' + grp.groupId + '/messages' + (grp.lastId ? '?after=' + grp.lastId : ''));
+      const body = gEl('grpBody');
+      const empty = body.querySelector('.gnote'); if (empty && body.querySelectorAll('.gmsg').length === 0) empty.remove();
+      r.messages.forEach((m) => { grpAddMsg(body, m); grp.lastId = Math.max(grp.lastId, m.id); });
+      body.scrollTop = body.scrollHeight;
+    } catch (err) { alert(err.message); }
+    send.disabled = false; input.focus();
+  });
+  // เมนู ⋯ ของกลุ่ม: สมาชิก + (แอดมิน) คำขอเข้าร่วม + ออกจากกลุ่ม/ลบกลุ่ม
+  gEl('grpMenu').addEventListener('click', async () => {
+    const groupId = grp.groupId; if (!groupId) return;
+    grpStopPoll();
+    const prevName = grp.name;
+    const body = grpFrame('ตัวเลือกกลุ่ม', () => grpChat(groupId, prevName), false);
+    let info;
+    try { info = await api('GET', '/api/groups/' + groupId); } catch (err) { gNote(body, err.message); return; }
+    if (info.isAdmin) {
+      gNote(body, 'คำขอเข้าร่วมกลุ่ม (' + info.requests.length + ')');
+      if (!info.requests.length) gNote(body, 'ไม่มีคำขอที่รออยู่');
+      info.requests.forEach((r) => {
+        const c = document.createElement('div'); c.className = 'gcard';
+        const top = document.createElement('div'); top.style.cssText = 'display:flex;gap:10px;align-items:center';
+        const nm = document.createElement('b'); nm.textContent = r.name; top.append(grpAvatar(r.name, r.picture), nm); c.appendChild(top);
+        const row = document.createElement('div'); row.className = 'grow'; c.appendChild(row);
+        const decide = async (approve) => { row.querySelectorAll('button').forEach((b) => { b.disabled = true; }); try { await api('POST', '/api/groups/requests/' + r.id + '/decide', { approve }); c.remove(); } catch (err) { nm.textContent = r.name + ' — ' + err.message; } };
+        gBtn(row, '✓ อนุญาต', () => decide(true), 'ok'); gBtn(row, '✕ ไม่อนุญาต', () => decide(false));
+        body.appendChild(c);
+      });
+    }
+    gNote(body, 'สมาชิก (' + info.members.length + ')');
+    info.members.forEach((m) => {
+      const c = document.createElement('div'); c.className = 'gcard'; c.style.cssText = 'flex-direction:row;align-items:center;gap:10px';
+      const nm = document.createElement('b'); nm.textContent = m.name + (m.role === 'admin' ? '  👑 แอดมินกลุ่ม' : '');
+      c.append(grpAvatar(m.name, m.picture), nm); body.appendChild(c);
+    });
+    if (info.isAdmin) {
+      gBtn(body, '🗑️ ลบกลุ่มนี้ (ข้อความและสมาชิกหายหมด)', () => {
+        const b2 = grpFrame('ยืนยันลบกลุ่ม?', () => gEl('grpMenu').click(), false);
+        gNote(b2, '⚠️ กลุ่ม "' + info.group.name + '" จะถูกลบพร้อมข้อความและสมาชิกทั้งหมด และกู้คืนไม่ได้');
+        gBtn(b2, '🗑️ ยืนยัน ลบกลุ่ม', async () => { try { await api('DELETE', '/api/groups/' + groupId); grpHome(); } catch (err) { gNote(b2, err.message); } }, 'danger');
+      }, 'danger');
+    } else {
+      gBtn(body, '🚪 ออกจากกลุ่ม', async () => { try { await api('POST', '/api/groups/' + groupId + '/leave', {}); grpHome(); } catch (err) { gNote(body, err.message); } }, 'danger');
+    }
+  });
   function showSeminarSoon() {
     const body = openSheet('สัมมนา / ประชุมออนไลน์');
     note(body, '🎥 สัมมนา / ประชุมออนไลน์ (กำลังพัฒนา)\nเร็วๆ นี้จะมีห้องสัมมนาและห้องประชุมออนไลน์บนแพลตฟอร์มของเรา ไว้นัดคุยและแลกเปลี่ยนความรู้กับคนอื่นได้โดยไม่ต้องออกจากแอป');

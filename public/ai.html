@@ -102,6 +102,23 @@
   <div id="vHint">สวมหูฟังบลูทูธแล้วพูดได้เลย คุยต่อเนื่องไม่ต้องกดซ้ำ — แตะไมค์เพื่อหยุดชั่วคราว</div>
 </div>
 
+<!-- กลุ่มสนทนา: เต็มจอ (หน้าแรกกลุ่ม / สร้างกลุ่ม / รายการกลุ่ม / แชทกลุ่ม) -->
+<div id="grpOverlay" hidden>
+  <div id="grpCard" role="dialog" aria-modal="true">
+    <div id="grpHead">
+      <button id="grpBack" type="button" aria-label="กลับ">←</button>
+      <div id="grpTitle">กลุ่ม</div>
+      <button id="grpMenu" type="button" hidden aria-label="ตัวเลือกกลุ่ม">⋯</button>
+      <button id="grpClose" type="button" aria-label="ปิด">✕</button>
+    </div>
+    <div id="grpBody"></div>
+    <form id="grpComposer" hidden>
+      <input id="grpInput" type="text" maxlength="1000" placeholder="พิมพ์ข้อความถึงกลุ่ม..." autocomplete="off">
+      <button id="grpSend" type="submit">ส่ง</button>
+    </form>
+  </div>
+</div>
+
 <!-- ปฏิทิน & เตือน: popup กลางจอ -->
 <div id="calOverlay" hidden>
   <div id="calCard" role="dialog" aria-modal="true"></div>

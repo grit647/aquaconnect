@@ -33,11 +33,21 @@ async function handleEvent(ev) {
   // ปุ่ม "อนุญาต/ไม่อนุญาต" ในข้อความแจ้งคำขอเข้าใช้ข้อมูล — ตัวตนมาจากบัญชีไลน์ที่กดจริง (ผูกกับผู้ใช้ไว้แล้ว) ไม่ใช่จากข้อมูลในปุ่ม
   if (ev.type === 'postback' && ev.postback && ev.postback.data) {
     const d = new URLSearchParams(ev.postback.data);
-    if (d.get('act') !== 'access' && d.get('act') !== 'remind' && d.get('act') !== 'google') return;
+    if (d.get('act') !== 'access' && d.get('act') !== 'remind' && d.get('act') !== 'google' && d.get('act') !== 'group') return;
     const lineUserId = ev.source && ev.source.userId;
     const u = lineUserId ? await query("SELECT id FROM users WHERE line_user_id = $1 AND status = 'active'", [lineUserId]) : { rows: [] };
     if (!u.rows[0]) return line.replyText(ev.replyToken, 'ยังไม่พบบัญชีที่ผูกกับไลน์นี้ค่ะ เปิดแอปผ่านปุ่ม "คุยกับเลขา" ก่อนนะคะ');
     // ปุ่ม "รับทราบแล้ว" ของนัดหมาย — ยืนยันตัวตนจากบัญชีไลน์ที่กดจริง และต้องเป็นนัดของคนนั้นเท่านั้น
+    // ปุ่ม "อนุญาต/ไม่อนุญาต" คำขอเข้าร่วมกลุ่ม — เฉพาะผู้สร้างกลุ่ม (ตรวจจากบัญชีไลน์ที่กดจริงใน groups.decideJoin)
+    if (d.get('act') === 'group') {
+      try {
+        const approve = d.get('d') === 'approve';
+        await require('../groups').decideJoin(u.rows[0].id, d.get('id'), approve);
+        return line.replyText(ev.replyToken, approve ? 'อนุญาตแล้วค่ะ ผู้ขอเข้ากลุ่มได้แล้ว' : 'ไม่อนุญาตแล้วค่ะ');
+      } catch (err) {
+        return line.replyText(ev.replyToken, 'ทำรายการไม่ได้: ' + err.message);
+      }
+    }
     // ปุ่ม "อนุญาต/ไม่อนุญาต" คำร้องขอสิทธิ์ค้นหาด้วย Google — เฉพาะแอดมิน (ตรวจจากบัญชีไลน์ที่กดจริง ไม่ใช่ข้อมูลในปุ่ม)
     if (d.get('act') === 'google') {
       try {
