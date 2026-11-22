@@ -14,7 +14,8 @@ const check = (label, ok, extra) => { if (!ok) failures++; console.log(`${ok ? '
 const PHONES = ['0999900061', '0999900062', '0999900063'];
 const LINE_A = 'Utest-group-a', LINE_B = 'Utest-group-b';
 let lastSummaryInput = '';
-ai.setCallModelForTests(async ({ systemPrompt, contents }) => { lastSummaryInput = systemPrompt + '\n' + JSON.stringify(contents); return { parts: [{ text: '1. **สรุป** กุ้งราคาดีขึ้น\n2. นัดคุยต่อพรุ่งนี้' }], usage: {} }; });
+let lastToolNames = [];
+ai.setCallModelForTests(async ({ systemPrompt, contents, toolDeclarations }) => { lastToolNames = (toolDeclarations || []).map((t) => t.name); lastSummaryInput = systemPrompt + '\n' + JSON.stringify(contents); return { parts: [{ text: '1. **สรุป** กุ้งราคาดีขึ้น\n2. นัดคุยต่อพรุ่งนี้' }], usage: {} }; });
 const sent = [];
 line.setSenderForTests(async (path, body) => { sent.push({ path, body }); });
 
@@ -124,6 +125,20 @@ const lastReply = () => { const r = sent.filter((s) => s.path === '/message/repl
   const chatCatId = (await query("SELECT id FROM memory_categories WHERE owner_id = $1 AND name = 'ข้อมูลแชท'", [uidB])).rows[0].id;
   const delChat = await call('DELETE', `/api/connect/my-categories/${chatCatId}`, null, B.cookie);
   check('หมวดหลัก "ข้อมูลแชท" ลบได้แค่เนื้อหา ตัวหมวดลบไม่ได้ (เป็นค่าเริ่มต้น)', delChat.status === 200 && delChat.json.categoryRemoved === false && delChat.json.deletedMemories === 1 && (await query('SELECT count(*)::int n FROM memory_categories WHERE id = $1', [chatCatId])).rows[0].n === 1);
+
+  // ---------- คุยกับเลขาจากห้องแชท (เลือกส่งถึงเลขา ไม่ใช่กลุ่ม) ----------
+  const convSec = (await call('POST', '/api/chat/conversations', {}, B.cookie)).json.conversation;
+  const beforeMsgs = (await query('SELECT count(*)::int n FROM chat_group_messages WHERE group_id = $1', [gid])).rows[0].n;
+  const sec1 = await call('POST', `/api/chat/conversations/${convSec.id}/messages`, { content: 'ช่วยสรุปที่คุยกันในกลุ่มหน่อย', source: 'voice', groupContext: gid }, B.cookie);
+  const afterMsgs = (await query('SELECT count(*)::int n FROM chat_group_messages WHERE group_id = $1', [gid])).rows[0].n;
+  check('คุยกับเลขาจากห้องแชท: เลขาตอบผู้ใช้ และ **ไม่มีข้อความถูกส่งเข้ากลุ่ม** (เลขาส่งอัตโนมัติไม่ได้)', sec1.status === 200 && typeof sec1.json.reply === 'string' && beforeMsgs === afterMsgs, `${beforeMsgs}→${afterMsgs}`);
+  check('เลขาเห็นข้อความล่าสุดของกลุ่มเป็นบริบท (ติดป้ายว่าเป็นข้อมูลของคนอื่น + บอกว่าส่งเข้ากลุ่มเองไม่ได้)', lastSummaryInput.includes('สวัสดีครับ ผมบี') && lastSummaryInput.includes('ข้อมูลของสมาชิกคนอื่น') && lastSummaryInput.includes('ส่งข้อความเข้ากลุ่มเองอัตโนมัติไม่ได้'));
+  check('ตอนมีบริบทกลุ่ม เครื่องมือเลขาถูกจำกัดเหลือชุดปลอดภัย (ไม่มีอนุมัติสิทธิ์/ตั้งราคา/ลบนัด ฯลฯ ที่ข้อความในกลุ่มอาจหลอกให้ทำ)', lastToolNames.length > 0 && lastToolNames.every((n) => ['save_memory', 'list_categories', 'recall_memories', 'check_credit_balance'].includes(n)) && !lastToolNames.includes('decide_access_request') && !lastToolNames.includes('set_category_visibility'), JSON.stringify(lastToolNames));
+  await call('POST', `/api/chat/conversations/${convSec.id}/messages`, { content: 'สวัสดี' }, B.cookie);
+  check('คุยปกติ (ไม่ได้มาจากห้องกลุ่ม) เครื่องมือครบเหมือนเดิม และไม่มีบริบทกลุ่ม', lastToolNames.includes('decide_access_request') && lastToolNames.includes('set_category_visibility') && !lastSummaryInput.includes('สวัสดีครับ ผมบี'));
+  const convSecC = (await call('POST', '/api/chat/conversations', {}, C.cookie)).json.conversation;
+  await call('POST', `/api/chat/conversations/${convSecC.id}/messages`, { content: 'ช่วยสรุปกลุ่มนั้นหน่อย', groupContext: gid }, C.cookie);
+  check('คนนอกกลุ่มใส่รหัสกลุ่มมา ข้อความกลุ่มไม่รั่วให้เลขา (ได้แชทปกติ เครื่องมือครบ)', !lastSummaryInput.includes('สวัสดีครับ ผมบี') && !lastSummaryInput.includes('สวัสดีครับทุกคน') && lastToolNames.includes('decide_access_request'));
 
   // ---------- เชิญเข้ากลุ่ม (แอดมินเลือกจากรายชื่อทั้งระบบ → ผู้ถูกเชิญตอบรับเอง) ----------
   const LINE_C = 'Utest-group-c';

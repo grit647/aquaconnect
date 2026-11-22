@@ -189,6 +189,18 @@ async function deleteGroup(userId, groupId) {
   return { deleted: r.rows[0].name };
 }
 
+// ข้อความล่าสุดของกลุ่มที่ผู้ใช้เปิดอยู่ ใช้เป็นบริบทตอนคุยกับเลขาในห้องแชท — ได้เฉพาะสมาชิก (ไม่ใช่สมาชิก = null ไม่รั่วข้อความ)
+async function contextForSecretary(userId, groupId) {
+  if (!(await memberRole(userId, groupId))) return null;
+  const g = await query('SELECT name FROM chat_groups WHERE id = $1', [groupId]);
+  const r = await query(
+    `SELECT * FROM (SELECT ${DISPLAY} AS name, m.content, m.id FROM chat_group_messages m JOIN users u ON u.id = m.user_id
+                     WHERE m.group_id = $1 ORDER BY m.id DESC LIMIT 25) t ORDER BY id ASC`, [groupId]);
+  let text = r.rows.map((m) => `${m.name}: ${String(m.content).slice(0, 300)}`).join('\n');
+  if (text.length > 5000) text = text.slice(-5000);
+  return { name: g.rows[0] ? g.rows[0].name : '', text };
+}
+
 // ============================ เลขาในกลุ่ม: ตั้งค่า "ร่วมคุย + หัวข้อ" และ "สรุปการสนทนาลงข้อมูลแชท" ============================
 async function setAiSettings(userId, groupId, join, rawTopic) {
   if (!(await memberRole(userId, groupId))) throw new Error('คุณไม่ได้เป็นสมาชิกกลุ่มนี้');
@@ -322,4 +334,4 @@ async function respondInvite(userId, inviteId, accept) {
   return { accepted: !!accept, groupId: out.group_id, groupName: out.name };
 }
 
-module.exports = { setAiSettings, summarizeToMemory, listInviteCandidates, inviteUser, myInvites, respondInvite, createGroup, listGroups, requestJoin, decideJoin, getGroup, postMessage, listMessages, leaveGroup, deleteGroup, MAX_GROUPS_PER_USER, MAX_JOINED_PER_USER, MAX_MESSAGE_CHARS };
+module.exports = { contextForSecretary, setAiSettings, summarizeToMemory, listInviteCandidates, inviteUser, myInvites, respondInvite, createGroup, listGroups, requestJoin, decideJoin, getGroup, postMessage, listMessages, leaveGroup, deleteGroup, MAX_GROUPS_PER_USER, MAX_JOINED_PER_USER, MAX_MESSAGE_CHARS };

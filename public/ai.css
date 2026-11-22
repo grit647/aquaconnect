@@ -403,3 +403,17 @@ body {
 #grpPopCard .sumres { border: 1px solid var(--ok, #34d399); border-radius: 12px; padding: 10px 12px; font-size: 14px; white-space: pre-wrap; background: rgba(52, 211, 153, 0.08); }
 /* หมวดหลักที่ 3 "ข้อมูลแชท" */
 #sheetBody button.cat-chat, .pcard.cat-chat { border-color: #34d399; background: rgba(52, 211, 153, 0.14); }
+
+/* เลือกก่อนว่าจะคุย/ส่งถึงใคร (เลขา หรือ ห้องแชทกลุ่ม) */
+#grpPopCard .tgt { display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 16px; background: rgba(255, 255, 255, 0.05); cursor: pointer; color: var(--text); font: inherit; text-align: left; width: 100%; }
+#grpPopCard .tgt:hover { border-color: var(--neon); }
+#grpPopCard .tgt .gav { width: 44px; height: 44px; flex-shrink: 0; }
+#grpPopCard .tgt .tn { font-weight: 800; font-size: 16px; }
+#grpPopCard .tgt small { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+#grpPopCard .tgt.cancel { justify-content: center; color: var(--muted); border-style: dashed; }
+/* ข้อความที่คุยกับเลขาในห้องแชท (เห็นเฉพาะเรา ไม่ได้ส่งเข้ากลุ่ม) */
+.gmsg.priv .gbub { border-style: dashed; border-color: var(--neon2); background: rgba(167, 139, 250, 0.12); }
+.gmsg.priv.mine .gbub { background: rgba(167, 139, 250, 0.22); }
+.gmsg.priv .gname { color: var(--neon2); }
+.gmsg.priv.mine .gname { display: block; }
+.gmsg .gprivtag { font-size: 11px; color: var(--muted); margin-top: 2px; }

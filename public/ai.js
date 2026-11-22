@@ -311,7 +311,7 @@
   }
   // ============================ กลุ่มสนทนา (เต็มจอ) ============================
   // หน้าแรกกลุ่ม → [สร้างกลุ่มใหม่ (ผู้สร้างเป็นแอดมิน สร้างได้ 2 กลุ่ม)] / [ดูกลุ่มทั้งหมด → ขอเข้าร่วม → ผู้สร้างอนุญาต] → แชทกลุ่ม (รูปโปรไฟล์ทุกข้อความ)
-  const grp = { view: 'home', groupId: null, name: '', lastId: 0, timer: null, info: null, back: null };
+  const grp = { view: 'home', groupId: null, name: '', lastId: 0, timer: null, info: null, back: null, nextTarget: null };
   const gEl = (id) => document.getElementById(id);
   function grpAvatar(name, pic) {
     const d = document.createElement('div'); d.className = 'gav';
@@ -555,20 +555,76 @@
   function closeGrpAiPanel() { const o = gEl('grpPopOverlay'); o.hidden = true; o.classList.remove('above'); }
   gEl('grpAi').addEventListener('click', openGrpAiPanel);
 
-  // ไมค์ในห้องแชทกลุ่ม: แตะเริ่มอัด แตะอีกครั้งหยุด → ถอดเสียงเป็นข้อความลงช่องพิมพ์ (ผู้ใช้กดส่งเอง)
+  // ---------- เลือกก่อนว่า "จะคุยกับใคร": เลขาของฉัน (ตอบเฉพาะเรา เป็นเสียงได้) หรือ ห้องแชทกลุ่ม (ส่งให้ทุกคน) ----------
+  // เลขายังส่งข้อความเข้ากลุ่มเองอัตโนมัติไม่ได้ — ถ้าอยากให้ไปพูดในกลุ่ม เลขาจะร่างให้แล้วเรากดส่งเข้ากลุ่มเอง
+  function grpChooseTarget(kind) {
+    return new Promise((resolve) => {
+      const overlay = gEl('grpPopOverlay'); const card = gEl('grpPopCard');
+      overlay.classList.add('above'); overlay.hidden = false; card.textContent = '';
+      let done = false;
+      const finish = (v) => { if (done) return; done = true; overlay.hidden = true; overlay.classList.remove('above'); overlay.removeEventListener('click', onBackdrop); resolve(v); };
+      const onBackdrop = (e) => { if (e.target === overlay) finish(null); };
+      overlay.addEventListener('click', onBackdrop);
+      const head = document.createElement('div'); head.className = 'pt';
+      const t = document.createElement('span'); t.textContent = kind === 'mic' ? '🎤 จะพูดกับใคร?' : '➤ จะส่งถึงใคร?';
+      head.appendChild(t); card.appendChild(head);
+      const mkT = (avatarEl, name, sub, value) => {
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'tgt';
+        const col = document.createElement('div'); col.style.cssText = 'flex:1;min-width:0';
+        const n = document.createElement('div'); n.className = 'tn'; n.textContent = name;
+        const s = document.createElement('small'); s.textContent = sub;
+        col.append(n, s); b.append(avatarEl, col); b.addEventListener('click', () => finish(value)); card.appendChild(b);
+      };
+      const aiPic = document.createElement('div'); aiPic.className = 'gav'; aiImgInto(aiPic);
+      mkT(aiPic, '🤖 เลขา (' + ((me && me.secretaryName) || 'เลขา') + ')', kind === 'mic' ? 'คุยกับเลขาด้วยเสียง เลขาตอบเป็นเสียง เห็นเฉพาะคุณ' : 'ถามหรือสั่งเลขา เลขาตอบเฉพาะคุณ ไม่ส่งเข้ากลุ่ม', 'secretary');
+      const gPic = document.createElement('div'); gPic.className = 'gav'; gPic.textContent = '👥';
+      mkT(gPic, '👥 ห้องแชทกลุ่ม', kind === 'mic' ? 'พูดแล้วแปลงเป็นข้อความ ตรวจก่อนแล้วกดส่งเข้ากลุ่ม' : 'ส่งข้อความนี้ให้ทุกคนในกลุ่มเห็น', 'group');
+      const cancel = document.createElement('button'); cancel.type = 'button'; cancel.className = 'tgt cancel'; cancel.textContent = 'ยกเลิก';
+      cancel.addEventListener('click', () => finish(null)); card.appendChild(cancel);
+    });
+  }
+  // คุยกับเลขาจากห้องแชท: ส่งเข้าบทสนทนาส่วนตัวของเรา พร้อมแนบข้อความล่าสุดของกลุ่มเป็นบริบท (เซิร์ฟเวอร์ตรวจว่าเป็นสมาชิก) — แสดงเป็นบับเบิลเส้นประ (ไม่ใช่ข้อความกลุ่ม)
+  async function grpAskSecretary(text, source) {
+    const body = gEl('grpBody');
+    const privRow = (mine, label, content, picEl) => {
+      const row = document.createElement('div'); row.className = 'gmsg priv' + (mine ? ' mine' : '');
+      const bub = document.createElement('div'); bub.className = 'gbub';
+      const nm = document.createElement('div'); nm.className = 'gname'; nm.textContent = label;
+      const tx = document.createElement('div'); tx.className = 'gtext'; tx.textContent = content;
+      const tg = document.createElement('div'); tg.className = 'gprivtag'; tg.textContent = 'เห็นเฉพาะคุณ ไม่ได้ส่งเข้ากลุ่ม';
+      bub.append(nm, tx, tg); row.append(picEl, bub); body.appendChild(row); body.scrollTop = body.scrollHeight; return { row, tx };
+    };
+    const myPic = document.createElement('div'); myPic.className = 'gav'; avatarContent(myPic);
+    privRow(true, 'คุณ → เลขา', text, myPic);
+    const aiPic = document.createElement('div'); aiPic.className = 'gav'; aiImgInto(aiPic);
+    const ans = privRow(false, '🤖 ' + ((me && me.secretaryName) || 'เลขา'), 'กำลังคิด...', aiPic);
+    try {
+      if (source === 'voice') { try { unlockSpeech(); } catch (e) { /* ignore */ } }
+      const r = await api('POST', '/api/chat/conversations/' + conversationId + '/messages', { content: text, source: source === 'voice' ? 'voice' : 'text', groupContext: grp.groupId });
+      ans.tx.textContent = r.reply;
+      body.scrollTop = body.scrollHeight;
+      if (source === 'voice' && ttsSupported) speak(r.reply, () => setBotState('idle'));
+    } catch (err) { ans.tx.textContent = err.message; }
+  }
+
+  // ไมค์ในห้องแชทกลุ่ม: แตะ → เลือกก่อนว่าจะพูดกับใคร → เริ่มอัด แตะอีกครั้งหยุด
+  //   เลขา = ถอดเสียงแล้วส่งให้เลขา เลขาตอบเป็นเสียง • กลุ่ม = ถอดเสียงลงช่องพิมพ์ (ตรวจก่อนแล้วกดส่งเข้ากลุ่มเอง)
   let grpRec = null;
   gEl('grpMic').addEventListener('click', async () => {
     const btn = gEl('grpMic');
     if (grpRec) { grpRec.recorder.stop(); return; }
+    const target = await grpChooseTarget('mic');
+    if (!target) return;
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) { alert('เบราว์เซอร์นี้ยังอัดเสียงไม่ได้ — พิมพ์แทนได้ค่ะ'); return; }
     let stream;
     try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); } catch (e) { alert('ยังไม่ได้อนุญาตใช้ไมค์ — เปิดสิทธิ์ไมค์ของเบราว์เซอร์ก่อนนะคะ'); return; }
     const chunks = [];
     const rec = new MediaRecorder(stream);
-    grpRec = { recorder: rec, timer: setTimeout(() => { if (grpRec) rec.stop(); }, 30000) };
+    grpRec = { recorder: rec, target, timer: setTimeout(() => { if (grpRec) rec.stop(); }, 30000) };
     btn.classList.add('rec');
     rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
     rec.onstop = async () => {
+      const recTarget = grpRec ? grpRec.target : 'group';
       clearTimeout(grpRec && grpRec.timer); grpRec = null; btn.classList.remove('rec');
       stream.getTracks().forEach((t) => t.stop());
       const blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' });
@@ -577,8 +633,11 @@
       try {
         const audio = await blobToBase64(blob);
         const { text } = await api('POST', '/api/chat/transcribe', { audio, mimeType: blob.type || 'audio/webm' });
-        if (text && text.trim()) { const inp = gEl('grpInput'); inp.value = (inp.value ? inp.value + ' ' : '') + text.trim(); inp.focus(); }
-        else alert('ไม่ได้ยินเสียงชัดๆ ลองพูดใหม่อีกครั้งนะคะ');
+        if (text && text.trim()) {
+          if (recTarget === 'secretary') { btn.disabled = false; btn.textContent = '🎤'; await grpAskSecretary(text.trim(), 'voice'); return; }
+          const inp = gEl('grpInput'); inp.value = (inp.value ? inp.value + ' ' : '') + text.trim(); inp.focus();
+          grp.nextTarget = 'group';   // พูดเพื่อส่งเข้ากลุ่มไว้แล้ว — กดส่งครั้งถัดไปไม่ต้องถามซ้ำ
+        } else alert('ไม่ได้ยินเสียงชัดๆ ลองพูดใหม่อีกครั้งนะคะ');
       } catch (err) { alert(err.message); }
       btn.disabled = false; btn.textContent = '🎤';
     };
@@ -587,7 +646,7 @@
 
   async function grpChat(groupId, name) {
     grpStopPoll();
-    grp.groupId = groupId; grp.name = name || 'กลุ่ม'; grp.lastId = 0;
+    grp.groupId = groupId; grp.name = name || 'กลุ่ม'; grp.lastId = 0; grp.nextTarget = null;
     const body = grpFrame('💬 ' + (name || 'กลุ่ม'), grpBackToPopup, true);
     gEl('grpComposer').hidden = false;
     aiImgInto(gEl('grpAi'));
@@ -610,6 +669,10 @@
     e.preventDefault();
     const input = gEl('grpInput'); const text = input.value.trim();
     if (!text || !grp.groupId) return;
+    let target = grp.nextTarget; grp.nextTarget = null;
+    if (!target) target = await grpChooseTarget('send');
+    if (!target) return;
+    if (target === 'secretary') { input.value = ''; await grpAskSecretary(text, 'text'); input.focus(); return; }
     const send = gEl('grpSend'); send.disabled = true;
     try {
       await api('POST', '/api/groups/' + grp.groupId + '/messages', { content: text });
