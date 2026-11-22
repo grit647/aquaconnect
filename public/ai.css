@@ -427,3 +427,7 @@ body {
 #grpSession[hidden] { display: none; }
 #grpSession span { flex: 1; min-width: 0; }
 #grpSession button { border: 1px solid var(--neon2); background: transparent; color: var(--neon2); border-radius: 999px; padding: 4px 14px; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; flex-shrink: 0; }
+
+/* เลขาของเราพูดในกลุ่ม → ชิดขวาฝั่งเรา แต่ยังเห็นป้ายชื่อเลขาและสีม่วงต่างจากข้อความที่เราพิมพ์เอง */
+.gmsg.ai.mine .gname { display: block; }
+.gmsg.ai.mine .gbub { background: rgba(139, 92, 246, 0.32); border: 1px solid var(--neon2); }

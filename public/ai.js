@@ -516,7 +516,7 @@
   function fmtGTime(iso) { try { return new Date(iso).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }); } catch (e) { return ''; } }
   function grpAddMsg(log, m) {
     if (m.isSystem) { const d = document.createElement('div'); d.className = 'gsys'; d.textContent = m.content; log.appendChild(d); return; }
-    const row = document.createElement('div'); row.className = 'gmsg' + (m.mine ? ' mine' : '') + (m.isAi ? ' ai' : '');
+    const row = document.createElement('div'); row.className = 'gmsg' + (m.mine || m.myAi ? ' mine' : '') + (m.isAi ? ' ai' : '');   // เลขาของเราพูด = ข้อความที่ส่งจากฝั่งเรา → ชิดขวาเหมือนข้อความของเรา (ยังติดป้าย 🤖 + สีม่วงให้รู้ว่าเป็นเลขา)
     const bub = document.createElement('div'); bub.className = 'gbub';
     const nm = document.createElement('div'); nm.className = 'gname'; nm.textContent = m.isAi ? '🤖 ' + m.name + ' · เลขาของ ' + m.ownerName : m.name;
     const tx = document.createElement('div'); tx.className = 'gtext'; tx.textContent = m.content;
