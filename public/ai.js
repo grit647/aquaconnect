@@ -179,6 +179,7 @@
     const sec = mk('ชื่อของเลขา', s.profile.secretaryName, 20, 'เช่น น้องครีม');
     // ---------- สถานะปัจจุบัน: หมวดหลัก → หัวข้อย่อย → รายละเอียด (เป็นฐานข้อมูลกลางสำหรับค้นหา/เชื่อมต่อในฟีเจอร์ต่อไป) ----------
     const opts = s.occupationOptions || {};
+    let locked = !!s.profile.occupationMain;   // บันทึกไว้แล้ว → แสดงเป็นแถบเทา (อ่านอย่างเดียว) ต้องกด "แก้ไข" ก่อนถึงจะแก้ได้
     const sectionHead = note(body, '🧭 สถานะปัจจุบันของคุณ'); sectionHead.style.cssText = 'color:var(--neon);font-weight:800;margin-top:8px';
     note(body, 'เลือกให้ตรงกับคุณ เพื่อให้เลขารู้จักคุณมากขึ้น และเป็นฐานข้อมูลกลางสำหรับการค้นหาและเชื่อมต่อข้อมูลในฟีเจอร์ต่อๆ ไป (ตอนนี้เป็นข้อมูลส่วนตัว ยังไม่แสดงให้คนอื่นเห็น)');
     const mkSel = (label) => { note(body, label); const e = document.createElement('select'); body.appendChild(e); return e; };
@@ -194,7 +195,7 @@
     const refreshSub = (keep) => {
       const list = opts[occMain.value] || [];
       fillSel(occSub, list, keep ? s.profile.occupationSub : '', list.length ? '— เลือกหัวข้อย่อย —' : '(เลือกหมวดก่อน)');
-      occSub.disabled = !list.length;
+      occSub.disabled = locked || !list.length;
     };
     refreshSub(true);
     occMain.addEventListener('change', () => refreshSub(false));
@@ -213,15 +214,28 @@
     occMain.addEventListener('change', () => syncOther(false));
     syncOther(false);
     const msg = note(body, '');
-    sheetButton(body, '💾 บันทึกโปรไฟล์', async () => {
+    // โหมดดู (ล็อก แถบเทา) ↔ โหมดแก้ไข: ช่องทั้งหมดถูกล็อกจนกว่าจะกด "แก้ไข" แล้วบันทึกเสร็จจะล็อกกลับ
+    const controls = [name, call, sec, occMain, occSub, occDetail];
+    const saveBtn = sheetButton(body, '💾 บันทึกโปรไฟล์', async () => {
       try {
         const r = await api('PATCH', '/api/me/profile', { name: name.value, callName: call.value, secretaryName: sec.value, occupationMain: occMain.value, occupationSub: occSub.value, occupationDetail: occDetail.value });
         me.name = r.profile.name; me.callName = r.profile.callName || null; me.secretaryName = r.profile.secretaryName;
         me.occupationMain = r.profile.occupationMain; me.occupationSub = r.profile.occupationSub; me.occupationDetail = r.profile.occupationDetail;
+        s.profile = { ...s.profile, ...r.profile };
         renderAvatar();
-        msg.textContent = '✓ บันทึกแล้วค่ะ';
+        locked = !!r.profile.occupationMain;   // ยังไม่ได้เลือกสถานะ → ปล่อยให้แก้ต่อได้
+        applyLock();
+        msg.textContent = '✓ บันทึกแล้วค่ะ' + (locked ? ' (กด "แก้ไข" ถ้าต้องการเปลี่ยน)' : '');
       } catch (err) { msg.textContent = err.message; }
     });
+    const editBtn = sheetButton(body, '✏️ แก้ไข / อัปเดตโปรไฟล์', () => { locked = false; applyLock(); msg.textContent = ''; name.focus(); });
+    const cancelBtn = sheetButton(body, '↩️ ยกเลิกการแก้ไข', () => showProfileEdit());
+    function applyLock() {
+      controls.forEach((c) => { c.disabled = locked; });
+      if (!locked) { const list = opts[occMain.value] || []; occSub.disabled = !list.length; }
+      saveBtn.hidden = locked; cancelBtn.hidden = locked || !s.profile.occupationMain; editBtn.hidden = !locked;
+    }
+    applyLock();
     profileBack(body);
   }
   async function showDataUsage() {
