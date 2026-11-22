@@ -29,7 +29,7 @@ const get = async (p) => { const r = await fetch(BASE + p); return { status: r.s
 
   // ไฟล์ JS ของหน้าเว็บต้อง "คอมไพล์ผ่าน" ทุกไฟล์ — ไฟล์เดียวพัง = ทั้งแอปใช้ไม่ได้ (เคยเกิดจากสตริงขึ้นบรรทัดใหม่ผิดที่)
   const vm = require('vm');
-  for (const f of ['ai.js', 'speech.js', 'alarm.js', 'sw.js']) {
+  for (const f of ['ai.js', 'speech.js', 'alarm.js', 'tick.js', 'sw.js']) {
     let ok = true; let why = '';
     try { new vm.Script((await get('/' + f)).buf.toString('utf8'), { filename: f }); } catch (e) { ok = false; why = e.message; }
     check(`ไฟล์ ${f} ไม่มีไวยากรณ์ผิด (คอมไพล์ผ่าน)`, ok, why);

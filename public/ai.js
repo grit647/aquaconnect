@@ -779,6 +779,7 @@
   let botState = 'idle';
   function setBotState(s) {
     botState = s;
+    if (window.aqTick) window.aqTick.set(s === 'thinking');
     botStage.className = 'state-' + s;
     $('stateLabel').textContent = STATE_TEXT[s] || '';
     const bot = $('bot');
