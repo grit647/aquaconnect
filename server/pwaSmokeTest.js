@@ -27,6 +27,13 @@ const get = async (p) => { const r = await fetch(BASE + p); return { status: r.s
     check(`ไอคอน ${icon.src} (${icon.purpose}) เป็น PNG ขนาดตรงตามที่ประกาศ`, r.status === 200 && isPng && icon.sizes === `${w}x${h}` && /image\/png/.test(r.type), `${w}x${h}`);
   }
 
+  // ไฟล์ JS ของหน้าเว็บต้อง "คอมไพล์ผ่าน" ทุกไฟล์ — ไฟล์เดียวพัง = ทั้งแอปใช้ไม่ได้ (เคยเกิดจากสตริงขึ้นบรรทัดใหม่ผิดที่)
+  const vm = require('vm');
+  for (const f of ['ai.js', 'speech.js', 'alarm.js', 'sw.js']) {
+    let ok = true; let why = '';
+    try { new vm.Script((await get('/' + f)).buf.toString('utf8'), { filename: f }); } catch (e) { ok = false; why = e.message; }
+    check(`ไฟล์ ${f} ไม่มีไวยากรณ์ผิด (คอมไพล์ผ่าน)`, ok, why);
+  }
   const sw = await get('/sw.js');
   check('service worker เสิร์ฟได้เป็น JavaScript และมี fetch handler (เงื่อนไขให้ติดตั้งแอปได้)', sw.status === 200 && /javascript/.test(sw.type) && sw.buf.toString().includes("addEventListener('fetch'"));
   check('service worker ไม่เก็บแคชไฟล์ใดๆ (กันได้หน้าเก่าค้าง)', !/caches\.(open|put|addAll)/.test(sw.buf.toString()));
