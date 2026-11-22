@@ -239,7 +239,7 @@ button.act.danger { color:var(--danger); border-color:var(--danger); }
       tr.appendChild(creditTd);
       const gTd = el('td');
       const gb = el('button', (u.google_search_enabled ? '✅ อนุญาต' : '🔒 ปิด') + ' (' + u.google_search_count + ')', 'act' + (u.google_search_enabled ? '' : ' danger'));
-      gb.title = 'กดเพื่อสลับสิทธิ์ค้นหาข้อมูลภายนอกด้วย Google ของคนนี้ (ตัวเลข = จำนวนครั้งที่ใช้)';
+      gb.title = 'กดเพื่อสลับสิทธิ์ค้นหาข้อมูลภายนอกด้วย Google ของคนนี้ (ตัวเลข = จำนวนครั้งที่ใช้ในเดือนนี้)';
       gb.addEventListener('click', async () => {
         try { await api('PATCH', '/api/admin/users/' + u.id + '/google', { enabled: !u.google_search_enabled }); toast('เรียบร้อย'); loadUsers(); }
         catch (e) { toast(e.message); }

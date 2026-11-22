@@ -17,7 +17,7 @@ const SETTINGS = {
   credit_per_baht:  { label: 'เครดิต 1 = กี่บาท', min: 0.01, max: 100 },
   free_access_minutes: { label: 'หมวดฟรี: ใช้ข้อมูลได้กี่นาทีต่อการอนุญาต 1 ครั้ง', min: 1, max: 240 },
   user_data_quota_mb: { label: 'โควตาข้อมูลส่วนตัวต่อคน (MB) — แสดงแถบในเมนูโปรไฟล์', min: 1, max: 1000 },
-  google_search_limit: { label: 'ค้นหาด้วย Google ได้สูงสุดกี่ครั้งต่อคน', min: 1, max: 100000 },
+  google_search_limit: { label: 'ค้นหาด้วย Google ได้สูงสุดกี่ครั้งต่อคนต่อเดือน (รีเซ็ตทุกวันที่ 1)', min: 1, max: 100000 },
   topup_min:        { label: 'เติมเครดิตขั้นต่ำต่อครั้ง (บาท)', min: 1, max: 10000 },
   topup_max:        { label: 'เติมเครดิตสูงสุดต่อครั้ง (บาท)', min: 100, max: 100000 },
 };
@@ -46,13 +46,14 @@ router.get('/overview', async (req, res) => {
 router.get('/users', async (req, res) => {
   try {
     const r = await query(
-      `SELECT u.id, u.name, u.phone, u.is_admin, u.status, (u.line_user_id IS NOT NULL) AS line_linked, u.google_search_enabled, u.google_search_count, u.line_picture_url AS picture, u.created_at,
+      `SELECT u.id, u.name, u.phone, u.is_admin, u.status, (u.line_user_id IS NOT NULL) AS line_linked, u.google_search_enabled, (CASE WHEN u.google_search_month = $1 THEN u.google_search_count ELSE 0 END) AS google_search_count, u.line_picture_url AS picture, u.created_at,
               (SELECT count(*)::int FROM messages m WHERE m.user_id = u.id AND m.role = 'user') AS messages,
               (SELECT count(*)::int FROM memories x WHERE x.owner_id = u.id) AS memories,
               COALESCE(b.balance, 0) AS balance,
               (SELECT count(*)::int FROM topups t WHERE t.user_id = u.id) AS topup_count,
               (SELECT count(*)::int FROM credit_ledger l WHERE l.user_id = u.id) AS ledger_count
-         FROM users u LEFT JOIN credit_balances b ON b.user_id = u.id ORDER BY u.created_at DESC LIMIT 500`
+         FROM users u LEFT JOIN credit_balances b ON b.user_id = u.id ORDER BY u.created_at DESC LIMIT 500`,
+      [require('../webSearch').currentMonth()]
     );
     res.json({ users: r.rows.map((x) => ({ ...x, balance: Number(x.balance) })) });
   } catch (err) {

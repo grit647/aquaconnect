@@ -14,7 +14,7 @@ router.get('/summary', async (req, res) => {
   try {
     const id = req.user.id;
     const [u, sizes, lim] = await Promise.all([
-      query('SELECT name, phone, call_name, secretary_name, google_search_enabled, google_search_count FROM users WHERE id = $1', [id]),
+      query('SELECT name, phone, call_name, secretary_name, google_search_enabled, (CASE WHEN google_search_month = $2 THEN google_search_count ELSE 0 END) AS google_search_count FROM users WHERE id = $1', [id, require('../webSearch').currentMonth()]),
       query(
         `SELECT
            (SELECT count(*)::int FROM memories WHERE owner_id = $1) AS memories_n,

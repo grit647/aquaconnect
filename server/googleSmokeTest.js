@@ -137,10 +137,19 @@ const lastReply = () => { const r = sent.filter((s) => s.path === '/message/repl
   await say(U.cookie, convU, 'ค้นสั้น');
   check('คำค้นสั้นเกินไป → ไม่ค้น ไม่นับ', searchCalls.length === calls2);
   const cnt = (await query('SELECT google_search_count FROM users WHERE id = $1', [idU])).rows[0].google_search_count;
-  await query('UPDATE users SET google_search_count = 100000 WHERE id = $1', [idU]);
+  const monthNow = require('./webSearch').currentMonth();
+  await query('UPDATE users SET google_search_count = 100000, google_search_month = $2 WHERE id = $1', [idU, monthNow]);
   await say(U.cookie, convU, 'ค้นเลย');
   check('ใช้ครบโควตา → ไม่ค้นเพิ่ม', searchCalls.length === calls2);
   await query('UPDATE users SET google_search_count = $2 WHERE id = $1', [idU, cnt]);
+  // รายเดือน: ตัวนับของเดือนเก่าถือเป็น 0 (รีเซ็ตเองตอนขึ้นเดือนใหม่) แล้วเริ่มนับที่ 1
+  await query("UPDATE users SET google_search_count = 100000, google_search_month = '2020-01' WHERE id = $1", [idU]);
+  const sumOld = await call('GET', '/api/me/summary', null, U.cookie);
+  check('ตัวนับของเดือนเก่า → แถบโปรไฟล์ขึ้น 0 (รีเซ็ตแล้ว)', sumOld.json.google.count === 0, String(sumOld.json.google.count));
+  const callsBefore = searchCalls.length;
+  await say(U.cookie, convU, 'ค้นเลย');
+  const rowM = (await query('SELECT google_search_count, google_search_month FROM users WHERE id = $1', [idU])).rows[0];
+  check('ขึ้นเดือนใหม่ → ค้นได้อีก และเริ่มนับที่ 1 ของเดือนนี้', searchCalls.length === callsBefore + 1 && rowM.google_search_count === 1 && rowM.google_search_month === monthNow, JSON.stringify(rowM));
 
   // ---------- แอดมินปฏิเสธ + ขอซ้ำเร็วเกินไป ----------
   const convV = await mkConv(V.cookie);
@@ -150,7 +159,7 @@ const lastReply = () => { const r = sent.filter((s) => s.path === '/message/repl
   check('แอดมินกดไม่อนุญาต → ไม่เปิดสิทธิ์', (await query('SELECT google_search_enabled FROM users WHERE id = $1', [idV])).rows[0].google_search_enabled === false && (await query("SELECT status FROM google_requests WHERE id = $1", [reqV.id])).rows[0].status === 'denied');
   const pushN = sent.filter((s) => s.path === '/message/push' && s.body.to === LINE_ADMIN).length;
   await say(V.cookie, convV, 'ค้นเลย');
-  check('ถูกปฏิเสธไปไม่นาน ขอซ้ำ → ไม่ส่งไลน์รบกวนแอดมินอีก และไม่ค้น', sent.filter((s) => s.path === '/message/push' && s.body.to === LINE_ADMIN).length === pushN && searchCalls.length === calls2);
+  check('ถูกปฏิเสธไปไม่นาน ขอซ้ำ → ไม่ส่งไลน์รบกวนแอดมินอีก และไม่ค้น', sent.filter((s) => s.path === '/message/push' && s.body.to === LINE_ADMIN).length === pushN && searchCalls.length === callsBefore + 1);
 
   // ---------- เก็บกวาด ----------
   await new Promise((r) => setTimeout(r, 300));

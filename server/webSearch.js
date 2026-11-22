@@ -8,6 +8,11 @@ const line = require('./line');
 const MAX_QUERY_CHARS = 150;
 const REQUEST_COOLDOWN_MIN = 10;     // ส่งคำร้องซ้ำได้อย่างน้อยห่างกันกี่นาที (กันสแปมแอดมิน)
 
+// เดือนปัจจุบันเวลาไทย รูปแบบ 2026-11 — ตัวนับของเดือนอื่นถือเป็น 0 (รีเซ็ตเองทุกวันที่ 1)
+function currentMonth() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit' }).format(new Date());
+}
+
 async function getLimit() {
   const r = await query("SELECT value FROM app_settings WHERE key = 'google_search_limit'");
   return Number(r.rows[0] && r.rows[0].value) || 100;
@@ -71,18 +76,21 @@ async function search(userId, rawQuery) {
   const q = String(rawQuery || '').split(/\s+/).join(' ').trim();
   if (q.length < 3) return { error: 'ระบุสิ่งที่จะค้นให้ชัดเจนก่อน (อย่างน้อย 3 ตัวอักษร)' };
   if (q.length > MAX_QUERY_CHARS) return { error: `คำค้นยาวเกิน ${MAX_QUERY_CHARS} ตัวอักษร ย่อให้เหลือเฉพาะเรื่องที่ต้องการ` };
-  const u = await query('SELECT google_search_enabled, google_search_count FROM users WHERE id = $1', [userId]);
+  const month = currentMonth();
+  const u = await query('SELECT google_search_enabled, google_search_count, google_search_month FROM users WHERE id = $1', [userId]);
   if (!u.rows[0]) return { error: 'ไม่พบบัญชี' };
+  const usedThisMonth = u.rows[0].google_search_month === month ? u.rows[0].google_search_count : 0;
   if (!u.rows[0].google_search_enabled) {
     const req = await requestPermission(userId, q);
     return { needsApproval: true, requestStatus: req.status, message: req.status === 'denied_recently' ? 'แอดมินเพิ่งปฏิเสธคำขอไป รอสักพักค่อยขอใหม่' : 'ส่งคำร้องให้แอดมินยืนยันทางไลน์แล้ว รอแอดมินอนุญาต เมื่ออนุญาตระบบจะแจ้งผู้ใช้ทางไลน์ ให้บอกผู้ใช้ตามนี้ ห้ามลองค้นซ้ำ' };
   }
   const limit = await getLimit();
-  if (u.rows[0].google_search_count >= limit) return { error: `ใช้สิทธิ์ค้นหาด้วย Google ครบ ${limit} ครั้งแล้ว ให้แจ้งผู้ใช้ติดต่อแอดมินเพื่อเพิ่มโควตา` };
+  if (usedThisMonth >= limit) return { error: `ใช้สิทธิ์ค้นหาด้วย Google ครบ ${limit} ครั้งในเดือนนี้แล้ว (รีเซ็ตทุกวันที่ 1) ให้แจ้งผู้ใช้รอเดือนหน้า หรือติดต่อแอดมินเพื่อเพิ่มโควตา` };
   let out;
   try { out = await ai.googleSearch(q); } catch (err) { console.error('google search failed:', err.message); return { error: 'ค้นข้อมูลไม่สำเร็จในตอนนี้ ลองใหม่อีกครั้งภายหลัง' }; }
-  await query('UPDATE users SET google_search_count = google_search_count + 1 WHERE id = $1', [userId]);   // นับเฉพาะที่ค้นสำเร็จ
+  // นับเฉพาะที่ค้นสำเร็จ — ถ้าเป็นเดือนใหม่เริ่มนับที่ 1
+  await query('UPDATE users SET google_search_count = CASE WHEN google_search_month = $2 THEN google_search_count + 1 ELSE 1 END, google_search_month = $2 WHERE id = $1', [userId, month]);
   return { ok: true, searched: q, findings: out.text || '(ไม่พบข้อมูลที่เชื่อถือได้)', sources: (out.sources || []).map((x) => x.title).filter(Boolean) };   // ส่งแค่ชื่อเว็บให้เลขา (ลิงก์ยาวมากกิน token)
 }
 
-module.exports = { search, requestPermission, decideRequest, MAX_QUERY_CHARS };
+module.exports = { search, requestPermission, decideRequest, currentMonth, MAX_QUERY_CHARS };

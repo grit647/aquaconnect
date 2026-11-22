@@ -139,7 +139,7 @@
     api('GET', '/api/me/summary').then((s) => {
       const u = s.usage; const g = s.google;
       meters.appendChild(meterRow('💾 ข้อมูลส่วนตัว', fmtBytes(u.totalBytes) + ' / ' + fmtBytes(u.quotaBytes), u.totalBytes / u.quotaBytes, showDataUsage));
-      meters.appendChild(meterRow('🔎 ค้นหาด้วย Google' + (g.enabled ? '' : ' (🔒 ยังไม่ได้รับอนุญาต)'), g.count + ' / ' + g.limit + ' ครั้ง', g.enabled ? g.count / g.limit : 0, showGoogleInfo, !g.enabled));
+      meters.appendChild(meterRow('🔎 ค้นหาด้วย Google (เดือนนี้)' + (g.enabled ? '' : ' 🔒 ยังไม่ได้รับอนุญาต'), g.count + ' / ' + g.limit + ' ครั้ง', g.enabled ? g.count / g.limit : 0, showGoogleInfo, !g.enabled));
     }).catch(() => { /* โหลดแถบไม่ได้ก็ยังใช้เมนูอื่นได้ */ });
   }
   // แถบความคืบหน้า: ชื่อ + ตัวเลข + แถบเติมตามสัดส่วน (เกิน 80% เป็นสีส้ม เต็มเป็นสีแดง)
@@ -204,7 +204,7 @@
     const s = await loadSummary(body);
     if (s) {
       note(body, s.google.enabled ? '✅ คุณได้รับอนุญาตให้ค้นหาข้อมูลภายนอกด้วย Google' : '🔒 ยังไม่ได้รับอนุญาต — สิทธิ์นี้แอดมินเป็นคนกำหนดให้ทีละคน');
-      note(body, 'จำนวนการเชื่อมต่อ Google ที่ใช้ไปแล้ว: ' + s.google.count + ' ครั้ง');
+      note(body, 'ใช้ค้นหาด้วย Google ไปแล้วในเดือนนี้ ' + s.google.count + ' จาก ' + s.google.limit + ' ครั้ง (รีเซ็ตทุกวันที่ 1 ของเดือน)');
       note(body, 'ตัวค้นหาข้อมูลภายนอกกำลังพัฒนา ตอนนี้เป็นการกำหนดสิทธิ์และนับจำนวนไว้ก่อน');
     }
     profileBack(body);
