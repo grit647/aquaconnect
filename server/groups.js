@@ -185,4 +185,86 @@ async function deleteGroup(userId, groupId) {
   return { deleted: r.rows[0].name };
 }
 
-module.exports = { createGroup, listGroups, requestJoin, decideJoin, getGroup, postMessage, listMessages, leaveGroup, deleteGroup, MAX_GROUPS_PER_USER, MAX_JOINED_PER_USER, MAX_MESSAGE_CHARS };
+// ============================ เชิญเข้ากลุ่ม ============================
+// แอดมินกลุ่มเลือกจากรายชื่อผู้ใช้ทั้งระบบ (เห็นแค่ชื่อ+รูป ไม่เห็นเบอร์โทร) → ส่งคำเชิญ → ผู้ถูกเชิญตอบรับ/ปฏิเสธเอง
+const inviteLog = new Map();   // adminId -> เวลาที่ส่งคำเชิญล่าสุด (กันส่งรัวรบกวนคนอื่น)
+function checkInviteRate(userId) {
+  const now = Date.now();
+  const list = (inviteLog.get(userId) || []).filter((t) => now - t < 3600000);
+  if (list.length >= 30) throw new Error('ส่งคำเชิญถี่เกินไป (ไม่เกิน 30 คำเชิญต่อชั่วโมง) รอสักครู่แล้วลองใหม่');
+  list.push(now); inviteLog.set(userId, list);
+}
+
+async function requireAdmin(userId, groupId) {
+  if ((await memberRole(userId, groupId)) !== 'admin') throw new Error('เฉพาะแอดมินกลุ่ม (ผู้สร้าง) เท่านั้นที่เชิญคนเข้ากลุ่มได้');
+}
+
+// รายชื่อผู้ใช้ที่เชิญได้ (ค้นด้วยชื่อ) — ไม่รวมตัวเอง/สมาชิกอยู่แล้ว/บัญชีที่ถูกระงับ; บอกว่าใครถูกเชิญค้างอยู่
+async function listInviteCandidates(adminId, groupId, q) {
+  await requireAdmin(adminId, groupId);
+  const term = oneLine(q).slice(0, 40);
+  const r = await query(
+    `SELECT u.id, ${DISPLAY} AS name, u.line_picture_url AS picture,
+            EXISTS (SELECT 1 FROM chat_group_invites i WHERE i.group_id = $1 AND i.invitee_id = u.id AND i.status = 'pending') AS invited
+       FROM users u
+      WHERE u.status = 'active' AND u.id <> $2
+        AND NOT EXISTS (SELECT 1 FROM chat_group_members m WHERE m.group_id = $1 AND m.user_id = u.id)
+        AND ($3 = '' OR lower(u.name) LIKE '%' || lower($3) || '%' OR lower(COALESCE(u.call_name, '')) LIKE '%' || lower($3) || '%')
+      ORDER BY lower(u.name) ASC LIMIT 100`,
+    [groupId, adminId, term]
+  );
+  return r.rows.map((u) => ({ userId: u.id, name: u.name, picture: picOf(u.picture), invited: u.invited }));
+}
+
+async function inviteUser(adminId, groupId, inviteeId) {
+  await requireAdmin(adminId, groupId);
+  if (!UUID_RE.test(String(inviteeId))) throw new Error('ไม่พบผู้ใช้ที่จะเชิญ');
+  if (inviteeId === adminId) throw new Error('เชิญตัวเองไม่ได้');
+  const t = await query("SELECT u.id, u.line_user_id FROM users u WHERE u.id = $1 AND u.status = 'active'", [inviteeId]);
+  if (!t.rows[0]) throw new Error('ไม่พบผู้ใช้ที่จะเชิญ');
+  if (await memberRole(inviteeId, groupId)) throw new Error('คนนี้เป็นสมาชิกกลุ่มอยู่แล้ว');
+  if ((await joinedCount(inviteeId)) >= MAX_JOINED_PER_USER) throw new Error(`คนนี้เข้าร่วมกลุ่มครบ ${MAX_JOINED_PER_USER} กลุ่มแล้ว เชิญไม่ได้`);
+  const dup = await query("SELECT 1 FROM chat_group_invites WHERE group_id = $1 AND invitee_id = $2 AND status = 'pending'", [groupId, inviteeId]);
+  if (dup.rows[0]) throw new Error('เชิญคนนี้ไปแล้ว รอเขาตอบรับ');
+  checkInviteRate(adminId);
+  const g = await query(`SELECT g.name, ${DISPLAY} AS inviter_name FROM chat_groups g JOIN users u ON u.id = $2 WHERE g.id = $1`, [groupId, adminId]);
+  const r = await query('INSERT INTO chat_group_invites (group_id, inviter_id, invitee_id) VALUES ($1, $2, $3) RETURNING id', [groupId, adminId, inviteeId]);
+  const text = `${g.rows[0].inviter_name} เชิญคุณเข้ากลุ่ม "${g.rows[0].name}" กดตอบรับเพื่อเข้ากลุ่มได้ค่ะ`;
+  await notifyLine(t.rows[0].line_user_id, () => line.pushButtons(t.rows[0].line_user_id, text, text, [
+    { label: 'ตอบรับ', data: `act=ginvite&d=accept&id=${r.rows[0].id}` },
+    { label: 'ปฏิเสธ', data: `act=ginvite&d=decline&id=${r.rows[0].id}` },
+  ]));
+  return { inviteId: r.rows[0].id };
+}
+
+// คำเชิญที่รอฉันตอบ (แสดงชื่อกลุ่ม + ผู้เชิญพร้อมรูปโปรไฟล์)
+async function myInvites(userId) {
+  const r = await query(
+    `SELECT i.id, g.name AS group_name, g.description, ${DISPLAY} AS inviter_name, u.line_picture_url AS inviter_picture, i.created_at
+       FROM chat_group_invites i JOIN chat_groups g ON g.id = i.group_id JOIN users u ON u.id = i.inviter_id
+      WHERE i.invitee_id = $1 AND i.status = 'pending' ORDER BY i.created_at DESC LIMIT 20`, [userId]);
+  return r.rows.map((x) => ({ id: x.id, groupName: x.group_name, description: x.description, inviterName: x.inviter_name, inviterPicture: picOf(x.inviter_picture), createdAt: x.created_at }));
+}
+
+// ผู้ถูกเชิญตอบรับ/ปฏิเสธ (เฉพาะตัวเขาเอง)
+async function respondInvite(userId, inviteId, accept) {
+  if (!UUID_RE.test(String(inviteId))) throw new Error('ไม่พบคำเชิญนี้');
+  const out = await withTransaction(async (c) => {
+    const q = await c.query("SELECT i.id, i.group_id, i.invitee_id, g.name FROM chat_group_invites i JOIN chat_groups g ON g.id = i.group_id WHERE i.id = $1 AND i.status = 'pending' FOR UPDATE OF i", [inviteId]);
+    const row = q.rows[0];
+    if (!row) throw new Error('ไม่พบคำเชิญนี้ หรือตอบไปแล้ว');
+    if (row.invitee_id !== userId) throw new Error('คำเชิญนี้ไม่ใช่ของคุณ');
+    if (accept) {
+      await c.query('SELECT id FROM users WHERE id = $1 FOR UPDATE', [userId]);
+      const n = await c.query("SELECT count(*)::int AS n FROM chat_group_members WHERE user_id = $1 AND role = 'member'", [userId]);
+      if (n.rows[0].n >= MAX_JOINED_PER_USER) throw new Error(`คุณเข้าร่วมกลุ่มครบ ${MAX_JOINED_PER_USER} กลุ่มแล้ว ตอบรับไม่ได้ (ออกจากกลุ่มเดิมก่อน)`);
+      await c.query("INSERT INTO chat_group_members (group_id, user_id, role) VALUES ($1, $2, 'member') ON CONFLICT DO NOTHING", [row.group_id, userId]);
+      await c.query("UPDATE chat_group_requests SET status = 'approved', decided_at = now() WHERE group_id = $1 AND user_id = $2 AND status = 'pending'", [row.group_id, userId]);
+    }
+    await c.query('UPDATE chat_group_invites SET status = $2, decided_at = now() WHERE id = $1', [inviteId, accept ? 'accepted' : 'declined']);
+    return row;
+  });
+  return { accepted: !!accept, groupId: out.group_id, groupName: out.name };
+}
+
+module.exports = { listInviteCandidates, inviteUser, myInvites, respondInvite, createGroup, listGroups, requestJoin, decideJoin, getGroup, postMessage, listMessages, leaveGroup, deleteGroup, MAX_GROUPS_PER_USER, MAX_JOINED_PER_USER, MAX_MESSAGE_CHARS };

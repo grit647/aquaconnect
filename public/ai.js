@@ -294,6 +294,29 @@
     head.append(t, x); card.appendChild(head);
     let data;
     try { data = await api('GET', '/api/groups'); } catch (err) { const e = document.createElement('div'); e.className = 'sec'; e.textContent = err.message; card.appendChild(e); return; }
+    // คำเชิญที่รอฉันตอบ (ผู้เชิญแสดงรูปโปรไฟล์) — ตอบรับ/ปฏิเสธได้ที่นี่
+    let invites = [];
+    try { invites = (await api('GET', '/api/groups/invites')).invites; } catch (e) { /* ไม่มีคำเชิญก็ข้าม */ }
+    if (invites.length) {
+      const h = document.createElement('div'); h.className = 'sec'; h.textContent = '📨 คำเชิญเข้ากลุ่ม (' + invites.length + ')'; card.appendChild(h);
+      invites.forEach((iv) => {
+        const box = document.createElement('div'); box.className = 'slot'; box.style.cssText = 'flex-direction:column;align-items:stretch;cursor:default;gap:8px';
+        const top = document.createElement('div'); top.style.cssText = 'display:flex;gap:10px;align-items:center';
+        const col = document.createElement('div'); col.style.cssText = 'flex:1;min-width:0';
+        const nm = document.createElement('div'); nm.className = 'nm'; nm.textContent = iv.groupName;
+        const sub = document.createElement('div'); sub.className = 'sub'; sub.textContent = 'เชิญโดย ' + iv.inviterName;
+        col.append(nm, sub); top.append(grpAvatar(iv.inviterName, iv.inviterPicture), col); box.appendChild(top);
+        const row = document.createElement('div'); row.style.cssText = 'display:flex;gap:8px';
+        const respond = async (accept) => {
+          row.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+          try { await api('POST', '/api/groups/invites/' + iv.id + '/respond', { accept }); openGroupPopup(); }
+          catch (err) { sub.textContent = err.message; row.querySelectorAll('button').forEach((b) => { b.disabled = false; }); }
+        };
+        const yes = document.createElement('button'); yes.type = 'button'; yes.className = 'allbtn'; yes.style.cssText = 'flex:1;margin:0;padding:8px'; yes.textContent = '✓ ตอบรับ'; yes.addEventListener('click', () => respond(true));
+        const no = document.createElement('button'); no.type = 'button'; no.className = 'allbtn'; no.style.cssText = 'flex:1;margin:0;padding:8px;border-color:var(--line);color:var(--muted)'; no.textContent = 'ปฏิเสธ'; no.addEventListener('click', () => respond(false));
+        row.append(yes, no); box.appendChild(row); card.appendChild(box);
+      });
+    }
     const mkSlot = (g, extra) => {
       const b = document.createElement('button'); b.type = 'button'; b.className = 'slot';
       const c = document.createElement('div'); c.className = 'circ'; c.style.background = grpColor(g.name); c.textContent = String(g.name).trim().charAt(0) || '?';
@@ -323,11 +346,15 @@
     const all = document.createElement('button'); all.type = 'button'; all.className = 'allbtn'; all.textContent = '📋 ดูกลุ่มทั้งหมด (' + data.groups.length + ' กลุ่ม)';
     all.addEventListener('click', () => { closeGroupPopup(); grpOpenView(grpList); });
     card.appendChild(all);
-    setGroupsBadge(mineCreated.reduce((n, g) => n + (g.pendingRequests || 0), 0));
+    setGroupsBadge(mineCreated.reduce((n, g) => n + (g.pendingRequests || 0), 0) + invites.length);
   }
   function setGroupsBadge(n) { const b = gEl('groupsBadge'); if (!b) return; b.hidden = !n; b.textContent = n || ''; }
   async function refreshGroupsBadge() {
-    try { const d = await api('GET', '/api/groups'); setGroupsBadge(d.groups.filter((g) => g.isOwner).reduce((n, g) => n + (g.pendingRequests || 0), 0)); } catch (e) { /* ไม่มีป้ายก็ข้าม */ }
+    try {
+      const d = await api('GET', '/api/groups');
+      let inv = 0; try { inv = (await api('GET', '/api/groups/invites')).invites.length; } catch (e) { /* ข้าม */ }
+      setGroupsBadge(d.groups.filter((g) => g.isOwner).reduce((n, g) => n + (g.pendingRequests || 0), 0) + inv);
+    } catch (e) { /* ไม่มีป้ายก็ข้าม */ }
   }
   gEl('groupsBtn').addEventListener('click', openGroupPopup);
 
@@ -366,6 +393,38 @@
       });
       body.appendChild(c);
     });
+  }
+
+  // ---------- เชิญเข้ากลุ่ม: แอดมินเลือกจากรายชื่อผู้ใช้ทั้งระบบ (รูป+ชื่อ) แล้วส่งคำเชิญ ----------
+  function grpInvite(groupId, name) {
+    const body = grpFrame('เชิญเข้ากลุ่ม', () => gEl('grpMenu').click(), false);
+    gNote(body, 'ส่งคำเชิญไปให้คนที่ต้องการ เขาจะได้รับแจ้งและกดตอบรับเอง (ผู้ถูกเชิญเข้าร่วมกลุ่มของคนอื่นได้ไม่เกิน 3 กลุ่ม)');
+    const search = document.createElement('input'); search.type = 'search'; search.placeholder = '🔎 ค้นหาชื่อ'; search.maxLength = 40; body.appendChild(search);
+    const list = document.createElement('div'); list.style.cssText = 'display:flex;flex-direction:column;gap:8px'; body.appendChild(list);
+    let timer = null; let seq = 0;
+    const load = async () => {
+      const my = ++seq;
+      let r;
+      try { r = await api('GET', '/api/groups/' + groupId + '/invite-candidates?q=' + encodeURIComponent(search.value.trim())); } catch (err) { list.textContent = ''; gNote(list, err.message); return; }
+      if (my !== seq) return;
+      list.textContent = '';
+      if (!r.users.length) gNote(list, search.value.trim() ? 'ไม่พบชื่อที่ค้นหา' : 'ไม่มีผู้ใช้ที่เชิญได้');
+      r.users.forEach((u) => {
+        const row = document.createElement('div'); row.className = 'gcard'; row.style.cssText = 'flex-direction:row;align-items:center;gap:10px';
+        const nm = document.createElement('b'); nm.style.cssText = 'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'; nm.textContent = u.name;
+        const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'gact' + (u.invited ? '' : ' ok'); btn.style.cssText = 'padding:8px 14px;font-size:14px;flex-shrink:0';
+        btn.textContent = u.invited ? '✓ เชิญแล้ว' : 'เชิญ'; btn.disabled = !!u.invited;
+        btn.addEventListener('click', async () => {
+          btn.disabled = true; btn.textContent = 'กำลังส่ง...';
+          try { await api('POST', '/api/groups/' + groupId + '/invites', { userId: u.userId }); btn.textContent = '✓ เชิญแล้ว'; btn.classList.remove('ok'); }
+          catch (err) { btn.textContent = 'เชิญ'; btn.disabled = false; nm.textContent = u.name + ' — ' + err.message; }
+        });
+        row.append(grpAvatar(u.name, u.picture), nm, btn);
+        list.appendChild(row);
+      });
+    };
+    search.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(load, 300); });
+    load();
   }
 
   // ---------- แชทกลุ่ม ----------
@@ -425,6 +484,7 @@
     let info;
     try { info = await api('GET', '/api/groups/' + groupId); } catch (err) { gNote(body, err.message); return; }
     if (info.isAdmin) {
+      gBtn(body, '➕ เชิญเข้ากลุ่ม (เลือกจากรายชื่อทั้งหมดในระบบ)', () => grpInvite(groupId, prevName), 'ok');
       gNote(body, 'คำขอเข้าร่วมกลุ่ม (' + info.requests.length + ')');
       if (!info.requests.length) gNote(body, 'ไม่มีคำขอที่รออยู่');
       info.requests.forEach((r) => {

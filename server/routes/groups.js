@@ -14,6 +14,19 @@ router.get('/', async (req, res) => {
 router.post('/', async (req, res) => {
   try { res.json({ ok: true, group: await groups.createGroup(req.user.id, req.body && req.body.name, req.body && req.body.description) }); } catch (err) { fail(res, err); }
 });
+// คำเชิญเข้ากลุ่ม (ต้องประกาศก่อนเส้นทาง /:id)
+router.get('/invites', async (req, res) => {
+  try { res.json({ invites: await groups.myInvites(req.user.id) }); } catch (err) { console.error('invites error:', err.message); res.status(500).json({ error: 'โหลดคำเชิญไม่สำเร็จ' }); }
+});
+router.post('/invites/:iid/respond', async (req, res) => {
+  try { res.json({ ok: true, ...(await groups.respondInvite(req.user.id, req.params.iid, !!(req.body && req.body.accept === true))) }); } catch (err) { fail(res, err); }
+});
+router.get('/:id/invite-candidates', async (req, res) => {
+  try { res.json({ users: await groups.listInviteCandidates(req.user.id, req.params.id, req.query.q) }); } catch (err) { res.status(403).json({ error: err.message }); }
+});
+router.post('/:id/invites', async (req, res) => {
+  try { res.json({ ok: true, ...(await groups.inviteUser(req.user.id, req.params.id, req.body && req.body.userId)) }); } catch (err) { fail(res, err); }
+});
 router.post('/:id/join', async (req, res) => {
   try { res.json({ ok: true, ...(await groups.requestJoin(req.user.id, req.params.id)) }); } catch (err) { fail(res, err); }
 });

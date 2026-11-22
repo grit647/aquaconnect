@@ -102,6 +102,41 @@ const lastReply = () => { const r = sent.filter((s) => s.path === '/message/repl
   const gB = await call('GET', `/api/groups/${gid}`, null, B.cookie);
   check('สมาชิกเห็นรายชื่อสมาชิก (ชื่อ+รูป) แต่ไม่เห็นคำขอของกลุ่ม', gB.status === 200 && gB.json.members.length === 2 && gB.json.isAdmin === false && gB.json.requests.length === 0);
 
+  // ---------- เชิญเข้ากลุ่ม (แอดมินเลือกจากรายชื่อทั้งระบบ → ผู้ถูกเชิญตอบรับเอง) ----------
+  const LINE_C = 'Utest-group-c';
+  await query('UPDATE users SET line_user_id = $2 WHERE phone = $1', [PHONES[2], LINE_C]);
+  const idC0 = (await query('SELECT id FROM users WHERE phone = $1', [PHONES[2]])).rows[0].id;
+  check('สมาชิกทั่วไปดูรายชื่อที่เชิญได้/เชิญคนไม่ได้ (เฉพาะแอดมินกลุ่ม)', (await call('GET', `/api/groups/${gid}/invite-candidates`, null, B.cookie)).status === 403 && (await call('POST', `/api/groups/${gid}/invites`, { userId: idC0 }, B.cookie)).status === 400);
+  const cand = await call('GET', `/api/groups/${gid}/invite-candidates?q=${encodeURIComponent('คนนอก')}`, null, A.cookie);
+  check('แอดมินค้นรายชื่อจากทั้งระบบด้วยชื่อได้ (เห็นชื่อ+รูป)', cand.status === 200 && cand.json.users.length === 1 && cand.json.users[0].name === 'คนนอก ซี' && 'picture' in cand.json.users[0] && cand.json.users[0].invited === false, JSON.stringify(cand.json.users));
+  const candAll = await call('GET', `/api/groups/${gid}/invite-candidates`, null, A.cookie);
+  const allStr = JSON.stringify(candAll.json);
+  check('รายชื่อไม่รวมตัวเอง/สมาชิกอยู่แล้ว และไม่เผยเบอร์โทร/PIN/ไลน์ไอดี', !candAll.json.users.some((u) => u.name === 'ผู้สร้าง เอ' || u.name === 'บี') && !PHONES.some((ph) => allStr.includes(ph)) && !allStr.includes('line_user_id') && !allStr.includes('pin') && candAll.json.users.every((u) => !u.userId || true));
+  const inv1 = await call('POST', `/api/groups/${gid}/invites`, { userId: idC0 }, A.cookie);
+  const pushC = sent.filter((x) => x.path === '/message/push' && x.body.to === LINE_C);
+  check('เชิญ C → ส่งไลน์หา C พร้อมปุ่ม ตอบรับ/ปฏิเสธ', inv1.status === 200 && pushC.length === 1 && pushC[0].body.messages[0].template.actions.some((x) => x.data.startsWith('act=ginvite&d=accept&id=')) && pushC[0].body.messages[0].template.actions.some((x) => x.data.startsWith('act=ginvite&d=decline&id=')));
+  check('เชิญซ้ำตอนยังรออยู่ไม่ได้ / เชิญตัวเอง / เชิญสมาชิกเดิม / ผู้ใช้ที่ไม่มีจริง → ปฏิเสธ', (await call('POST', `/api/groups/${gid}/invites`, { userId: idC0 }, A.cookie)).status === 400
+    && (await call('POST', `/api/groups/${gid}/invites`, { userId: (await query('SELECT id FROM users WHERE phone = $1', [PHONES[0]])).rows[0].id }, A.cookie)).status === 400
+    && (await call('POST', `/api/groups/${gid}/invites`, { userId: uidB }, A.cookie)).status === 400
+    && (await call('POST', `/api/groups/${gid}/invites`, { userId: '00000000-0000-0000-0000-000000000000' }, A.cookie)).status === 400);
+  check('รายชื่อบอกว่า C ถูกเชิญค้างอยู่ (invited = true)', (await call('GET', `/api/groups/${gid}/invite-candidates?q=${encodeURIComponent('คนนอก')}`, null, A.cookie)).json.users[0].invited === true);
+  const mine = await call('GET', '/api/groups/invites', null, C.cookie);
+  check('C เห็นคำเชิญ (ชื่อกลุ่ม + ผู้เชิญ)', mine.json.invites.length === 1 && mine.json.invites[0].groupName === 'ชาวบ่อกุ้ง ทดสอบ' && mine.json.invites[0].inviterName === 'ผู้สร้าง เอ' && 'inviterPicture' in mine.json.invites[0], JSON.stringify(mine.json.invites));
+  const invId = mine.json.invites[0].id;
+  check('คนอื่น (B) ตอบคำเชิญของ C แทนไม่ได้ และไม่เห็นคำเชิญของ C', (await call('POST', `/api/groups/invites/${invId}/respond`, { accept: true }, B.cookie)).status === 400 && (await call('GET', '/api/groups/invites', null, B.cookie)).json.invites.length === 0);
+  check('C ปฏิเสธคำเชิญได้ → ไม่เป็นสมาชิก และตอบซ้ำไม่ได้', (await call('POST', `/api/groups/invites/${invId}/respond`, { accept: false }, C.cookie)).status === 200 && !(await query('SELECT 1 FROM chat_group_members WHERE group_id = $1 AND user_id = $2', [gid, idC0])).rows[0] && (await call('POST', `/api/groups/invites/${invId}/respond`, { accept: true }, C.cookie)).status === 400);
+  await call('POST', `/api/groups/${gid}/invites`, { userId: idC0 }, A.cookie);
+  const pushC2 = sent.filter((x) => x.path === '/message/push' && x.body.to === LINE_C).pop();
+  const acceptData = pushC2.body.messages[0].template.actions.find((x) => x.data.includes('d=accept')).data;
+  await press(LINE_B, acceptData);
+  check('ปุ่มไลน์ของคนอื่นตอบรับแทน C ไม่ได้', !(await query('SELECT 1 FROM chat_group_members WHERE group_id = $1 AND user_id = $2', [gid, idC0])).rows[0] && /ไม่ใช่ของคุณ/.test(lastReply()), lastReply());
+  await press(LINE_C, acceptData);
+  check('C กดตอบรับในไลน์ → เป็นสมาชิก และเข้าแชทกลุ่มได้', (await query("SELECT role FROM chat_group_members WHERE group_id = $1 AND user_id = $2", [gid, idC0])).rows[0].role === 'member' && (await call('GET', `/api/groups/${gid}/messages`, null, C.cookie)).status === 200);
+  check('เป็นสมาชิกแล้วหายจากรายชื่อที่เชิญได้ และไม่มีคำเชิญค้าง', !(await call('GET', `/api/groups/${gid}/invite-candidates`, null, A.cookie)).json.users.some((u) => u.name === 'คนนอก ซี') && (await call('GET', '/api/groups/invites', null, C.cookie)).json.invites.length === 0);
+  await query("UPDATE users SET status = 'suspended' WHERE phone = $1", [PHONES[2]]);
+  check('บัญชีที่ถูกระงับไม่อยู่ในรายชื่อที่เชิญได้', !(await call('GET', `/api/groups/${g2.json.group.id}/invite-candidates?q=${encodeURIComponent('คนนอก')}`, null, A.cookie)).json.users.length);
+  await query("UPDATE users SET status = 'active' WHERE phone = $1", [PHONES[2]]);
+
   // ---------- ออก/ลบกลุ่ม ----------
   check('ผู้สร้างออกจากกลุ่มตัวเองไม่ได้', (await call('POST', `/api/groups/${gid}/leave`, {}, A.cookie)).status === 400);
   check('สมาชิกออกจากกลุ่มได้ และเข้าแชทไม่ได้อีก', (await call('POST', `/api/groups/${gid}/leave`, {}, B.cookie)).status === 200 && (await call('GET', `/api/groups/${gid}/messages`, null, B.cookie)).status === 403);
@@ -123,6 +158,8 @@ const lastReply = () => { const r = sent.filter((s) => s.path === '/message/repl
   await call('POST', `/api/groups/requests/${lastPending.id}/decide`, { approve: false }, ckFor(owned.find((g) => g.id === lastPending.group_id).phone));
   const joinedList = await call('GET', '/api/groups', null, C.cookie);
   check('รายการกลุ่มของ C บอกจำนวนที่เข้าร่วม 3/3', joinedList.json.joinedByMe === 3 && joinedList.json.maxJoin === 3 && joinedList.json.createdByMe === 0, JSON.stringify([joinedList.json.joinedByMe, joinedList.json.maxJoin]));
+  const ownerOfLast = owned.find((g) => g.id === lastPending.group_id);
+  check('คนที่เข้าร่วมครบ 3 กลุ่มแล้วถูกเชิญไม่ได้ (บอกเหตุผล)', await (async () => { const r = await call('POST', `/api/groups/${lastPending.group_id}/invites`, { userId: idC }, ckFor(ownerOfLast.phone)); return r.status === 400 && /ครบ 3 กลุ่ม/.test(r.json.error || ''); })());
   const extra = owned.find((g) => !(g.id === lastPending.group_id) && false) || { id: lastPending.group_id };
   const again = await call('POST', `/api/groups/${extra.id}/join`, {}, C.cookie);
   check('ครบ 3 กลุ่มแล้วขอเข้ากลุ่มที่ 4 ไม่ได้ (ตั้งแต่ตอนขอ)', again.status === 400 && /ไม่เกิน 3 กลุ่ม/.test(again.json.error || ''), again.json.error);
