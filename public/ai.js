@@ -137,6 +137,7 @@
     const meters = document.createElement('div'); meters.className = 'meters'; body.appendChild(meters);
     sheetButton(body, '✏️ อัปเดตโปรไฟล์', showProfileEdit);
     sheetButton(body, '👥 กลุ่ม (เร็วๆ นี้)', showGroupsSoon);
+    sheetButton(body, '🎥 สัมมนา / ประชุมออนไลน์ (เร็วๆ นี้)', showSeminarSoon);
     api('GET', '/api/me/summary').then((s) => {
       const u = s.usage; const g = s.google;
       // สถานะปัจจุบัน (ถ้าเลือกไว้) แสดงใต้ชื่อ
@@ -251,6 +252,12 @@
   function showGroupsSoon() {
     const body = openSheet('กลุ่ม');
     note(body, '👥 กลุ่มสนทนา (กำลังพัฒนา)\nเร็วๆ นี้คุณจะสร้างกลุ่มคุยกับคนอื่นได้ คล้ายกลุ่มไลน์ แต่คุยกันบนแพลตฟอร์มของเรา ไม่ใช่การส่งข้อความทางไลน์');
+    profileBack(body);
+  }
+  function showSeminarSoon() {
+    const body = openSheet('สัมมนา / ประชุมออนไลน์');
+    note(body, '🎥 สัมมนา / ประชุมออนไลน์ (กำลังพัฒนา)
+เร็วๆ นี้จะมีห้องสัมมนาและห้องประชุมออนไลน์บนแพลตฟอร์มของเรา ไว้นัดคุยและแลกเปลี่ยนความรู้กับคนอื่นได้โดยไม่ต้องออกจากแอป');
     profileBack(body);
   }
   async function showGoogleInfo() {
