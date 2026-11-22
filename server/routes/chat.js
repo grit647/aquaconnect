@@ -326,6 +326,7 @@ router.post('/conversations/:id/messages', async (req, res) => {
 
     // โมเดลอาจเลียนแบบป้าย "[ข้อมูลจาก Google …]" ที่เราแปะในประวัติให้มันเห็น — ตัดป้ายนั้นออกก่อนบันทึก/แสดง (ผู้ใช้ไม่ควรเห็นป้ายภายใน)
     result.text = result.text.replace(/^\s*\[ข้อมูลจาก Google[^\]]*\]\s*/, '');
+    result.text = result.text.split('**').join('');   // ห้ามใช้ markdown (ตัวหนา **) — ในแอป/เสียงอ่านเป็นข้อความธรรมดา
     // บันทึกข้อความผู้ใช้ + คำตอบเลขา พร้อมกันเป็นก้อนเดียว (ถ้า AI พัง จะไม่มีข้อความค้างครึ่งๆ กลางๆ ให้ส่งซ้ำซ้อน)
     await withTransaction(async (c) => {
       await c.query('INSERT INTO messages (conversation_id, user_id, role, content, source) VALUES ($1, $2, $3, $4, $5)', [conv.id, req.user.id, 'user', storedContent, source]);
