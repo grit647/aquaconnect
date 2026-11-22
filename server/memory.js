@@ -186,6 +186,28 @@ async function createKnowledgeProposals(userId, conversationId, items, cap = 12)
   return created;
 }
 
+// ลบเนื้อหาทั้งหมดของหมวด (และลบตัวหมวดด้วยถ้าทำได้) — เฉพาะหมวดของเจ้าของเท่านั้น
+// เก็บ "ตัวหมวด" ไว้ (แค่ล้างเนื้อหา + กลับเป็นส่วนตัว + ถอนสิทธิ์ที่เคยให้) เมื่อ: เป็น 2 หมวดหลัก หรือเคยมีคนใช้/จ่ายเครดิตผ่านหมวดนี้
+// (ประวัติการใช้และเงินต้องคงอยู่ ลบทิ้งไม่ได้) — ที่เหลือลบหมวดทิ้งทั้งหมวด
+async function deleteCategory(userId, categoryId) {
+  return withTransaction(async (c) => {
+    const cat = await c.query('SELECT id, name FROM memory_categories WHERE id = $1 AND owner_id = $2 FOR UPDATE', [String(categoryId || ''), userId]);
+    if (!cat.rows[0]) throw new Error('ไม่พบหมวดนี้ของคุณ');
+    const name = cat.rows[0].name;
+    const mem = await c.query('DELETE FROM memories WHERE category_id = $1 RETURNING id', [cat.rows[0].id]);
+    await c.query("DELETE FROM memory_proposals WHERE owner_id = $1 AND status = 'pending' AND lower(category) = lower($2)", [userId, name]);
+    const hist = await c.query('SELECT 1 FROM access_sessions WHERE category_id = $1 LIMIT 1', [cat.rows[0].id]);
+    const keep = MAIN_CATEGORIES.includes(name) || !!hist.rows[0];
+    if (keep) {
+      await c.query("UPDATE access_requests SET status = 'revoked', decided_at = now() WHERE category_id = $1 AND status IN ('approved','pending')", [cat.rows[0].id]);
+      await c.query("UPDATE memory_categories SET visibility = 'private', price_type = NULL, price_credits = NULL WHERE id = $1", [cat.rows[0].id]);
+    } else {
+      await c.query('DELETE FROM memory_categories WHERE id = $1', [cat.rows[0].id]);
+    }
+    return { name, deletedMemories: mem.rowCount, categoryRemoved: !keep };
+  });
+}
+
 // ยืนยัน (accept=true → บันทึกเป็นความจำในหมวดส่วนตัวของเจ้าของ) หรือปฏิเสธ — ตัดสินได้เฉพาะข้อเสนอของตัวเองที่ยังรออยู่
 async function decideProposal(userId, proposalId, accept) {
   const r = await query(
@@ -201,5 +223,5 @@ async function decideProposal(userId, proposalId, accept) {
 
 module.exports = {
   getMemoryContext, saveMemory, listCategories, recallMemories,
-  GENERAL_CATEGORY, SKILL_CATEGORY, MAIN_CATEGORIES, SELF_NAMES, isSelfCategory, ensureMainCategories, listPendingProposals, createProposals, createKnowledgeProposals, decideProposal,
+  GENERAL_CATEGORY, SKILL_CATEGORY, MAIN_CATEGORIES, SELF_NAMES, isSelfCategory, ensureMainCategories, listPendingProposals, createProposals, createKnowledgeProposals, decideProposal, deleteCategory,
 };

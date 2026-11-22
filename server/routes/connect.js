@@ -98,6 +98,11 @@ router.post('/category-setting', async (req, res) => {
   } catch (err) { fail(res, err); }
 });
 
+// ลบเนื้อหาทั้งหมดของหมวด (+ตัวหมวดถ้าลบได้) — ไม่มีเครื่องมือให้ AI เรียกลบเอง ลบได้จากปุ่มของเจ้าของเท่านั้น (หลังยืนยันในแอป)
+router.delete('/my-categories/:id', async (req, res) => {
+  try { res.json({ ok: true, ...(await require('../memory').deleteCategory(req.user.id, req.params.id)) }); } catch (err) { fail(res, err); }
+});
+
 router.post('/request', async (req, res) => {
   try {
     const { ownerId, category, message } = req.body || {};

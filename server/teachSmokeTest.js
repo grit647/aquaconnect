@@ -188,6 +188,30 @@ async function call(method, path, body, cookie) {
   check('โหมดแปลก → ปฏิเสธ', (await call('POST', '/api/chat/organize-mode', { mode: 'banana' }, B.cookie)).status === 400);
   check('A ไม่เห็น/สรุปบทสนทนาของ B ไม่ได้', (await call('POST', `/api/chat/conversations/${cOld}/organize`, {}, A.cookie)).status === 400);
 
+  // ---------- ลบหมวด + เนื้อหาทั้งหมด ----------
+  const delCat = async (uid, name, n) => { for (let i = 0; i < n; i++) await memory.saveMemory(uid, name, 'รายการทดสอบลบ ' + i + ' ของหมวด ' + name); return (await query('SELECT id FROM memory_categories WHERE owner_id = $1 AND name = $2', [uid, name])).rows[0].id; };
+  const idDel = await delCat(uidB, 'หมวดทดลองลบ', 3);
+  check('A ลบหมวดของ B ไม่ได้', (await call('DELETE', `/api/connect/my-categories/${idDel}`, null, A.cookie)).status === 400);
+  const d1 = await call('DELETE', `/api/connect/my-categories/${idDel}`, null, B.cookie);
+  const gone = (await query('SELECT (SELECT count(*)::int FROM memory_categories WHERE id = $1) AS c, (SELECT count(*)::int FROM memories WHERE category_id = $1) AS m', [idDel])).rows[0];
+  check('ลบหมวดธรรมดา → ตัวหมวดและเนื้อหาหายหมด', d1.status === 200 && d1.json.categoryRemoved === true && d1.json.deletedMemories === 3 && gone.c === 0 && gone.m === 0, JSON.stringify(d1.json));
+  check('ลบซ้ำ → 400 (ไม่มีหมวดแล้ว)', (await call('DELETE', `/api/connect/my-categories/${idDel}`, null, B.cookie)).status === 400);
+
+  const idGen = (await query("SELECT id FROM memory_categories WHERE owner_id = $1 AND name = 'ทั่วไป'", [uidB])).rows[0].id;
+  await memory.saveMemory(uidB, 'ทั่วไป', 'ของในหมวดทั่วไปที่จะถูกล้าง');
+  const d2 = await call('DELETE', `/api/connect/my-categories/${idGen}`, null, B.cookie);
+  const stay = (await query('SELECT (SELECT count(*)::int FROM memory_categories WHERE id = $1) AS c, (SELECT count(*)::int FROM memories WHERE category_id = $1) AS m', [idGen])).rows[0];
+  check('หมวดหลัก (ทั่วไป) → ล้างเนื้อหาแต่ตัวหมวดยังอยู่', d2.status === 200 && d2.json.categoryRemoved === false && stay.c === 1 && stay.m === 0, JSON.stringify(d2.json));
+
+  // หมวดที่เคยมีคนใช้/จ่ายเครดิต → เก็บชื่อหมวดไว้เป็นประวัติ ล้างเนื้อหา + กลับเป็นส่วนตัว + ถอนสิทธิ์
+  const idPaid = await delCat(uidB, 'หมวดมีประวัติใช้งาน', 2);
+  await sharing.setCategoryVisibility(uidB, 'หมวดมีประวัติใช้งาน', 'free');
+  await query('INSERT INTO access_sessions (requester_id, owner_id, category_id) VALUES ($1, $2, $3)', [uidA, uidB, idPaid]);
+  const d3 = await call('DELETE', `/api/connect/my-categories/${idPaid}`, null, B.cookie);
+  const kept = (await query('SELECT visibility, (SELECT count(*)::int FROM memories WHERE category_id = $1) AS m FROM memory_categories WHERE id = $1', [idPaid])).rows[0];
+  check('หมวดที่มีประวัติใช้งาน → ล้างเนื้อหา เก็บชื่อหมวดไว้ กลับเป็นส่วนตัว', d3.status === 200 && d3.json.categoryRemoved === false && kept && kept.m === 0 && kept.visibility === 'private', JSON.stringify(d3.json));
+  await query('DELETE FROM access_sessions WHERE category_id = $1', [idPaid]);
+
   // เก็บกวาด
   await new Promise((r) => setTimeout(r, 300)); // รอการไตร่ตรองเบื้องหลังที่ค้างอยู่จบก่อน
   const del = await query('DELETE FROM users WHERE phone = ANY($1)', [PHONES]);

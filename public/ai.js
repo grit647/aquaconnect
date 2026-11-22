@@ -1390,6 +1390,21 @@
     return true;
   }
 
+  // popup ยืนยันก่อนลบ: บอกชื่อหมวด จำนวนรายการ และว่ากู้คืนไม่ได้ — ต้องกดปุ่มแดงเองอีกครั้ง
+  function confirmDeleteCategory(c, isMain) {
+    const body = openSheet(isMain ? 'ยืนยันล้างเนื้อหาทั้งหมด?' : 'ยืนยันลบหมวดและเนื้อหาทั้งหมด?');
+    note(body, '⚠️ หมวด "' + c.name + '" มี ' + c.items + ' รายการ\n' + (isMain ? 'เนื้อหาทั้งหมดในหมวดนี้จะถูกลบ (ตัวหมวดยังอยู่)' : 'ตัวหมวดและเนื้อหาทุกรายการจะถูกลบ (ถ้าเคยมีคนใช้หรือจ่ายเครดิตผ่านหมวดนี้ ระบบจะเก็บแค่ชื่อหมวดไว้เป็นประวัติ แต่ล้างเนื้อหาทั้งหมด)') + '\nและกู้คืนไม่ได้');
+    miniBtn(body, '🗑️ ยืนยัน ลบเลย', async () => {
+      try {
+        const res = await api('DELETE', '/api/connect/my-categories/' + c.id);
+        if (focusCategory && focusCategory.toLowerCase() === c.name.toLowerCase()) setFocus('');
+        await showDataSettings();
+        addBubble('assistant', res.categoryRemoved ? 'ลบหมวด "' + c.name + '" และเนื้อหา ' + res.deletedMemories + ' รายการแล้วค่ะ' : 'ล้างเนื้อหาในหมวด "' + c.name + '" ' + res.deletedMemories + ' รายการแล้วค่ะ');
+      } catch (err) { note(body, err.message); }
+    }, 'danger');
+    miniBtn(body, 'ยกเลิก', () => showDataSettings());
+  }
+
   async function showDataSettings() {
     const body = openSheet('ตั้งค่าข้อมูลของฉัน');
     let r;
@@ -1422,6 +1437,10 @@
         if (!(v > 0)) { note(body, 'ใส่ราคาเป็นตัวเลขมากกว่า 0 ก่อน'); return; }
         try { if (await saveCategorySetting(c, 'paid', unit.value, v)) reload(); } catch (err) { note(body, err.message); }
       }, c.visibility === 'paid' ? 'ok' : '');
+      // ลบเนื้อหาทั้งหมดของหมวด (หมวดหลักลบตัวหมวดไม่ได้ ล้างได้เฉพาะเนื้อหา) — ต้องยืนยันก่อนเสมอ
+      const isMain = c.name === 'ทั่วไป' || c.name === 'ความสามารถเลขา';
+      const rowDel = document.createElement('div'); rowDel.className = 'row2'; d.appendChild(rowDel);
+      miniBtn(rowDel, isMain ? '🗑️ ล้างเนื้อหาทั้งหมด' : '🗑️ ลบหมวดและเนื้อหาทั้งหมด', () => confirmDeleteCategory(c, isMain), 'danger');
     });
     if (r.categories.some((c) => c.visibility === 'free')) note(body, 'หมวดฟรี: ผู้ใช้ใช้ได้ครั้งละ ' + r.freeMinutes + ' นาทีหลังคุณอนุญาต แล้วระบบตัด ต้องขอใหม่');
   }
