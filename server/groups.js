@@ -3,7 +3,8 @@
 const { query, withTransaction } = require('./db');
 const line = require('./line');
 
-const MAX_GROUPS_PER_USER = 2;
+const MAX_GROUPS_PER_USER = 2;   // สร้างกลุ่มได้คนละกี่กลุ่ม
+const MAX_JOINED_PER_USER = 3;   // เข้าร่วมกลุ่มของคนอื่นได้คนละกี่กลุ่ม (ไม่นับกลุ่มที่ตัวเองสร้าง)
 const MAX_MESSAGE_CHARS = 1000;
 const MSG_PER_MIN = 20;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -50,14 +51,20 @@ async function listGroups(userId) {
     [userId]
   );
   const mine = r.rows.filter((g) => g.owner_id === userId).length;
+  const joined = r.rows.filter((g) => g.my_role === 'member').length;
   return {
     groups: r.rows.map((g) => ({ id: g.id, name: g.name, description: g.description, ownerName: g.owner_name, members: g.members, myRole: g.my_role || null, pending: g.pending, pendingRequests: g.pending_requests, isOwner: g.owner_id === userId })),
-    createdByMe: mine, maxCreate: MAX_GROUPS_PER_USER,
+    createdByMe: mine, maxCreate: MAX_GROUPS_PER_USER, joinedByMe: joined, maxJoin: MAX_JOINED_PER_USER,
   };
 }
 
 async function notifyLine(lineUserId, send) {
   try { if (lineUserId && line.isConfigured()) await send(); } catch (err) { console.error('group line notify failed:', err.message); }
+}
+
+async function joinedCount(userId) {
+  const r = await query("SELECT count(*)::int AS n FROM chat_group_members WHERE user_id = $1 AND role = 'member'", [userId]);
+  return r.rows[0].n;
 }
 
 async function requestJoin(userId, groupId) {
@@ -69,6 +76,7 @@ async function requestJoin(userId, groupId) {
   if (already.rows[0]) throw new Error('คุณเป็นสมาชิกกลุ่มนี้อยู่แล้ว');
   const pend = await query("SELECT id FROM chat_group_requests WHERE group_id = $1 AND user_id = $2 AND status = 'pending'", [groupId, userId]);
   if (pend.rows[0]) return { status: 'pending', alreadyExisted: true };
+  if ((await joinedCount(userId)) >= MAX_JOINED_PER_USER) throw new Error(`เข้าร่วมกลุ่มได้ไม่เกิน ${MAX_JOINED_PER_USER} กลุ่ม (ออกจากกลุ่มเดิมก่อนถ้าอยากเข้ากลุ่มใหม่)`);
   const r = await query('INSERT INTO chat_group_requests (group_id, user_id) VALUES ($1, $2) RETURNING id', [groupId, userId]);
   const text = `${g.rows[0].me_name} ขอเข้าร่วมกลุ่ม "${g.rows[0].name}" ของคุณ กดอนุญาตเพื่อให้เข้ากลุ่มได้ค่ะ`;
   await notifyLine(g.rows[0].owner_line, () => line.pushButtons(g.rows[0].owner_line, text, text, [
@@ -88,6 +96,11 @@ async function decideJoin(deciderId, requestId, approve) {
     const row = q.rows[0];
     if (!row) throw new Error('ไม่พบคำขอนี้ หรือตัดสินไปแล้ว');
     if (row.owner_id !== deciderId) throw new Error('เฉพาะผู้สร้างกลุ่มเท่านั้นที่อนุญาตได้');
+    if (approve) {   // ตรวจเพดานอีกรอบตอนอนุมัติ (ล็อกแถวผู้ขอกันอนุมัติพร้อมกันจากหลายกลุ่ม)
+      await c.query('SELECT id FROM users WHERE id = $1 FOR UPDATE', [row.user_id]);
+      const n = await c.query("SELECT count(*)::int AS n FROM chat_group_members WHERE user_id = $1 AND role = 'member'", [row.user_id]);
+      if (n.rows[0].n >= MAX_JOINED_PER_USER) throw new Error(`ผู้ขอเข้าร่วมกลุ่มครบ ${MAX_JOINED_PER_USER} กลุ่มแล้ว อนุญาตไม่ได้ (กด ไม่อนุญาต ได้)`);
+    }
     await c.query('UPDATE chat_group_requests SET status = $2, decided_at = now() WHERE id = $1', [requestId, approve ? 'approved' : 'denied']);
     if (approve) await c.query("INSERT INTO chat_group_members (group_id, user_id, role) VALUES ($1, $2, 'member') ON CONFLICT DO NOTHING", [row.group_id, row.user_id]);
     return row;
@@ -172,4 +185,4 @@ async function deleteGroup(userId, groupId) {
   return { deleted: r.rows[0].name };
 }
 
-module.exports = { createGroup, listGroups, requestJoin, decideJoin, getGroup, postMessage, listMessages, leaveGroup, deleteGroup, MAX_GROUPS_PER_USER, MAX_MESSAGE_CHARS };
+module.exports = { createGroup, listGroups, requestJoin, decideJoin, getGroup, postMessage, listMessages, leaveGroup, deleteGroup, MAX_GROUPS_PER_USER, MAX_JOINED_PER_USER, MAX_MESSAGE_CHARS };

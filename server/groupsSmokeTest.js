@@ -108,6 +108,28 @@ const lastReply = () => { const r = sent.filter((s) => s.path === '/message/repl
   check('คนอื่นลบกลุ่มของผู้สร้างไม่ได้', (await call('DELETE', `/api/groups/${gid}`, null, B.cookie)).status === 400);
   check('ผู้สร้างลบกลุ่มได้ (ข้อความหายหมด) และคืนโควตาให้สร้างใหม่ได้', (await call('DELETE', `/api/groups/${gid}`, null, A.cookie)).status === 200 && (await query('SELECT count(*)::int n FROM chat_group_messages WHERE group_id = $1', [gid])).rows[0].n === 0 && (await call('POST', '/api/groups', { name: 'กลุ่มใหม่หลังลบ' }, A.cookie)).status === 200);
 
+  // ---------- เข้าร่วมกลุ่มได้ไม่เกิน 3 กลุ่ม (ไม่นับกลุ่มที่ตัวเองสร้าง) ----------
+  const owned = (await query("SELECT g.id, g.owner_id, u.phone FROM chat_groups g JOIN users u ON u.id = g.owner_id WHERE u.phone = ANY($1) ORDER BY g.created_at", [[PHONES[0], PHONES[1]]])).rows;
+  const ckFor = (phone) => (phone === PHONES[0] ? A.cookie : B.cookie);
+  check('มีกลุ่มของคนอื่น 4 กลุ่มให้ C ลองขอเข้าร่วม', owned.length === 4, String(owned.length));
+  for (const g of owned) await call('POST', `/api/groups/${g.id}/join`, {}, C.cookie);
+  const idC = (await query('SELECT id FROM users WHERE phone = $1', [PHONES[2]])).rows[0].id;
+  const pendC = (await query("SELECT r.id, r.group_id FROM chat_group_requests r WHERE r.user_id = $1 AND r.status = 'pending' ORDER BY r.created_at", [idC])).rows;
+  const approveRes = [];
+  for (const rq of pendC) { const owner = owned.find((g) => g.id === rq.group_id); approveRes.push((await call('POST', `/api/groups/requests/${rq.id}/decide`, { approve: true }, ckFor(owner.phone))).status); }
+  check('อนุมัติคำขอของ C ได้ 3 กลุ่มแรก กลุ่มที่ 4 ถูกปฏิเสธ (เกินเพดานเข้าร่วม 3 กลุ่ม)', approveRes.filter((x) => x === 200).length === 3 && approveRes.filter((x) => x === 400).length === 1, JSON.stringify(approveRes));
+  const lastPending = pendC[approveRes.findIndex((x) => x === 400)];
+  check('คำขอที่เกินเพดานยังรออยู่ (ผู้สร้างกดไม่อนุญาตได้) และ C ไม่ได้เป็นสมาชิกกลุ่มนั้น', (await query("SELECT status FROM chat_group_requests WHERE id = $1", [lastPending.id])).rows[0].status === 'pending' && !(await query('SELECT 1 FROM chat_group_members WHERE group_id = $1 AND user_id = $2', [lastPending.group_id, idC])).rows[0]);
+  await call('POST', `/api/groups/requests/${lastPending.id}/decide`, { approve: false }, ckFor(owned.find((g) => g.id === lastPending.group_id).phone));
+  const joinedList = await call('GET', '/api/groups', null, C.cookie);
+  check('รายการกลุ่มของ C บอกจำนวนที่เข้าร่วม 3/3', joinedList.json.joinedByMe === 3 && joinedList.json.maxJoin === 3 && joinedList.json.createdByMe === 0, JSON.stringify([joinedList.json.joinedByMe, joinedList.json.maxJoin]));
+  const extra = owned.find((g) => !(g.id === lastPending.group_id) && false) || { id: lastPending.group_id };
+  const again = await call('POST', `/api/groups/${extra.id}/join`, {}, C.cookie);
+  check('ครบ 3 กลุ่มแล้วขอเข้ากลุ่มที่ 4 ไม่ได้ (ตั้งแต่ตอนขอ)', again.status === 400 && /ไม่เกิน 3 กลุ่ม/.test(again.json.error || ''), again.json.error);
+  const someC = joinedList.json.groups.find((g) => g.myRole === 'member');
+  await call('POST', `/api/groups/${someC.id}/leave`, {}, C.cookie);
+  check('ออกจากกลุ่มหนึ่งแล้วขอเข้ากลุ่มใหม่ได้อีก (คืนโควตาเข้าร่วม)', (await call('POST', `/api/groups/${extra.id}/join`, {}, C.cookie)).status === 200);
+
   // ---------- เก็บกวาด ----------
   await new Promise((r) => setTimeout(r, 300));
   const del = await query('DELETE FROM users WHERE phone = ANY($1)', [PHONES]);
