@@ -38,6 +38,10 @@ const cleanup = async () => {
   check('รายชื่อผู้ใช้ไม่มี pin_hash หลุดออกมา', us.status === 200 && !JSON.stringify(us.json).includes('pin_hash') && !JSON.stringify(us.json).includes('$2'));
 
   const target = us.json.users.find((x) => x.phone === PHONES[1]);
+  check('รายชื่อผู้ใช้มีสถานะสิทธิ์ Google (ค่าเริ่มต้น ปิด, นับ 0)', target.google_search_enabled === false && target.google_search_count === 0, JSON.stringify([target.google_search_enabled, target.google_search_count]));
+  check('ผู้ใช้ทั่วไปเปิดสิทธิ์ Google ให้ตัวเองไม่ได้ (403)', (await call('PATCH', `/api/admin/users/${target.id}/google`, { enabled: true }, u.cookie)).status === 403);
+  check('แอดมินเปิดสิทธิ์ Google ให้ผู้ใช้ได้', (await call('PATCH', `/api/admin/users/${target.id}/google`, { enabled: true }, a.cookie)).status === 200 && (await call('GET', '/api/admin/users', null, a.cookie)).json.users.find((x) => x.id === target.id).google_search_enabled === true);
+  check('แอดมินปิดสิทธิ์ Google ได้', (await call('PATCH', `/api/admin/users/${target.id}/google`, { enabled: false }, a.cookie)).status === 200);
   check('ระงับผู้ใช้ได้', (await call('PATCH', `/api/admin/users/${target.id}/status`, { status: 'suspended' }, a.cookie)).status === 200);
   check('ผู้ใช้ที่ถูกระงับ login ไม่ได้', (await call('POST', '/api/auth/login', { phone: PHONES[1], pin: '222222' })).status >= 400);
   check('เปิดใช้งานคืนได้', (await call('PATCH', `/api/admin/users/${target.id}/status`, { status: 'active' }, a.cookie)).status === 200);

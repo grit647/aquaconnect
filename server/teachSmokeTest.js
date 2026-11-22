@@ -214,6 +214,22 @@ async function call(method, path, body, cookie) {
   await call('POST', `/api/chat/conversations/${sB.json.conversation.id}/messages`, { content: 'สวัสดีอีกที' }, B.cookie);
   check('ชื่อสมัครยาวและยังไม่ตั้งชื่อเรียก → เลขาถูกสั่งให้ถามชื่อที่อยากให้เรียกครั้งเดียว', lastChatPrompt.includes('ชื่อที่ผู้ใช้ใช้สมัครยาวมาก'));
 
+  // ---------- โปรไฟล์ (กดรูปโปรไฟล์): สรุปขนาดข้อมูล + แก้โปรไฟล์ ----------
+  check('ไม่ล็อกอินดูโปรไฟล์ไม่ได้ (401)', (await call('GET', '/api/me/summary')).status === 401);
+  const sum = await call('GET', '/api/me/summary', null, A.cookie);
+  check('สรุปโปรไฟล์: มีขนาดข้อมูล (ไบต์) แยกตามส่วน และสิทธิ์ Google (ค่าเริ่มต้นปิด)', sum.status === 200 && sum.json.usage.totalBytes > 0 && sum.json.usage.parts.length === 4 && sum.json.usage.parts.find((p) => p.key === 'messages').count >= 4 && sum.json.google.enabled === false && sum.json.google.count === 0, JSON.stringify(sum.json.usage && sum.json.usage.totalBytes));
+  check('ขนาดรวมเท่าผลรวมแต่ละส่วน', sum.json.usage.totalBytes === sum.json.usage.parts.reduce((a, p) => a + p.bytes, 0));
+  check('สรุปของ B ไม่ปนข้อมูลของ A (ชื่อ/เบอร์เป็นของ B)', (await call('GET', '/api/me/summary', null, B.cookie)).json.profile.phone === PHONES[1]);
+  const pe = await call('PATCH', '/api/me/profile', { name: 'ทดสอบ สอน ใหม่', callName: 'ต้น', secretaryName: 'ครีม' }, A.cookie);
+  const rowP = (await query('SELECT name, call_name, secretary_name FROM users WHERE id = $1', [uidA])).rows[0];
+  check('แก้โปรไฟล์ได้ (ชื่อ/ชื่อที่ให้เรียก/ชื่อเลขา)', pe.status === 200 && rowP.name === 'ทดสอบ สอน ใหม่' && rowP.call_name === 'ต้น' && rowP.secretary_name === 'ครีม');
+  check('เว้นชื่อที่ให้เรียกว่าง → ล้างกลับไปเรียกตามชื่อสมัคร', (await call('PATCH', '/api/me/profile', { name: 'ทดสอบ สอน ใหม่', callName: '', secretaryName: 'ครีม' }, A.cookie)).status === 200 && (await query('SELECT call_name FROM users WHERE id = $1', [uidA])).rows[0].call_name === null);
+  check('ชื่อว่าง/ยาวเกิน/มีอักขระต้องห้าม/ชื่อเลขายาวเกิน → 400', (await call('PATCH', '/api/me/profile', { name: '  ', secretaryName: 'ครีม' }, A.cookie)).status === 400
+    && (await call('PATCH', '/api/me/profile', { name: 'x'.repeat(101), secretaryName: 'ครีม' }, A.cookie)).status === 400
+    && (await call('PATCH', '/api/me/profile', { name: 'ชื่อ <b>', secretaryName: 'ครีม' }, A.cookie)).status === 400
+    && (await call('PATCH', '/api/me/profile', { name: 'ชื่อ', secretaryName: 'ชื่อเลขาที่ยาวเกินยี่สิบตัวอักษรแน่ๆ' }, A.cookie)).status === 400);
+  check('แก้โปรไฟล์ของ A ไม่กระทบ B', (await query('SELECT secretary_name FROM users WHERE id = $1', [uidB])).rows[0].secretary_name !== 'ครีม');
+
   // ---------- ลบหมวด + เนื้อหาทั้งหมด ----------
   const delCat = async (uid, name, n) => { for (let i = 0; i < n; i++) await memory.saveMemory(uid, name, 'รายการทดสอบลบ ' + i + ' ของหมวด ' + name); return (await query('SELECT id FROM memory_categories WHERE owner_id = $1 AND name = $2', [uid, name])).rows[0].id; };
   const idDel = await delCat(uidB, 'หมวดทดลองลบ', 3);

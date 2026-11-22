@@ -44,7 +44,7 @@ router.get('/overview', async (req, res) => {
 router.get('/users', async (req, res) => {
   try {
     const r = await query(
-      `SELECT u.id, u.name, u.phone, u.is_admin, u.status, (u.line_user_id IS NOT NULL) AS line_linked, u.line_picture_url AS picture, u.created_at,
+      `SELECT u.id, u.name, u.phone, u.is_admin, u.status, (u.line_user_id IS NOT NULL) AS line_linked, u.google_search_enabled, u.google_search_count, u.line_picture_url AS picture, u.created_at,
               (SELECT count(*)::int FROM messages m WHERE m.user_id = u.id AND m.role = 'user') AS messages,
               (SELECT count(*)::int FROM memories x WHERE x.owner_id = u.id) AS memories,
               COALESCE(b.balance, 0) AS balance,
@@ -55,6 +55,20 @@ router.get('/users', async (req, res) => {
     res.json({ users: r.rows.map((x) => ({ ...x, balance: Number(x.balance) })) });
   } catch (err) {
     console.error('admin users error:', err);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดฝั่งเซิร์ฟเวอร์' });
+  }
+});
+
+// แอดมินกำหนดว่าใครค้นหาข้อมูลภายนอกด้วย Google ได้ (ผู้ใช้เปิดเองไม่ได้)
+router.patch('/users/:id/google', async (req, res) => {
+  try {
+    if (!UUID_RE.test(req.params.id)) return res.status(404).json({ error: 'ไม่พบผู้ใช้' });
+    const enabled = !!(req.body && req.body.enabled === true);
+    const r = await query('UPDATE users SET google_search_enabled = $2 WHERE id = $1 RETURNING id, google_search_enabled', [req.params.id, enabled]);
+    if (!r.rows[0]) return res.status(404).json({ error: 'ไม่พบผู้ใช้' });
+    res.json({ ok: true, user: r.rows[0] });
+  } catch (err) {
+    console.error('admin google flag error:', err);
     res.status(500).json({ error: 'เกิดข้อผิดพลาดฝั่งเซิร์ฟเวอร์' });
   }
 });

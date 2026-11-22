@@ -119,6 +119,78 @@
   }
   function renderAvatar() { avatarContent($('avatar')); }
 
+  // ---------- โปรไฟล์ (กดรูปโปรไฟล์): อัปเดตโปรไฟล์ / ขนาดข้อมูลส่วนตัว / กลุ่ม / ค้นหาด้วย Google ----------
+  const fmtBytes = (b) => (b >= 1048576 ? (b / 1048576).toFixed(2) + ' MB' : (b / 1024).toFixed(1) + ' KB');
+  function profileBack(body) { sheetButton(body, '← กลับเมนูโปรไฟล์', showProfileMenu); }
+  function showProfileMenu() {
+    const body = openSheet('โปรไฟล์ของฉัน');
+    if (me) {
+      const head = document.createElement('div'); head.className = 'menu-head';
+      const av = document.createElement('div'); av.className = 'av'; avatarContent(av);
+      const who = document.createElement('div'); who.className = 'who';
+      const nm = document.createElement('b'); nm.textContent = me.callName || me.name;
+      const sm = document.createElement('small'); sm.textContent = 'เลขา: ' + me.secretaryName;
+      who.append(nm, sm); head.append(av, who); body.appendChild(head);
+    }
+    sheetButton(body, '✏️ 1. อัปเดตโปรไฟล์', showProfileEdit);
+    sheetButton(body, '💾 2. ข้อมูลส่วนตัวของฉัน (ขนาดข้อมูล)', showDataUsage);
+    sheetButton(body, '👥 3. กลุ่ม (เร็วๆ นี้)', showGroupsSoon);
+    sheetButton(body, '🔎 4. ค้นหาด้วย Google', showGoogleInfo);
+  }
+  async function loadSummary(body) {
+    try { return await api('GET', '/api/me/summary'); } catch (err) { note(body, err.message); return null; }
+  }
+  async function showProfileEdit() {
+    const body = openSheet('อัปเดตโปรไฟล์');
+    const s = await loadSummary(body);
+    if (!s) { profileBack(body); return; }
+    const mk = (label, value, max, hint) => {
+      note(body, label);
+      const i = document.createElement('input'); i.type = 'text'; i.maxLength = max; i.value = value || ''; if (hint) i.placeholder = hint;
+      body.appendChild(i); return i;
+    };
+    const name = mk('ชื่อของคุณ (ชื่อที่ใช้สมัคร)', s.profile.name, 100);
+    const call = mk('ชื่อที่ให้เลขาเรียกคุณ (สั้นๆ เช่น ชื่อเล่น — เว้นว่าง = เรียกตามชื่อสมัคร)', s.profile.callName, 20, 'เช่น พี่ต้น');
+    const sec = mk('ชื่อของเลขา', s.profile.secretaryName, 20, 'เช่น น้องครีม');
+    const msg = note(body, '');
+    sheetButton(body, '💾 บันทึกโปรไฟล์', async () => {
+      try {
+        const r = await api('PATCH', '/api/me/profile', { name: name.value, callName: call.value, secretaryName: sec.value });
+        me.name = r.profile.name; me.callName = r.profile.callName || null; me.secretaryName = r.profile.secretaryName;
+        renderAvatar();
+        msg.textContent = '✓ บันทึกแล้วค่ะ';
+      } catch (err) { msg.textContent = err.message; }
+    });
+    profileBack(body);
+  }
+  async function showDataUsage() {
+    const body = openSheet('ข้อมูลส่วนตัวของฉัน');
+    const s = await loadSummary(body);
+    if (s) {
+      const big = note(body, fmtBytes(s.usage.totalBytes)); big.className = 'bal';
+      note(body, 'ขนาดข้อมูลข้อความของคุณทั้งหมดบนแพลตฟอร์ม (ไม่รวมรูป/ไฟล์ที่แนบ เพราะไม่ได้เก็บถาวร)');
+      s.usage.parts.forEach((p) => note(body, p.label + ' · ' + p.count + ' รายการ · ' + fmtBytes(p.bytes)));
+    }
+    profileBack(body);
+  }
+  function showGroupsSoon() {
+    const body = openSheet('กลุ่ม');
+    note(body, '👥 กลุ่มสนทนา (กำลังพัฒนา)\nเร็วๆ นี้คุณจะสร้างกลุ่มคุยกับคนอื่นได้ คล้ายกลุ่มไลน์ แต่คุยกันบนแพลตฟอร์มของเรา ไม่ใช่การส่งข้อความทางไลน์');
+    profileBack(body);
+  }
+  async function showGoogleInfo() {
+    const body = openSheet('ค้นหาด้วย Google');
+    const s = await loadSummary(body);
+    if (s) {
+      note(body, s.google.enabled ? '✅ คุณได้รับอนุญาตให้ค้นหาข้อมูลภายนอกด้วย Google' : '🔒 ยังไม่ได้รับอนุญาต — สิทธิ์นี้แอดมินเป็นคนกำหนดให้ทีละคน');
+      note(body, 'จำนวนการเชื่อมต่อ Google ที่ใช้ไปแล้ว: ' + s.google.count + ' ครั้ง');
+      note(body, 'ตัวค้นหาข้อมูลภายนอกกำลังพัฒนา ตอนนี้เป็นการกำหนดสิทธิ์และนับจำนวนไว้ก่อน');
+    }
+    profileBack(body);
+  }
+  $('avatar').addEventListener('click', showProfileMenu);
+  $('avatar').style.cursor = 'pointer';
+
   // ---------- สถานะบอท ----------
   const STATE_TEXT = { idle: 'พร้อมคุยค่ะ', thinking: 'เลขากำลังคิด...', speaking: 'เลขากำลังพูด...', listening: 'กำลังฟังอยู่ค่ะ...' };
   let botState = 'idle';

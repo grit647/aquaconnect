@@ -290,4 +290,4 @@ function buildTools(userId, conversationId) {
   };
 }
 
-module.exports = { buildSystemPrompt, buildTools };
+module.exports = { buildSystemPrompt, buildTools, cleanShortName };

@@ -221,7 +221,7 @@ button.act.danger { color:var(--danger); border-color:var(--danger); }
   async function loadUsers() {
     const { users } = await api('GET', '/api/admin/users');
     const t = $('users'); t.textContent = '';
-    const head = el('tr'); ['ชื่อ', 'เบอร์', 'ไลน์', 'ข้อความ', 'ความจำ', 'เครดิต', 'สถานะ', ''].forEach((h) => head.appendChild(el('th', h))); t.appendChild(head);
+    const head = el('tr'); ['ชื่อ', 'เบอร์', 'ไลน์', 'ข้อความ', 'ความจำ', 'เครดิต', 'ค้นหา Google', 'สถานะ', ''].forEach((h) => head.appendChild(el('th', h))); t.appendChild(head);
     users.forEach((u) => {
       const tr = el('tr');
       const nameTd = el('td'); const who = el('div', undefined, 'who'); who.appendChild(avatarEl(u.name, u.picture)); who.appendChild(el('span', u.name + (u.is_admin ? ' (แอดมิน)' : ''))); nameTd.appendChild(who); tr.appendChild(nameTd);
@@ -237,6 +237,14 @@ button.act.danger { color:var(--danger); border-color:var(--danger); }
         creditTd.appendChild(cb);
       } else creditTd.appendChild(el('span', '-', 'muted'));
       tr.appendChild(creditTd);
+      const gTd = el('td');
+      const gb = el('button', (u.google_search_enabled ? '✅ อนุญาต' : '🔒 ปิด') + ' (' + u.google_search_count + ')', 'act' + (u.google_search_enabled ? '' : ' danger'));
+      gb.title = 'กดเพื่อสลับสิทธิ์ค้นหาข้อมูลภายนอกด้วย Google ของคนนี้ (ตัวเลข = จำนวนครั้งที่ใช้)';
+      gb.addEventListener('click', async () => {
+        try { await api('PATCH', '/api/admin/users/' + u.id + '/google', { enabled: !u.google_search_enabled }); toast('เรียบร้อย'); loadUsers(); }
+        catch (e) { toast(e.message); }
+      });
+      gTd.appendChild(gb); tr.appendChild(gTd);
       const st = el('td'); st.appendChild(el('span', u.status === 'active' ? 'ใช้งาน' : 'ถูกระงับ', 'pill ' + (u.status === 'active' ? 'ok' : 'bad'))); tr.appendChild(st);
       const act = el('td');
       if (!u.is_admin) {
