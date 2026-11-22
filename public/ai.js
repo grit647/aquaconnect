@@ -14,6 +14,13 @@
   let me = null;
   let conversationId = null;
   let focusCategory = '';      // หมวดที่ผู้ใช้เลือกคุยต่อ/อัปเดตข้อมูล ('' = ไม่ได้เลือก)
+  let convTitle = '';          // หัวข้อของบทสนทนาปัจจุบัน (ตั้งจากข้อความแรก)
+  // หัวข้อที่แสดงบนหน้าสนทนาด้วยเสียง: ถ้าเลือกหมวดไว้แสดงหมวด ไม่งั้นแสดงเรื่องที่คุย
+  function updateTopic() {
+    const el = document.getElementById('vTopic');
+    if (!el) return;
+    el.textContent = focusCategory ? '📂 หมวด: ' + focusCategory : (convTitle ? '💬 เรื่อง: ' + convTitle : '💬 เรื่องใหม่ — พูดได้เลยค่ะ');
+  }
   let sending = false;
   let lineIdToken = null;        // ID token จาก LIFF (มีเฉพาะตอนเปิดในไลน์)
   let voiceMode = false; let voicePaused = false; let voiceStream = null; let idleCycles = 0;   // หน้าสนทนาเสียงต่อเนื่อง (ประกาศไว้บนสุด กันเรียกใช้ก่อนประกาศ)
@@ -171,6 +178,7 @@
     focusCategory = name || '';
     $('focusBar').hidden = !focusCategory;
     $('focusText').textContent = focusCategory ? '📂 กำลังคุยต่อ/อัปเดตในหมวด: ' + focusCategory : '';
+    updateTopic();
   }
   $('focusEnd').addEventListener('click', () => { setFocus(''); addBubble('assistant', 'เลิกคุยในหมวดนั้นแล้วค่ะ คุยเรื่องอื่นได้เลย'); });
 
@@ -233,7 +241,7 @@
   function scrollToBottom() { logEl.scrollTop = logEl.scrollHeight; }
 
   function showHint() {
-    addBubble('hint', 'สวัสดีค่ะ คุณ' + me.name + ' มีอะไรให้' + me.secretaryName + 'ช่วยไหมคะ\nพิมพ์ หรือกดไมค์🎤 แล้วพูดได้เลย เช่น "จำไว้ในหมวดฟาร์ม ว่าบ่อ 2 ปล่อยกุ้งวันที่ 5"');
+    addBubble('hint', 'สวัสดีค่ะ ' + (me.callName || 'คุณ' + me.name) + ' มีอะไรให้' + me.secretaryName + 'ช่วยไหมคะ\nพิมพ์ หรือกดไมค์🎤 แล้วพูดได้เลย เช่น "จำไว้ในหมวดฟาร์ม ว่าบ่อ 2 ปล่อยกุ้งวันที่ 5"');
   }
 
   async function openConversation(id) {
@@ -241,7 +249,9 @@
     logEl.textContent = '';
     closeSheet();
     try {
-      const { messages } = await api('GET', '/api/chat/conversations/' + id + '/messages');
+      const { messages, conversation } = await api('GET', '/api/chat/conversations/' + id + '/messages');
+      convTitle = (conversation && conversation.title) || '';
+      updateTopic();
       if (!messages.length) showHint();
       messages.forEach((m) => { if (m.role !== 'system') addBubble(m.role, m.content); });
     } catch (err) {
@@ -392,12 +402,15 @@
     setBotState('thinking');
     let replyText = null;
     try {
-      const { reply, savedMemories, createdEvents } = await api('POST', '/api/chat/conversations/' + conversationId + '/messages', { content: text, source: source || 'text', askRequestId: connected ? connected.requestId : undefined, attachments: files.length ? files : undefined, focusCategory: focusCategory || undefined });
+      const { reply, savedMemories, createdEvents, profile } = await api('POST', '/api/chat/conversations/' + conversationId + '/messages', { content: text, source: source || 'text', askRequestId: connected ? connected.requestId : undefined, attachments: files.length ? files : undefined, focusCategory: focusCategory || undefined });
       typing.remove();
       addBubble('assistant', reply);
       (savedMemories || []).forEach((m) => addSavedChip(m.category));
       (createdEvents || []).forEach(addEventChip);
       // (ข้อเสนอให้จำ/สรุปแยกหมวด จะถามตอนกลับเข้าแอป ไม่โผล่กลางบทสนทนา — ไม่ให้ดูซ้ำซาก)
+      if (!convTitle) convTitle = text.slice(0, 50);   // เซิร์ฟเวอร์ตั้งชื่อหัวข้อจากข้อความแรกเหมือนกัน
+      updateTopic();
+      if (profile) { if (profile.secretaryName) me.secretaryName = profile.secretaryName; if (profile.callName !== undefined) me.callName = profile.callName; }   // ผู้ใช้เพิ่งตั้งชื่อเลขา/ชื่อที่ให้เรียก
       replyText = reply;
       if (voiceMode) vCaption(null, reply);
       if (files.length) { pendingFiles = []; renderTray(); }
@@ -516,6 +529,7 @@
     if (!me) return;
     // เปิดอยู่ในเบราว์เซอร์ของไลน์ (ไมค์/หน้าต่างลอยใช้ไม่ได้) → เด้งไปเปิดใน Chrome แล้วเข้าโหมดสนทนาเสียงต่อให้เลย
     if (inLine) { addBubble('assistant', 'กำลังเปิดใน Chrome เพื่อคุยด้วยเสียง…'); openExternal('voice'); return; }
+    updateTopic();
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
       addBubble('error', 'เบราว์เซอร์นี้ยังอัดเสียงไม่ได้ — เปิดในเบราว์เซอร์ปกติ หรือพิมพ์แทนได้ค่ะ');
       addBrowserButton();
@@ -828,7 +842,7 @@
       const head = document.createElement('div'); head.className = 'menu-head';
       const av = document.createElement('div'); av.className = 'av'; avatarContent(av);
       const who = document.createElement('div'); who.className = 'who';
-      const nm = document.createElement('b'); nm.textContent = me.name; const sm = document.createElement('small'); sm.textContent = 'เลขา: ' + me.secretaryName;
+      const nm = document.createElement('b'); nm.textContent = me.callName || me.name; const sm = document.createElement('small'); sm.textContent = 'เลขา: ' + me.secretaryName;
       who.append(nm, sm); head.append(av, who); body.appendChild(head);
     }
     sheetButton(body, '➕ เริ่มหัวข้อใหม่', async () => { try { await newConversation(); } catch (err) { addBubble('error', err.message); } });

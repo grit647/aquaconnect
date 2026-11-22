@@ -62,6 +62,7 @@ function publicUser(u) {
     phone: u.phone,
     isAdmin: !!u.is_admin,
     secretaryName: u.secretary_name,
+    callName: u.call_name || null,
     pictureUrl: u.line_picture_url || null,
   };
 }
@@ -144,7 +145,7 @@ router.post('/register', async (req, res) => {
     // สร้างบัญชี + กระเป๋าเครดิต (ยอด 0) เป็นก้อนเดียว ถ้าพังกลางทางย้อนกลับทั้งหมด
     const user = await withTransaction(async (c) => {
       const r = await c.query(
-        'INSERT INTO users (phone, pin_hash, name) VALUES ($1, $2, $3) RETURNING id, phone, name, is_admin, secretary_name',
+        'INSERT INTO users (phone, pin_hash, name) VALUES ($1, $2, $3) RETURNING id, phone, name, is_admin, secretary_name, call_name',
         [phone, pinHash, name.trim()]
       );
       await c.query('INSERT INTO credit_balances (user_id) VALUES ($1)', [r.rows[0].id]);
@@ -181,7 +182,7 @@ router.post('/login', async (req, res) => {
     }
 
     const r = await query(
-      'SELECT id, phone, name, pin_hash, is_admin, status, secretary_name, line_picture_url FROM users WHERE phone = $1',
+      'SELECT id, phone, name, pin_hash, is_admin, status, secretary_name, call_name, line_picture_url FROM users WHERE phone = $1',
       [phone]
     );
     const user = r.rows[0];
@@ -228,7 +229,7 @@ router.post('/line', async (req, res) => {
     }
 
     const r = await query(
-      'SELECT id, phone, name, is_admin, status, secretary_name, line_picture_url FROM users WHERE line_user_id = $1',
+      'SELECT id, phone, name, is_admin, status, secretary_name, call_name, line_picture_url FROM users WHERE line_user_id = $1',
       [info.lineUserId]
     );
     const user = r.rows[0];
@@ -290,7 +291,7 @@ router.get('/me', async (req, res) => {
   if (!session) return res.json({ user: null });
   try {
     const r = await query(
-      "SELECT id, phone, name, is_admin, secretary_name, line_picture_url FROM users WHERE id = $1 AND status = 'active'",
+      "SELECT id, phone, name, is_admin, secretary_name, call_name, line_picture_url FROM users WHERE id = $1 AND status = 'active'",
       [session.id]
     );
     res.json({ user: r.rows[0] ? publicUser(r.rows[0]) : null });

@@ -25,6 +25,10 @@ ai.setCallModelForTests(async ({ systemPrompt, contents }) => {
   const last = contents[contents.length - 1];
   if (last.parts.some((p) => p.functionResponse)) return { parts: [{ text: 'เรียบร้อยค่ะ' }], usage: {} };
   const text = (last.parts[0] && last.parts[0].text) || '';
+  if (text.includes('เปลี่ยนชื่อเลขา')) return { parts: [{ functionCall: { name: 'set_secretary_name', args: { name: 'น้องครีม' } } }], usage: {} };
+  if (text.includes('เรียกฉันว่า')) return { parts: [{ functionCall: { name: 'set_user_call_name', args: { name: 'พี่ต้น' } } }], usage: {} };
+  if (text.includes('ชื่อยาวเกิน')) return { parts: [{ functionCall: { name: 'set_secretary_name', args: { name: 'ชื่อที่ยาวมากเกินไปจนอ่านออกเสียงไม่ไหว' } } }], usage: {} };
+  if (text.includes('ชื่อมีเครื่องหมาย')) return { parts: [{ functionCall: { name: 'set_user_call_name', args: { name: 'พี่ "ต้น" <b>' } } }], usage: {} };
   if (text.includes('ตั้งโหมดบันทึกเอง')) return { parts: [{ functionCall: { name: 'set_organize_mode', args: { mode: 'auto' } } }], usage: {} };
   if (text.includes('สอนเลขา')) return { parts: [{ functionCall: { name: 'save_memory', args: { category: 'ความสามารถเลขา', content: '[บทเรียน] ชอบให้ตอบสั้นๆ' } } }], usage: {} };
   if (text === 'ยืนยัน') {
@@ -188,6 +192,28 @@ async function call(method, path, body, cookie) {
   check('โหมดแปลก → ปฏิเสธ', (await call('POST', '/api/chat/organize-mode', { mode: 'banana' }, B.cookie)).status === 400);
   check('A ไม่เห็น/สรุปบทสนทนาของ B ไม่ได้', (await call('POST', `/api/chat/conversations/${cOld}/organize`, {}, A.cookie)).status === 400);
 
+  // ---------- ตั้งชื่อเลขา + ชื่อที่ให้เลขาเรียกผู้ใช้ ----------
+  const convN = (await call('POST', '/api/chat/conversations', {}, A.cookie)).json.conversation;
+  const n1 = await call('POST', `/api/chat/conversations/${convN.id}/messages`, { content: 'เปลี่ยนชื่อเลขาเป็นน้องครีม' }, A.cookie);
+  const rowN1 = (await query('SELECT secretary_name FROM users WHERE id = $1', [uidA])).rows[0];
+  check('ผู้ใช้สั่งเปลี่ยนชื่อเลขา → บันทึกจริง + ส่งชื่อใหม่กลับให้หน้าจอ', rowN1.secretary_name === 'น้องครีม' && n1.json.profile && n1.json.profile.secretaryName === 'น้องครีม', JSON.stringify(n1.json.profile));
+  const n2 = await call('POST', `/api/chat/conversations/${convN.id}/messages`, { content: 'เรียกฉันว่าพี่ต้นนะ' }, A.cookie);
+  check('ผู้ใช้ตั้งชื่อที่ให้เลขาเรียก → บันทึกจริง', (await query('SELECT call_name FROM users WHERE id = $1', [uidA])).rows[0].call_name === 'พี่ต้น' && n2.json.profile && n2.json.profile.callName === 'พี่ต้น');
+  await call('POST', `/api/chat/conversations/${convN.id}/messages`, { content: 'สวัสดี' }, A.cookie);
+  check('prompt รอบต่อไปใช้ชื่อเลขาใหม่ + เรียกผู้ใช้ตามที่ตั้ง', lastChatPrompt.includes('คุณคือ "น้องครีม"') && lastChatPrompt.includes('เรียกผู้ใช้ว่า "พี่ต้น"') && lastChatPrompt.includes('ใช้ตามนี้เสมอ'));
+  const meA = await call('GET', '/api/auth/me', null, A.cookie);
+  check('/api/auth/me ส่งชื่อเลขาและชื่อที่ให้เรียกกลับมา (กลับเข้าแอปแล้วยังจำได้)', meA.json.user && meA.json.user.secretaryName === 'น้องครีม' && meA.json.user.callName === 'พี่ต้น', JSON.stringify(meA.json.user && [meA.json.user.secretaryName, meA.json.user.callName]));
+  await call('POST', `/api/chat/conversations/${convN.id}/messages`, { content: 'ชื่อยาวเกิน' }, A.cookie);
+  check('ชื่อยาวเกิน 20 ตัวอักษร → ไม่เปลี่ยน', (await query('SELECT secretary_name FROM users WHERE id = $1', [uidA])).rows[0].secretary_name === 'น้องครีม');
+  await call('POST', `/api/chat/conversations/${convN.id}/messages`, { content: 'ชื่อมีเครื่องหมาย' }, A.cookie);
+  check('ชื่อที่มี " < > ใช้ไม่ได้ (กันแทรกคำสั่งใน prompt)', (await query('SELECT call_name FROM users WHERE id = $1', [uidA])).rows[0].call_name === 'พี่ต้น');
+  const sB = await call('POST', '/api/chat/conversations', {}, B.cookie);
+  await call('POST', `/api/chat/conversations/${sB.json.conversation.id}/messages`, { content: 'สวัสดี' }, B.cookie);
+  check('ชื่อของ A ไม่รั่วไปถึง B', !lastChatPrompt.includes('คุณคือ "น้องครีม"') && !lastChatPrompt.includes('เรียกผู้ใช้ว่า "พี่ต้น"'));
+  await query('UPDATE users SET name = $2 WHERE id = $1', [uidB, 'ชื่อสมัครที่ยาวมากเกินสิบสองตัวอักษรขึ้นไป']);
+  await call('POST', `/api/chat/conversations/${sB.json.conversation.id}/messages`, { content: 'สวัสดีอีกที' }, B.cookie);
+  check('ชื่อสมัครยาวและยังไม่ตั้งชื่อเรียก → เลขาถูกสั่งให้ถามชื่อที่อยากให้เรียกครั้งเดียว', lastChatPrompt.includes('ชื่อที่ผู้ใช้ใช้สมัครยาวมาก'));
+
   // ---------- ลบหมวด + เนื้อหาทั้งหมด ----------
   const delCat = async (uid, name, n) => { for (let i = 0; i < n; i++) await memory.saveMemory(uid, name, 'รายการทดสอบลบ ' + i + ' ของหมวด ' + name); return (await query('SELECT id FROM memory_categories WHERE owner_id = $1 AND name = $2', [uid, name])).rows[0].id; };
   const idDel = await delCat(uidB, 'หมวดทดลองลบ', 3);
@@ -216,7 +242,9 @@ async function call(method, path, body, cookie) {
   await new Promise((r) => setTimeout(r, 300)); // รอการไตร่ตรองเบื้องหลังที่ค้างอยู่จบก่อน
   const del = await query('DELETE FROM users WHERE phone = ANY($1)', [PHONES]);
   const end = await counts();
-  check('ลบข้อมูลทดสอบหมดเกลี้ยง', del.rowCount === 2 && JSON.stringify(end) === JSON.stringify(base), `ก่อน ${JSON.stringify(base)} หลัง ${JSON.stringify(end)}`);
+  const leftover = (await query('SELECT (SELECT count(*)::int FROM users WHERE phone = ANY($1)) AS u', [PHONES])).rows[0].u;
+  // (ไม่เทียบจำนวนทั้งระบบเป๊ะๆ แล้ว: ฐานข้อมูลนี้มีเจ้าของใช้งานจริงอยู่พร้อมกัน จำนวนอาจเปลี่ยนระหว่างทดสอบ — เช็กว่าของทดสอบหมดแทน)
+  check('ลบข้อมูลทดสอบหมดเกลี้ยง (ผู้ใช้ทดสอบและข้อมูลที่ผูกอยู่หายหมด)', del.rowCount === 2 && leftover === 0 && end.users === base.users, `ก่อน ${JSON.stringify(base)} หลัง ${JSON.stringify(end)}`);
 
   server.close();
   await getPool().end();

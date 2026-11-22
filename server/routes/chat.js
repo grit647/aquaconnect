@@ -278,7 +278,7 @@ router.post('/conversations/:id/messages', async (req, res) => {
 
     // ข้อมูลผู้ใช้สดจากฐานข้อมูล (ชื่อเลขา/บุคลิก) + ประวัติการคุยล่าสุด + ความจำ
     const [u, hist, memoryContext, pendingRequests, pendingProposals] = await Promise.all([
-      query("SELECT name, secretary_name, secretary_persona FROM users WHERE id = $1 AND status = 'active'", [req.user.id]),
+      query("SELECT name, secretary_name, call_name, secretary_persona FROM users WHERE id = $1 AND status = 'active'", [req.user.id]),
       query(
         `SELECT role, content FROM (
            SELECT id, role, content FROM messages WHERE conversation_id = $1 ORDER BY id DESC LIMIT ${HISTORY_LIMIT}
@@ -300,6 +300,7 @@ router.post('/conversations/:id/messages', async (req, res) => {
 
     const systemPrompt = buildSystemPrompt({
       secretaryName: user.secretary_name,
+      callName: user.call_name || '',
       persona: user.secretary_persona,
       userName: user.name,
       memoryContext,
@@ -338,7 +339,13 @@ router.post('/conversations/:id/messages', async (req, res) => {
     // ไตร่ตรองเบื้องหลังเมื่อคุยครบรอบ (ไม่หน่วงคำตอบ) — ข้อเสนอใหม่จะโผล่ให้ยืนยันในรอบถัดไป/ตอนแอปถามข้อเสนอ
     maybeReflect(req.user.id, conv.id).catch(() => { /* ไม่กระทบการคุย */ });
     const decided = result.executed.filter((e) => (e.name === 'confirm_memory_proposal' || e.name === 'reject_memory_proposal') && e.result && !e.result.error).length;
-    res.json({ reply: result.text, savedMemories, createdEvents, proposals: decided ? await listPendingProposals(req.user.id) : pendingProposals });
+    // ผู้ใช้เพิ่งตั้งชื่อเลขา/ชื่อที่ให้เรียก → ส่งค่าใหม่กลับไปให้หน้าจออัปเดตทันที
+    const profile = {};
+    for (const e of result.executed) {
+      if (e.name === 'set_secretary_name' && e.result && e.result.ok) profile.secretaryName = e.result.secretaryName;
+      if (e.name === 'set_user_call_name' && e.result && e.result.ok) profile.callName = e.result.callName;
+    }
+    res.json({ reply: result.text, savedMemories, createdEvents, profile: Object.keys(profile).length ? profile : undefined, proposals: decided ? await listPendingProposals(req.user.id) : pendingProposals });
   } catch (err) {
     console.error('POST message error:', err);
     res.status(500).json({ error: 'เกิดข้อผิดพลาดฝั่งเซิร์ฟเวอร์ ลองใหม่อีกครั้ง' });

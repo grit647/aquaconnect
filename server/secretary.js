@@ -8,12 +8,23 @@ const cal = require('./calendar');
 // ไม่งั้นโมเดลจะสลับ "ครับ/ค่ะ" ไปมาระหว่างข้อความ
 const DEFAULT_PERSONA = 'เลขาผู้หญิง สุภาพ อบอุ่น เป็นกันเอง กระชับ ใช้คำลงท้าย "ค่ะ/นะคะ" เสมอ';
 
-function buildSystemPrompt({ secretaryName, persona, userName, memoryContext, pendingRequests = 0, nowText = '', pendingProposals = [], focusCategory = '', focusBlock = '' }) {
+// ชื่อที่ผู้ใช้ตั้งให้เลขา/ให้เลขาเรียกผู้ใช้: ตัดช่องว่างซ้ำ ไม่เกิน 20 ตัวอักษร (ชื่อยาวเวลาอ่านออกเสียงจะน่ารำคาญ) และห้ามมีอักขระควบคุม
+function cleanShortName(raw) {
+  const name = String(raw || '').split(/\s+/).join(' ').trim();
+  if (!name) throw new Error('ต้องระบุชื่อ');
+  if (name.length > 20) throw new Error('ชื่อยาวเกิน 20 ตัวอักษร ลองตั้งชื่อให้สั้นลง');
+  if (/[<>`{}"\\]/.test(name)) throw new Error('ชื่อมีตัวอักษรที่ใช้ไม่ได้');
+  return name;
+}
+
+function buildSystemPrompt({ secretaryName, persona, userName, memoryContext, pendingRequests = 0, nowText = '', pendingProposals = [], focusCategory = '', focusBlock = '', callName = '' }) {
+  const addr = callName || `คุณ${userName}`;   // คำที่เลขาใช้เรียกผู้ใช้ (ผู้ใช้ตั้งเองได้ ไม่งั้นใช้ "คุณ"+ชื่อที่สมัคร)
   return `คุณคือ "${secretaryName}" ผู้ช่วยส่วนตัว (เลขา) ของ "${userName}" บนแพลตฟอร์ม AquaConnect
 บุคลิก: ${persona || DEFAULT_PERSONA}
 
 กติกา:
-- เรียกผู้ใช้ว่า "คุณ${userName}" ห้ามเดาเพศของผู้ใช้
+- เรียกผู้ใช้ว่า "${addr}" ห้ามเดาเพศของผู้ใช้${callName ? ' (นี่คือชื่อที่ผู้ใช้ตั้งให้คุณเรียกเอง ใช้ตามนี้เสมอ ห้ามเติมคำนำหน้าเพิ่ม)' : ''}
+- ผู้ใช้ตั้งชื่อให้คุณใหม่ได้ (ตอนนี้คุณชื่อ "${secretaryName}") เช่น "เปลี่ยนชื่อเป็นน้องครีม" ให้เรียก set_secretary_name ทันที แล้วใช้ชื่อใหม่ต่อไป ห้ามบอกว่าเปลี่ยนชื่อไม่ได้ • ผู้ใช้ตั้งได้ด้วยว่าอยากให้คุณเรียกเขาว่าอะไร (เช่น ชื่อเล่น "พี่ต้น") ให้เรียก set_user_call_name ทันที${!callName && String(userName).length > 12 ? `\n- ชื่อที่ผู้ใช้ใช้สมัครยาวมาก ("${userName}") เวลาอ่านออกเสียงจะยาวเกินไป: ในข้อความแรกที่เหมาะสมให้ถามครั้งเดียวสั้นๆ ว่าอยากให้เรียกว่าอะไร แล้วเรียก set_user_call_name (ถ้าเขาไม่สนใจก็ไม่ต้องถามซ้ำ)` : ''}
 - พูดในมุมของเลขาเสมอ เช่น "บันทึกให้แล้วค่ะ" ไม่เล่าเหมือนพูดถึงผู้ใช้เป็นบุคคลที่สาม (ห้ามพูดแนว "คุณ... ได้บันทึกข้อมูล...")
 - ตอบสั้น กระชับ เป็นภาษาพูด เพราะคำตอบอาจถูกอ่านออกเสียง ห้ามใช้สัญลักษณ์ markdown (เช่น **, #, ---, ตาราง) ห้ามใช้อีโมจิ
 - คุณมีความจำถาวรแยกเป็น "หมวด" ผู้ใช้สั่งให้จำเรื่องอะไรไว้ในหมวดไหนก็ได้ (เช่น หมวดวิชาการ หมวดฟาร์ม)
@@ -35,7 +46,7 @@ function buildSystemPrompt({ secretaryName, persona, userName, memoryContext, pe
 ${pendingRequests > 0 ? `
 **แจ้งเตือน: มีคำขอเข้าถึงข้อมูลรออนุมัติ ${pendingRequests} รายการ** — บอกผู้ใช้ให้ทราบในข้อความแรกที่เหมาะสม และถามว่าจะดูไหม
 ` : ''}${pendingProposals.length ? `
-**มีสิ่งที่คุณสรุปไว้รอเจ้าของยืนยัน ${pendingProposals.length} ข้อ** — ในจังหวะที่เหมาะสม (ไม่ใช่ตอนเขากำลังสั่งงาน) ถามทีละข้อสั้นๆ ว่า "ที่คุณ${userName}สอนว่า ... จะให้เลขาจำไว้ไหมคะ" ถ้าเขาตอบรับให้เรียก confirm_memory_proposal ถ้าปฏิเสธให้เรียก reject_memory_proposal ห้ามตัดสินแทนเขา:
+**มีสิ่งที่คุณสรุปไว้รอเจ้าของยืนยัน ${pendingProposals.length} ข้อ** — ในจังหวะที่เหมาะสม (ไม่ใช่ตอนเขากำลังสั่งงาน) ถามทีละข้อสั้นๆ ว่า "ที่${addr}สอนว่า ... จะให้เลขาจำไว้ไหมคะ" ถ้าเขาตอบรับให้เรียก confirm_memory_proposal ถ้าปฏิเสธให้เรียก reject_memory_proposal ห้ามตัดสินแทนเขา:
 ${pendingProposals.map((p) => `- (id: ${p.id}) ${p.content}`).join('\n')}
 ` : ''}${focusCategory ? `
 **ตอนนี้ผู้ใช้เลือกคุยต่อ/อัปเดตข้อมูลในหมวด "${focusCategory}"** — ข้อมูลใหม่ที่เขาเล่าให้ถือเป็นการอัปเดตหมวดนี้ เทียบกับของเดิมด้านล่าง แล้วบอกถ้าขัดแย้งหรือซ้ำ เมื่อจบแต่ละประเด็นให้สรุปสั้นๆ แล้วถามครั้งเดียวว่าจะให้อัปเดตหมวดนี้ไหม (ห้ามถามทุกข้อความ) ถ้ายืนยันให้ save_memory ลงหมวด "${focusCategory}" นี้
@@ -123,6 +134,30 @@ function buildTools(userId, conversationId) {
         },
       },
       run: async (a) => ({ ok: true, ...(await sharing.requestAccess(userId, a.owner_id, a.category, a.message)) }),
+    },
+    set_secretary_name: {
+      declaration: {
+        name: 'set_secretary_name',
+        description: 'ตั้งชื่อใหม่ให้เลขา (ผู้ใช้อยากเรียกเลขาว่าอะไร เช่น น้องครีม) — เรียกเมื่อผู้ใช้บอกชัดเจน ชื่อสั้นไม่เกิน 20 ตัวอักษร',
+        parameters: { type: 'OBJECT', properties: { name: { type: 'STRING', description: 'ชื่อใหม่ของเลขา' } }, required: ['name'] },
+      },
+      run: async (args) => {
+        const name = cleanShortName(args.name);
+        await require('./db').query('UPDATE users SET secretary_name = $2 WHERE id = $1', [userId, name]);
+        return { ok: true, secretaryName: name };
+      },
+    },
+    set_user_call_name: {
+      declaration: {
+        name: 'set_user_call_name',
+        description: 'ตั้งชื่อที่เลขาจะใช้เรียกผู้ใช้ (เช่น ชื่อเล่น พี่ต้น คุณหมอ) — เรียกเมื่อผู้ใช้บอกชัดเจนว่าอยากให้เรียกว่าอะไร ไม่เกิน 20 ตัวอักษร',
+        parameters: { type: 'OBJECT', properties: { name: { type: 'STRING', description: 'คำที่ใช้เรียกผู้ใช้ ตามที่ผู้ใช้บอก' } }, required: ['name'] },
+      },
+      run: async (args) => {
+        const name = cleanShortName(args.name);
+        await require('./db').query('UPDATE users SET call_name = $2 WHERE id = $1', [userId, name]);
+        return { ok: true, callName: name };
+      },
     },
     set_organize_mode: {
       declaration: {
