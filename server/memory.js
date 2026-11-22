@@ -157,6 +157,35 @@ async function createProposals(userId, conversationId, items) {
   return created;
 }
 
+// ข้อเสนอ "ความรู้" จากการสรุปบทสนทนาแยกหมวด: items = [{ category: ชื่อหมวด (ที่มีอยู่หรือตั้งใหม่), summary }]
+// ไม่รับหมวด "ความสามารถเลขา" (หมวดนั้นมาจากการไตร่ตรองสิ่งที่เจ้าของสอนเท่านั้น) — คืนรายการที่สร้างใหม่
+async function createKnowledgeProposals(userId, conversationId, items, cap = 12) {
+  const pending = await listPendingProposals(userId);
+  const have = await query(
+    'SELECT c.name, m.content FROM memories m JOIN memory_categories c ON c.id = m.category_id WHERE m.owner_id = $1',
+    [userId]
+  );
+  const seen = new Set([...pending.map((p) => normText(p.category) + '|' + normText(p.content)), ...have.rows.map((x) => normText(x.name) + '|' + normText(x.content))]);
+  const created = [];
+  for (const it of Array.isArray(items) ? items : []) {
+    if (pending.length + created.length >= cap) break;
+    let category;
+    try { category = cleanCategoryName(it && it.category); } catch { continue; }
+    if (isSelfCategory(category)) continue;
+    const text = oneLine(it && (it.summary || it.content));
+    if (text.length < 8 || text.length > 700) continue;
+    const key = normText(category) + '|' + normText(text);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const r = await query(
+      'INSERT INTO memory_proposals (owner_id, category, content, source_conversation_id) VALUES ($1, $2, $3, $4) RETURNING id, category, content',
+      [userId, category, text, conversationId || null]
+    );
+    created.push(r.rows[0]);
+  }
+  return created;
+}
+
 // ยืนยัน (accept=true → บันทึกเป็นความจำในหมวดส่วนตัวของเจ้าของ) หรือปฏิเสธ — ตัดสินได้เฉพาะข้อเสนอของตัวเองที่ยังรออยู่
 async function decideProposal(userId, proposalId, accept) {
   const r = await query(
@@ -172,5 +201,5 @@ async function decideProposal(userId, proposalId, accept) {
 
 module.exports = {
   getMemoryContext, saveMemory, listCategories, recallMemories,
-  GENERAL_CATEGORY, SKILL_CATEGORY, MAIN_CATEGORIES, SELF_NAMES, isSelfCategory, ensureMainCategories, listPendingProposals, createProposals, decideProposal,
+  GENERAL_CATEGORY, SKILL_CATEGORY, MAIN_CATEGORIES, SELF_NAMES, isSelfCategory, ensureMainCategories, listPendingProposals, createProposals, createKnowledgeProposals, decideProposal,
 };

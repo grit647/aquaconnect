@@ -13,6 +13,7 @@
   let mode = 'login';            // 'login' | 'register'
   let me = null;
   let conversationId = null;
+  let focusCategory = '';      // หมวดที่ผู้ใช้เลือกคุยต่อ/อัปเดตข้อมูล ('' = ไม่ได้เลือก)
   let sending = false;
   let lineIdToken = null;        // ID token จาก LIFF (มีเฉพาะตอนเปิดในไลน์)
   let voiceMode = false; let voicePaused = false; let voiceStream = null; let idleCycles = 0;   // หน้าสนทนาเสียงต่อเนื่อง (ประกาศไว้บนสุด กันเรียกใช้ก่อนประกาศ)
@@ -164,6 +165,46 @@
   async function fetchProposals() {
     try { showProposals((await api('GET', '/api/chat/proposals')).proposals); } catch (e) { /* ไม่มีก็ข้าม */ }
   }
+
+  // ---------- เลือกหัวข้อ: คุยต่อ/อัปเดตข้อมูลในหมวดนั้น ----------
+  function setFocus(name) {
+    focusCategory = name || '';
+    $('focusBar').hidden = !focusCategory;
+    $('focusText').textContent = focusCategory ? '📂 กำลังคุยต่อ/อัปเดตในหมวด: ' + focusCategory : '';
+  }
+  $('focusEnd').addEventListener('click', () => { setFocus(''); addBubble('assistant', 'เลิกคุยในหมวดนั้นแล้วค่ะ คุยเรื่องอื่นได้เลย'); });
+
+  // ---------- กลับเข้าแอป: ถามเรื่องที่คุยค้างไว้ ครั้งเดียว (ผู้ใช้ตั้งเองได้ว่า ถามก่อน/บันทึกเอง/ไม่ถาม) ----------
+  async function checkOrganize() {
+    try {
+      await fetchProposals();
+      const r = await api('GET', '/api/chat/organize/pending');
+      const c = r.conversation;
+      if (!c) return;
+      const doOrganize = async (auto) => {
+        const res = await api('POST', '/api/chat/conversations/' + c.id + '/organize', { auto: !!auto });
+        (res.saved || []).forEach((m) => addSavedChip(m.category));
+        if (res.saved && res.saved.length) addBubble('assistant', 'เลขาสรุปเรื่องที่คุยค้างไว้และจัดเข้าหมวดให้แล้ว ' + res.saved.length + ' รายการค่ะ');
+        else if (res.proposals && res.proposals.length) { addBubble('assistant', 'เลขาสรุปเรื่องที่คุยค้างไว้แยกตามหมวดแล้วค่ะ ดูแล้วกด จำไว้ / ไม่ใช่ ได้เลย'); showProposals(res.proposals); }
+        else addBubble('assistant', 'ดูแล้วยังไม่มีอะไรใหม่ที่ต้องเก็บเพิ่มค่ะ');
+      };
+      if (r.mode === 'auto') { await doOrganize(true); return; }
+      const card = document.createElement('div');
+      card.className = 'proposal-card';
+      const t = document.createElement('div');
+      t.className = 'pp-text';
+      t.textContent = '🗂️ คราวก่อนเราคุยกัน ' + c.userMsgs + ' ข้อความ' + (c.title ? ' เรื่อง "' + c.title + '"' : '') + ' ยังไม่ได้เก็บแยกหมวด ให้เลขาสรุปแล้วเก็บเข้าหมวดให้ไหมคะ';
+      const row = document.createElement('div');
+      row.className = 'pp-row';
+      const mk = (label, cls, fn) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = label; if (cls) b.className = cls; b.addEventListener('click', async () => { row.querySelectorAll('button').forEach((x) => { x.disabled = true; }); card.remove(); try { await fn(); } catch (e) { addBubble('error', e.message); } }); row.appendChild(b); };
+      mk('✓ ให้สรุป', '', () => doOrganize(false));
+      mk('ไว้ก่อน', 'pp-no', () => api('POST', '/api/chat/conversations/' + c.id + '/organize/dismiss', {}));
+      mk('ไม่ต้องถามอีก', 'pp-no', () => api('POST', '/api/chat/conversations/' + c.id + '/organize/dismiss', { never: true }));
+      card.appendChild(t); card.appendChild(row);
+      logEl.appendChild(card);
+      scrollToBottom();
+    } catch (e) { /* ถามไม่ได้ก็ข้าม ไม่กระทบการใช้งาน */ }
+  }
   function addSavedChip(category) {
     const chip = document.createElement('div');
     chip.className = 'chip-saved';
@@ -228,6 +269,7 @@
       const { conversations } = await api('GET', '/api/chat/conversations');
       if (conversations.length) await openConversation(conversations[0].id);
       else await newConversation();
+      checkOrganize();   // กลับเข้าแอป: มีข้อเสนอรอยืนยัน/บทสนทนาที่ยังไม่ได้สรุปแยกหมวดไหม (ถามครั้งเดียว)
     } catch (err) {
       addBubble('error', err.message);
     }
@@ -350,13 +392,12 @@
     setBotState('thinking');
     let replyText = null;
     try {
-      const { reply, savedMemories, createdEvents, proposals } = await api('POST', '/api/chat/conversations/' + conversationId + '/messages', { content: text, source: source || 'text', askRequestId: connected ? connected.requestId : undefined, attachments: files.length ? files : undefined });
+      const { reply, savedMemories, createdEvents } = await api('POST', '/api/chat/conversations/' + conversationId + '/messages', { content: text, source: source || 'text', askRequestId: connected ? connected.requestId : undefined, attachments: files.length ? files : undefined, focusCategory: focusCategory || undefined });
       typing.remove();
       addBubble('assistant', reply);
       (savedMemories || []).forEach((m) => addSavedChip(m.category));
       (createdEvents || []).forEach(addEventChip);
-      showProposals(proposals);
-      setTimeout(fetchProposals, 9000); // เลขาไตร่ตรองเบื้องหลัง — ดึงข้อเสนอใหม่มาให้ยืนยัน
+      // (ข้อเสนอให้จำ/สรุปแยกหมวด จะถามตอนกลับเข้าแอป ไม่โผล่กลางบทสนทนา — ไม่ให้ดูซ้ำซาก)
       replyText = reply;
       if (voiceMode) vCaption(null, reply);
       if (files.length) { pendingFiles = []; renderTray(); }
@@ -1388,19 +1429,20 @@
   // ปุ่ม "จำไว้ให้เลขา": เลือกหมวด (หรือพิมพ์ชื่อหมวดใหม่) แล้วสั่งให้เลขาสรุปบทสนทนานี้เก็บเข้าความจำ
   $('saveMemoryBtn').addEventListener('click', async () => {
     if (sending) return;
-    const body = openSheet('จำสาระสำคัญของบทสนทนานี้ไว้ในหมวดไหน?');
-    const go = (cat) => {
+    const body = openSheet('เลือกหัวข้อที่จะคุยต่อ / อัปเดตข้อมูล');
+    const go = (cat, count) => {
       closeSheet();
-      send('สรุปสาระสำคัญของหัวข้อที่เราคุยกันนี้ แล้วจำไว้ให้ในหมวด "' + cat + '"', 'text');
+      setFocus(cat);
+      addBubble('assistant', 'เลือกหมวด "' + cat + '" แล้วค่ะ' + (count ? ' ตอนนี้มีข้อมูลอยู่ ' + count + ' รายการ' : ' เป็นหมวดใหม่ค่ะ') + ' เล่าข้อมูลใหม่หรือเรื่องที่จะอัปเดตได้เลย เลขาจะถามยืนยันก่อนบันทึกค่ะ');
     };
     try {
       const { categories } = await api('GET', '/api/chat/categories');
-      categories.forEach((c) => sheetButton(body, catIcon(c.name) + ' ' + c.name + ' (' + c.memories + ')', () => go(c.name), mainCatClass(c.name)));
+      categories.forEach((c) => sheetButton(body, catIcon(c.name) + ' ' + c.name + ' (' + c.memories + ')', () => go(c.name, c.memories), mainCatClass(c.name)));
     } catch (e) { /* โหลดหมวดไม่ได้ก็ยังตั้งหมวดใหม่ได้ */ }
     const inp = document.createElement('input');
-    inp.type = 'text'; inp.maxLength = 60; inp.placeholder = 'หรือพิมพ์ชื่อหมวดใหม่ แล้วกดตกลง';
+    inp.type = 'text'; inp.maxLength = 40; inp.placeholder = 'หรือพิมพ์ชื่อหมวดใหม่ แล้วกดตกลง';
     body.appendChild(inp);
-    sheetButton(body, '✓ ตกลง จำไว้เลย', () => {
+    sheetButton(body, '✓ ตกลง เริ่มคุยในหมวดนี้', () => {
       const v = inp.value.trim();
       if (!v) { inp.focus(); return; }
       go(v);

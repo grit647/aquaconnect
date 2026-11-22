@@ -4,8 +4,9 @@ const { query, withTransaction } = require('../db');
 const { requireAuth } = require('../auth');
 const ai = require('../ai');
 const { buildSystemPrompt, buildTools } = require('../secretary');
-const { getMemoryContext, listCategories, listPendingProposals, decideProposal } = require('../memory');
+const { getMemoryContext, listCategories, listPendingProposals, decideProposal, recallMemories } = require('../memory');
 const { maybeReflect, reflectConversation } = require('../reflect');
+const organize = require('../organize');
 const sharing = require('../sharing');
 const attachments = require('../attachments');
 const { nowText } = require('../calendar');
@@ -148,6 +149,28 @@ router.post('/reflect', async (req, res) => {
   } catch (err) { console.error('reflect route error:', err.message); res.status(500).json({ error: 'ทบทวนไม่สำเร็จ ลองใหม่อีกครั้ง' }); }
 });
 
+// ---------- สรุปบทสนทนาที่ค้างไว้แยกหมวด (ถามตอนกลับเข้าแอป) ----------
+router.get('/organize/pending', async (req, res) => {
+  try { res.json(await organize.pendingOrganize(req.user.id)); } catch (err) { console.error('organize pending error:', err.message); res.status(500).json({ error: 'ตรวจบทสนทนาค้างไม่สำเร็จ' }); }
+});
+router.post('/conversations/:id/organize', async (req, res) => {
+  try {
+    const mode = await organize.getMode(req.user.id);
+    const r = await organize.organizeConversation(req.user.id, String(req.params.id), { auto: mode === 'auto' && req.body && req.body.auto === true });
+    res.json({ ...r, proposalsPending: await listPendingProposals(req.user.id) });
+  } catch (err) { console.error('organize error:', err.message); res.status(400).json({ error: 'สรุปไม่สำเร็จ ลองใหม่อีกครั้ง' }); }
+});
+router.post('/conversations/:id/organize/dismiss', async (req, res) => {
+  try {
+    await organize.markOrganized(req.user.id, String(req.params.id));
+    if (req.body && req.body.never === true) await organize.setMode(req.user.id, 'off');
+    res.json({ ok: true });
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
+router.post('/organize-mode', async (req, res) => {
+  try { res.json({ ok: true, ...(await organize.setMode(req.user.id, String(req.body && req.body.mode))) }); } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
 router.get('/conversations', async (req, res) => {
   try {
     const r = await query(
@@ -219,6 +242,7 @@ router.post('/conversations/:id/messages', async (req, res) => {
     // โหมด "ใช้ข้อมูลของคนอื่น" (กดจากปุ่มเชื่อมต่อข้อมูล): ส่งคำถามตรงไปให้เลขาของเจ้าของข้อมูลตอบ แล้วคิดค่าบริการตามที่เจ้าของตั้งไว้
     // ทำที่เซิร์ฟเวอร์ตรงๆ ไม่ผ่านการตัดสินใจของโมเดล เพื่อให้การหักเงินแน่นอนและตรวจสอบได้
     const askRequestId = typeof req.body?.askRequestId === 'string' ? req.body.askRequestId : '';
+    const focusCategory = typeof req.body?.focusCategory === 'string' ? req.body.focusCategory.trim().slice(0, 40) : '';
     if (askRequestId) {
       let r;
       try {
@@ -266,6 +290,12 @@ router.post('/conversations/:id/messages', async (req, res) => {
       listPendingProposals(req.user.id),
     ]);
     const user = u.rows[0];
+    // หมวดที่ผู้ใช้เลือกคุยต่อ/อัปเดต: โหลดข้อมูลเดิมของหมวดนั้นให้เลขาเห็น (ของใครของมัน — ค้นตาม userId เท่านั้น)
+    let focusBlock = '';
+    if (focusCategory) {
+      const old = await recallMemories(req.user.id, focusCategory, 15).catch(() => []);
+      focusBlock = [`หมวด "${focusCategory}" ข้อมูลเดิม ${old.length} รายการ:`, ...(old.length ? old.map((o) => '- ' + o.content) : ['(ยังไม่มีข้อมูล เป็นหมวดใหม่)'])].join('\n');
+    }
     if (!user) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบก่อน' });
 
     const systemPrompt = buildSystemPrompt({
@@ -275,7 +305,9 @@ router.post('/conversations/:id/messages', async (req, res) => {
       memoryContext,
       pendingRequests,
       nowText: nowText(),
-      pendingProposals,
+      pendingProposals: hist.rows.length === 0 ? pendingProposals : [],   // ถามเรื่องรอยืนยันเฉพาะตอนเริ่มคุยใหม่ ไม่ถามกลางบทสนทนา (ไม่ให้ดูซ้ำซาก)
+      focusCategory: focusCategory || '',
+      focusBlock,
     });
     const history = [...hist.rows.filter((m) => m.role !== 'system'), { role: 'user', content: storedContent, extraParts: ext.parts }];
 

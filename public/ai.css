@@ -285,3 +285,7 @@ body {
 
 #sheetBody button.cat-general, .pcard.cat-general { border-color: #38bdf8; background: rgba(56, 189, 248, 0.14); }
 #sheetBody button.cat-skill, .pcard.cat-skill { border-color: #f59e0b; background: rgba(245, 158, 11, 0.14); }
+#focusBar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: rgba(245, 158, 11, 0.14); border-bottom: 1px solid #f59e0b; font-size: 13px; }
+#focusBar[hidden] { display: none; }
+#focusBar span { flex: 1; min-width: 0; }
+#focusBar button { border: 1px solid #f59e0b; background: transparent; color: #f59e0b; border-radius: 999px; padding: 4px 12px; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; flex-shrink: 0; }

@@ -17,12 +17,15 @@ const PHONES = ['0999900031', '0999900032'];
 
 let reflectReply = null;     // สิ่งที่โมเดลจำลองจะตอบตอน "ไตร่ตรอง"
 let lastChatPrompt = '';
+let organizeReply = '{"items":[]}';
 ai.setCallModelForTests(async ({ systemPrompt, contents }) => {
   if (systemPrompt.startsWith('คุณคือเลขาส่วนตัวที่กำลังทบทวน')) return { parts: [{ text: reflectReply }], usage: {} };
+  if (systemPrompt.startsWith('คุณคือเลขาส่วนตัว กำลังสรุปบทสนทนา')) return { parts: [{ text: organizeReply }], usage: {} };
   lastChatPrompt = systemPrompt;
   const last = contents[contents.length - 1];
   if (last.parts.some((p) => p.functionResponse)) return { parts: [{ text: 'เรียบร้อยค่ะ' }], usage: {} };
   const text = (last.parts[0] && last.parts[0].text) || '';
+  if (text.includes('ตั้งโหมดบันทึกเอง')) return { parts: [{ functionCall: { name: 'set_organize_mode', args: { mode: 'auto' } } }], usage: {} };
   if (text.includes('สอนเลขา')) return { parts: [{ functionCall: { name: 'save_memory', args: { category: 'ความสามารถเลขา', content: '[บทเรียน] ชอบให้ตอบสั้นๆ' } } }], usage: {} };
   if (text === 'ยืนยัน') {
     const m = /id: ([0-9a-f-]{36})/.exec(systemPrompt);
@@ -86,8 +89,11 @@ async function call(method, path, body, cookie) {
   check('คนอื่นไม่เห็นข้อเสนอของ A', (await call('GET', '/api/chat/proposals', null, B.cookie)).json.proposals.length === 0);
 
   // เลขาถามในแชท → ผู้ใช้ตอบ "ยืนยัน" → เรียก confirm_memory_proposal
-  const t2 = await call('POST', `/api/chat/conversations/${conv.id}/messages`, { content: 'ยืนยัน' }, A.cookie);
-  check('prompt มีรายการรอยืนยัน และผู้ใช้ตอบรับ → เลขายืนยันให้', lastChatPrompt.includes('รอเจ้าของยืนยัน') && t2.json.proposals.length === 1, JSON.stringify(t2.json.proposals && t2.json.proposals.length));
+  const tMid = await call('POST', `/api/chat/conversations/${conv.id}/messages`, { content: 'ยืนยัน' }, A.cookie);
+  check('กลางบทสนทนา เลขาไม่ถูกสั่งให้ถามเรื่องรอยืนยัน (ไม่ถามถี่)', !lastChatPrompt.includes('รอเจ้าของยืนยัน') && tMid.json.reply === 'ไม่มีข้อเสนอ', tMid.json.reply);
+  const conv3 = (await call('POST', '/api/chat/conversations', {}, A.cookie)).json.conversation;
+  const t2 = await call('POST', `/api/chat/conversations/${conv3.id}/messages`, { content: 'ยืนยัน' }, A.cookie);
+  check('ตอนเริ่มคุยใหม่ prompt มีรายการรอยืนยัน และผู้ใช้ตอบรับ → เลขายืนยันให้', lastChatPrompt.includes('รอเจ้าของยืนยัน') && t2.json.proposals.length === 1, JSON.stringify(t2.json.proposals && t2.json.proposals.length));
   const memAfter = (await query("SELECT m.content FROM memories m JOIN memory_categories c ON c.id = m.category_id WHERE m.owner_id = $1 AND c.name = 'ความสามารถเลขา'", [uidA])).rows;
   check('ข้อที่ยืนยันกลายเป็นความจำถาวรในหมวดความสามารถเลขา', memAfter.length === 2 && memAfter.some((m) => m.content.startsWith('[ตัวตน]')), String(memAfter.length));
 
@@ -123,6 +129,64 @@ async function call(method, path, body, cookie) {
   await memory.saveMemory(uidB, 'กุ้ง', 'หมวดชื่อ ก. ควรอยู่ใต้หมวดหลัก', conv2.id);
   const listed2 = (await call('GET', '/api/connect/my-categories', null, B.cookie)).json.categories;
   check('หน้าตั้งค่าข้อมูลก็เรียงหมวดหลักไว้บนสุด แม้ชื่ออื่นเรียงก่อนตามตัวอักษร', listed2[0].name === 'ทั่วไป' && listed2[1].name === 'ความสามารถเลขา' && listed2.length === 3, JSON.stringify(listed2.map((c) => c.name)));
+
+  // ---------- เลือกหัวข้อ → คุยต่อ/อัปเดตในหมวดนั้น ----------
+  await memory.saveMemory(uidB, 'กุ้ง', 'ข้อมูลเดิม: ปล่อยลูกกุ้งหนาแน่น 60 ตัวต่อตารางเมตร');
+  const convF = (await call('POST', '/api/chat/conversations', {}, B.cookie)).json.conversation;
+  await call('POST', `/api/chat/conversations/${convF.id}/messages`, { content: 'อัปเดตรอบใหม่', focusCategory: 'กุ้ง' }, B.cookie);
+  check('เลือกหมวดแล้วคุย → เลขาเห็นข้อมูลเดิมของหมวดนั้นและรู้ว่าเป็นการอัปเดต', lastChatPrompt.includes('คุยต่อ/อัปเดตข้อมูลในหมวด "กุ้ง"') && lastChatPrompt.includes('ปล่อยลูกกุ้งหนาแน่น 60'));
+  await call('POST', `/api/chat/conversations/${convF.id}/messages`, { content: 'คุยทั่วไป' }, B.cookie);
+  check('ไม่ได้เลือกหมวด → ไม่มีโหมดอัปเดตหมวด', !lastChatPrompt.includes('คุยต่อ/อัปเดตข้อมูลในหมวด'));
+  await call('POST', `/api/chat/conversations/${convF.id}/messages`, { content: 'หมวดคนอื่น', focusCategory: 'วิชาการ' }, B.cookie);
+  check('เลือกหมวดที่ไม่มีของตัวเอง → ไม่เห็นข้อมูลของคนอื่น', lastChatPrompt.includes('ยังไม่มีข้อมูล เป็นหมวดใหม่') && !lastChatPrompt.includes('pH'));
+
+  // ---------- กลับเข้าแอป: สรุปบทสนทนาค้างแยกหมวด ----------
+  const org = require('./organize');
+  const mkConv = async (uid, n, ageMin) => {
+    const c = (await query("INSERT INTO conversations (user_id, title, last_message_at) VALUES ($1, 'คุยเรื่องฟาร์ม', now() - ($2 || ' minutes')::interval) RETURNING id", [uid, String(ageMin)])).rows[0].id;
+    for (let i = 0; i < n; i++) await query("INSERT INTO messages (conversation_id, user_id, role, content, source) VALUES ($1, $2, 'user', $3, 'text')", [c, uid, 'เรื่องฟาร์มข้อ ' + i]);
+    return c;
+  };
+  await query("UPDATE conversations SET organized_at = now() WHERE user_id = $1", [uidB]);   // ปิดบทสนทนาที่สร้างไว้ก่อนหน้านี้ ไม่ให้ปนกับการทดสอบ
+  const cShort = await mkConv(uidB, 3, 120);
+  check('คุยน้อยกว่า 6 ข้อความ → ไม่ถาม', (await org.pendingOrganize(uidB)).conversation === null);
+  const cFresh = await mkConv(uidB, 8, 2);
+  check('เพิ่งคุยจบ (ยังไม่นาน) → ยังไม่ถาม', (await org.pendingOrganize(uidB)).conversation === null);
+  const cOld = await mkConv(uidB, 8, 120);
+  const pend = await call('GET', '/api/chat/organize/pending', null, B.cookie);
+  check('คุยมากพอและกลับเข้ามาใหม่ → ถามหนึ่งครั้ง (ask)', pend.json.mode === 'ask' && pend.json.conversation && pend.json.conversation.id === cOld && pend.json.conversation.userMsgs === 8, JSON.stringify(pend.json));
+
+  organizeReply = JSON.stringify({ items: [
+    { category: 'กุ้ง', summary: 'วางแผนปล่อยกุ้งรอบหน้าเดือนธันวาคม' },
+    { category: 'ตลาดขายกุ้ง', summary: 'ราคาหน้าฟาร์มช่วงนี้ดีกว่าเดือนก่อน' },
+    { category: 'ความสามารถเลขา', summary: 'ห้ามลงหมวดนี้จากการสรุปทั่วไป' },
+    { category: 'กุ้ง', summary: 'ข้อมูลเดิม: ปล่อยลูกกุ้งหนาแน่น 60 ตัวต่อตารางเมตร' },
+  ] });
+  const o1 = await call('POST', `/api/chat/conversations/${cOld}/organize`, {}, B.cookie);
+  check('สรุปแยกหมวด → ได้ข้อเสนอ 2 ข้อ (ตัดหมวดความสามารถเลขาและข้อที่ซ้ำของเดิม)', o1.status === 200 && o1.json.proposals.length === 2 && o1.json.proposals.some((p) => p.category === 'ตลาดขายกุ้ง') && !o1.json.proposals.some((p) => p.category === 'ความสามารถเลขา'), JSON.stringify(o1.json.proposals && o1.json.proposals.map((p) => p.category)));
+  check('ถามแล้วไม่ถามซ้ำ (บทสนทนานี้ถือว่าจัดเก็บแล้ว)', (await org.pendingOrganize(uidB)).conversation === null || (await org.pendingOrganize(uidB)).conversation.id !== cOld);
+  const newCatP = o1.json.proposals.find((p) => p.category === 'ตลาดขายกุ้ง');
+  await call('POST', `/api/chat/proposals/${newCatP.id}/decide`, { accept: true }, B.cookie);
+  const savedNew = (await query("SELECT m.content FROM memories m JOIN memory_categories c ON c.id = m.category_id WHERE m.owner_id = $1 AND c.name = 'ตลาดขายกุ้ง'", [uidB])).rows;
+  check('ยืนยันแล้ว → ได้หมวดใหม่ + บันทึกลงหมวดนั้น', savedNew.length === 1);
+
+  // dismiss + never
+  const cDis = await mkConv(uidB, 7, 90);
+  await call('POST', `/api/chat/conversations/${cDis}/organize/dismiss`, {}, B.cookie);
+  check('กด "ไว้ก่อน" → ไม่ถามเรื่องบทสนทนานี้อีก', (await org.pendingOrganize(uidB)).conversation === null);
+  // โหมด auto: สั่งเลขาด้วยเสียง/ข้อความ → บันทึกเลยไม่ต้องถาม
+  const convM = (await call('POST', '/api/chat/conversations', {}, B.cookie)).json.conversation;
+  await call('POST', `/api/chat/conversations/${convM.id}/messages`, { content: 'ตั้งโหมดบันทึกเอง' }, B.cookie);
+  check('บอกเลขา → ตั้งโหมดบันทึกเองได้ (ผู้ใช้กำหนดเอง)', (await org.getMode(uidB)) === 'auto');
+  const cAuto = await mkConv(uidB, 7, 100);
+  organizeReply = JSON.stringify({ items: [{ category: 'ฟาร์ม', summary: 'ตรวจน้ำทุกเช้าก่อนให้อาหาร' }] });
+  const o2 = await call('POST', `/api/chat/conversations/${cAuto}/organize`, { auto: true }, B.cookie);
+  check('โหมด auto → บันทึกเข้าหมวดเลยโดยไม่ต้องยืนยัน', o2.json.saved.length === 1 && o2.json.saved[0].category === 'ฟาร์ม' && o2.json.proposals.length === 0, JSON.stringify(o2.json.saved));
+  await org.setMode(uidB, 'off');
+  await mkConv(uidB, 9, 200);
+  check('โหมด off → ไม่ถามเลย', (await call('GET', '/api/chat/organize/pending', null, B.cookie)).json.conversation === null);
+  check('โหมดแปลก → ปฏิเสธ', (await call('POST', '/api/chat/organize-mode', { mode: 'banana' }, B.cookie)).status === 400);
+  check('A ไม่เห็น/สรุปบทสนทนาของ B ไม่ได้', (await call('POST', `/api/chat/conversations/${cOld}/organize`, {}, A.cookie)).status === 400);
 
   // เก็บกวาด
   await new Promise((r) => setTimeout(r, 300)); // รอการไตร่ตรองเบื้องหลังที่ค้างอยู่จบก่อน
