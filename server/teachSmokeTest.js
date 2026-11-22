@@ -218,6 +218,7 @@ async function call(method, path, body, cookie) {
   check('ไม่ล็อกอินดูโปรไฟล์ไม่ได้ (401)', (await call('GET', '/api/me/summary')).status === 401);
   const sum = await call('GET', '/api/me/summary', null, A.cookie);
   check('สรุปโปรไฟล์: มีขนาดข้อมูล (ไบต์) แยกตามส่วน และสิทธิ์ Google (ค่าเริ่มต้นปิด)', sum.status === 200 && sum.json.usage.totalBytes > 0 && sum.json.usage.parts.length === 4 && sum.json.usage.parts.find((p) => p.key === 'messages').count >= 4 && sum.json.google.enabled === false && sum.json.google.count === 0, JSON.stringify(sum.json.usage && sum.json.usage.totalBytes));
+  check('สรุปมีเพดานสำหรับวาดแถบ (โควตาข้อมูล MB และจำนวนครั้ง Google)', sum.json.usage.quotaBytes >= 1048576 && sum.json.google.limit >= 1, JSON.stringify([sum.json.usage.quotaBytes, sum.json.google.limit]));
   check('ขนาดรวมเท่าผลรวมแต่ละส่วน', sum.json.usage.totalBytes === sum.json.usage.parts.reduce((a, p) => a + p.bytes, 0));
   check('สรุปของ B ไม่ปนข้อมูลของ A (ชื่อ/เบอร์เป็นของ B)', (await call('GET', '/api/me/summary', null, B.cookie)).json.profile.phone === PHONES[1]);
   const pe = await call('PATCH', '/api/me/profile', { name: 'ทดสอบ สอน ใหม่', callName: 'ต้น', secretaryName: 'ครีม' }, A.cookie);

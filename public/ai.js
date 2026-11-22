@@ -132,10 +132,31 @@
       const sm = document.createElement('small'); sm.textContent = 'เลขา: ' + me.secretaryName;
       who.append(nm, sm); head.append(av, who); body.appendChild(head);
     }
-    sheetButton(body, '✏️ 1. อัปเดตโปรไฟล์', showProfileEdit);
-    sheetButton(body, '💾 2. ข้อมูลส่วนตัวของฉัน (ขนาดข้อมูล)', showDataUsage);
-    sheetButton(body, '👥 3. กลุ่ม (เร็วๆ นี้)', showGroupsSoon);
-    sheetButton(body, '🔎 4. ค้นหาด้วย Google', showGoogleInfo);
+    // แถบการใช้งาน 2 แถว ต่อจากรูปโปรไฟล์ (ข้อมูลส่วนตัว + การค้นหาด้วย Google) — แตะดูรายละเอียดได้
+    const meters = document.createElement('div'); meters.className = 'meters'; body.appendChild(meters);
+    sheetButton(body, '✏️ อัปเดตโปรไฟล์', showProfileEdit);
+    sheetButton(body, '👥 กลุ่ม (เร็วๆ นี้)', showGroupsSoon);
+    api('GET', '/api/me/summary').then((s) => {
+      const u = s.usage; const g = s.google;
+      meters.appendChild(meterRow('💾 ข้อมูลส่วนตัว', fmtBytes(u.totalBytes) + ' / ' + fmtBytes(u.quotaBytes), u.totalBytes / u.quotaBytes, showDataUsage));
+      meters.appendChild(meterRow('🔎 ค้นหาด้วย Google' + (g.enabled ? '' : ' (🔒 ยังไม่ได้รับอนุญาต)'), g.count + ' / ' + g.limit + ' ครั้ง', g.enabled ? g.count / g.limit : 0, showGoogleInfo, !g.enabled));
+    }).catch(() => { /* โหลดแถบไม่ได้ก็ยังใช้เมนูอื่นได้ */ });
+  }
+  // แถบความคืบหน้า: ชื่อ + ตัวเลข + แถบเติมตามสัดส่วน (เกิน 80% เป็นสีส้ม เต็มเป็นสีแดง)
+  function meterRow(label, valueText, ratio, onClick, dim) {
+    const pct = Math.max(0, Math.min(1, Number(ratio) || 0));
+    const d = document.createElement('div'); d.className = 'meter' + (dim ? ' dim' : '');
+    const top = document.createElement('div'); top.className = 'mt';
+    const l = document.createElement('span'); l.textContent = label;
+    const v = document.createElement('b'); v.textContent = valueText;
+    top.append(l, v);
+    const track = document.createElement('div'); track.className = 'track';
+    const fill = document.createElement('div'); fill.className = 'fill' + (pct >= 1 ? ' full' : pct >= 0.8 ? ' warn' : '');
+    fill.style.width = Math.max(pct * 100, pct > 0 ? 2 : 0) + '%';
+    track.appendChild(fill);
+    d.append(top, track);
+    if (onClick) { d.style.cursor = 'pointer'; d.addEventListener('click', onClick); }
+    return d;
   }
   async function loadSummary(body) {
     try { return await api('GET', '/api/me/summary'); } catch (err) { note(body, err.message); return null; }
@@ -168,7 +189,7 @@
     const s = await loadSummary(body);
     if (s) {
       const big = note(body, fmtBytes(s.usage.totalBytes)); big.className = 'bal';
-      note(body, 'ขนาดข้อมูลข้อความของคุณทั้งหมดบนแพลตฟอร์ม (ไม่รวมรูป/ไฟล์ที่แนบ เพราะไม่ได้เก็บถาวร)');
+      note(body, 'ขนาดข้อมูลข้อความของคุณทั้งหมดบนแพลตฟอร์ม จากโควตา ' + fmtBytes(s.usage.quotaBytes) + ' ต่อคน (ไม่รวมรูป/ไฟล์ที่แนบ เพราะไม่ได้เก็บถาวร)');
       s.usage.parts.forEach((p) => note(body, p.label + ' · ' + p.count + ' รายการ · ' + fmtBytes(p.bytes)));
     }
     profileBack(body);

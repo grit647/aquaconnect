@@ -16,6 +16,8 @@ const SETTINGS = {
   chat_daily_limit: { label: 'โควตาข้อความต่อคนต่อวัน', min: 10, max: 2000 },
   credit_per_baht:  { label: 'เครดิต 1 = กี่บาท', min: 0.01, max: 100 },
   free_access_minutes: { label: 'หมวดฟรี: ใช้ข้อมูลได้กี่นาทีต่อการอนุญาต 1 ครั้ง', min: 1, max: 240 },
+  user_data_quota_mb: { label: 'โควตาข้อมูลส่วนตัวต่อคน (MB) — แสดงแถบในเมนูโปรไฟล์', min: 1, max: 1000 },
+  google_search_limit: { label: 'ค้นหาด้วย Google ได้สูงสุดกี่ครั้งต่อคน', min: 1, max: 100000 },
   topup_min:        { label: 'เติมเครดิตขั้นต่ำต่อครั้ง (บาท)', min: 1, max: 10000 },
   topup_max:        { label: 'เติมเครดิตสูงสุดต่อครั้ง (บาท)', min: 100, max: 100000 },
 };

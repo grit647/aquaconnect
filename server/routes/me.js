@@ -13,7 +13,7 @@ const LABELS = { memories: 'ความจำ', messages: 'ข้อควา�
 router.get('/summary', async (req, res) => {
   try {
     const id = req.user.id;
-    const [u, sizes] = await Promise.all([
+    const [u, sizes, lim] = await Promise.all([
       query('SELECT name, phone, call_name, secretary_name, google_search_enabled, google_search_count FROM users WHERE id = $1', [id]),
       query(
         `SELECT
@@ -27,15 +27,17 @@ router.get('/summary', async (req, res) => {
            (SELECT COALESCE(sum(octet_length(content)), 0)::bigint FROM memory_proposals WHERE owner_id = $1 AND status = 'pending') AS proposals_b`,
         [id]
       ),
+      query("SELECT key, value FROM app_settings WHERE key IN ('user_data_quota_mb', 'google_search_limit')"),
     ]);
+    const L = Object.fromEntries(lim.rows.map((x) => [x.key, Number(x.value)]));
     const row = u.rows[0];
     if (!row) return res.status(404).json({ error: 'ไม่พบบัญชี' });
     const s = sizes.rows[0];
     const parts = Object.keys(LABELS).map((k) => ({ key: k, label: LABELS[k], count: s[k + '_n'], bytes: Number(s[k + '_b']) }));
     res.json({
       profile: { name: row.name, phone: row.phone, callName: row.call_name || '', secretaryName: row.secretary_name },
-      usage: { totalBytes: parts.reduce((a, p) => a + p.bytes, 0), parts },
-      google: { enabled: !!row.google_search_enabled, count: row.google_search_count },
+      usage: { totalBytes: parts.reduce((a, p) => a + p.bytes, 0), quotaBytes: (L.user_data_quota_mb || 20) * 1048576, parts },
+      google: { enabled: !!row.google_search_enabled, count: row.google_search_count, limit: L.google_search_limit || 100 },
     });
   } catch (err) {
     console.error('me summary error:', err.message);
