@@ -116,6 +116,13 @@ async function call(method, path, body, cookie) {
   await query("INSERT INTO messages (conversation_id, user_id, role, content, source) VALUES ($1, $2, 'user', 'ข้อความ 5', 'text')", [conv2.id, uidB]);
   check('ครบ 5 → ไตร่ตรอง', Array.isArray(await reflect.maybeReflect(uidB, conv2.id)));
   check('แล้วไม่ไตร่ตรองซ้ำทันที', (await reflect.maybeReflect(uidB, conv2.id)) === null);
+  const logs = (await query("SELECT m.content, c.name FROM memories m JOIN memory_categories c ON c.id = m.category_id WHERE m.owner_id = $1", [uidB])).rows;
+  check('คุยยังไม่ได้แยกหมวด → พักบันทึกการสนทนาไว้ในหมวด "ทั่วไป" ให้เอง (ไม่เรียก AI)', logs.length === 1 && logs[0].name === 'ทั่วไป' && logs[0].content.startsWith('[บันทึกสนทนา') && logs[0].content.includes('ข้อความ 5'), JSON.stringify(logs));
+  const listed = (await call('GET', '/api/chat/categories', null, B.cookie)).json.categories;
+  check('รายการหมวดเรียง "ทั่วไป" แล้ว "ความสามารถเลขา" ไว้บนสุดเสมอ', listed[0].name === 'ทั่วไป' && listed[1].name === 'ความสามารถเลขา', JSON.stringify(listed.map((c) => c.name)));
+  await memory.saveMemory(uidB, 'กุ้ง', 'หมวดชื่อ ก. ควรอยู่ใต้หมวดหลัก', conv2.id);
+  const listed2 = (await call('GET', '/api/connect/my-categories', null, B.cookie)).json.categories;
+  check('หน้าตั้งค่าข้อมูลก็เรียงหมวดหลักไว้บนสุด แม้ชื่ออื่นเรียงก่อนตามตัวอักษร', listed2[0].name === 'ทั่วไป' && listed2[1].name === 'ความสามารถเลขา' && listed2.length === 3, JSON.stringify(listed2.map((c) => c.name)));
 
   // เก็บกวาด
   await new Promise((r) => setTimeout(r, 300)); // รอการไตร่ตรองเบื้องหลังที่ค้างอยู่จบก่อน

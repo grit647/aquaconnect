@@ -282,3 +282,6 @@ body {
 .proposal-card .pp-row { display: flex; gap: 8px; margin-top: 8px; }
 .proposal-card button { flex: 1; border: 0; border-radius: 999px; padding: 8px; font: inherit; font-weight: 700; cursor: pointer; background: var(--neon2); color: #06101f; }
 .proposal-card button.pp-no { background: transparent; border: 1px solid var(--muted, #8d98c4); color: var(--muted, #8d98c4); }
+
+#sheetBody button.cat-general, .pcard.cat-general { border-color: #38bdf8; background: rgba(56, 189, 248, 0.14); }
+#sheetBody button.cat-skill, .pcard.cat-skill { border-color: #f59e0b; background: rgba(245, 158, 11, 0.14); }

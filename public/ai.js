@@ -1209,8 +1209,11 @@
   }
   $('connEnd').addEventListener('click', () => endConnected(false));
 
-  function pcard(body, title, sub) {
-    const d = document.createElement('div'); d.className = 'pcard';
+  // 2 หมวดหลัก (ทั่วไป / ความสามารถเลขา) แยกสีและไอคอนให้เห็นชัด อยู่บนสุดเสมอ (เรียงจากเซิร์ฟเวอร์)
+  const catIcon = (n) => (n === 'ทั่วไป' ? '📘' : n === 'ความสามารถเลขา' ? '🧠' : '📁');
+  const mainCatClass = (n) => (n === 'ทั่วไป' ? 'cat-general' : n === 'ความสามารถเลขา' ? 'cat-skill' : '');
+  function pcard(body, title, sub, extraCls) {
+    const d = document.createElement('div'); d.className = 'pcard' + (extraCls ? ' ' + extraCls : '');
     const b = document.createElement('b'); b.textContent = title; d.appendChild(b);
     if (sub) { const s = document.createElement('small'); s.textContent = sub; d.appendChild(s); }
     body.appendChild(d);
@@ -1354,7 +1357,7 @@
       (r.connectEnabled ? '' : '\n⚠️ ตอนนี้คุณปิด "อนุญาตใช้ข้อมูล" อยู่ ไม่มีใครเห็นหมวดของคุณ (เปิดได้ที่ปุ่ม 🔓 อนุญาตใช้ข้อมูล ข้างรูปโปรไฟล์)'));
     if (!r.categories.length) note(body, 'ยังไม่มีหมวด — บอกเลขาให้จำเรื่องต่างๆ แล้วหมวดจะมาอยู่ที่นี่');
     r.categories.forEach((c) => {
-      const d = pcard(body, c.name + '  · ' + c.items + ' รายการ', statusText(c, r.blockMinutes));
+      const d = pcard(body, catIcon(c.name) + ' ' + c.name + '  · ' + c.items + ' รายการ', statusText(c, r.blockMinutes), mainCatClass(c.name));
       const row = document.createElement('div'); row.className = 'row2'; d.appendChild(row);
       const reload = () => showDataSettings();
       miniBtn(row, 'ดูเนื้อหา', () => showCategoryItems(c));
@@ -1392,7 +1395,7 @@
     };
     try {
       const { categories } = await api('GET', '/api/chat/categories');
-      categories.forEach((c) => sheetButton(body, '📁 ' + c.name + ' (' + c.memories + ')', () => go(c.name)));
+      categories.forEach((c) => sheetButton(body, catIcon(c.name) + ' ' + c.name + ' (' + c.memories + ')', () => go(c.name), mainCatClass(c.name)));
     } catch (e) { /* โหลดหมวดไม่ได้ก็ยังตั้งหมวดใหม่ได้ */ }
     const inp = document.createElement('input');
     inp.type = 'text'; inp.maxLength = 60; inp.placeholder = 'หรือพิมพ์ชื่อหมวดใหม่ แล้วกดตกลง';

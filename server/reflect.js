@@ -59,6 +59,25 @@ async function reflectConversation(userId, conversationId) {
   }
 }
 
+// หมวด "ทั่วไป" = ที่พักบันทึกการสนทนาไว้ก่อนเมื่อยังไม่ได้แยกหมวด (เช่นคุยครั้งแรกๆ) — ถ้าบทสนทนานี้ยังไม่มีความจำที่จัดหมวดแล้ว
+// เก็บข้อความล่าสุดของเจ้าของ (ย่อ ≤500 ตัวอักษร) ลง "ทั่วไป" ให้ ไม่เรียก AI (ไม่เสียค่าใช้จ่าย) แล้วเจ้าของค่อยสั่งย้าย/จัดหมวดทีหลัง
+const LOG_PREFIX = '[บันทึกสนทนา';
+async function logToGeneral(userId, conversationId) {
+  const sorted = await query(
+    `SELECT 1 FROM memories WHERE owner_id = $1 AND source_conversation_id = $2 AND content NOT LIKE $3 LIMIT 1`,
+    [userId, conversationId, LOG_PREFIX + '%']
+  );
+  if (sorted.rows[0]) return null;
+  const msgs = await query(
+    `SELECT content FROM (SELECT id, content FROM messages WHERE conversation_id = $1 AND user_id = $2 AND role = 'user' ORDER BY id DESC LIMIT ${REFLECT_EVERY_USER_MSGS}) t ORDER BY id ASC`,
+    [conversationId, userId]
+  );
+  const text = msgs.rows.map((m) => String(m.content).split(/\s+/).join(' ').trim()).filter(Boolean).join(' / ').slice(0, 500);
+  if (text.length < 8) return null;
+  const stamp = new Intl.DateTimeFormat('th-TH', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date());
+  return memory.saveMemory(userId, memory.GENERAL_CATEGORY, `${LOG_PREFIX} ${stamp}] เจ้าของคุยว่า: ${text}`, conversationId);
+}
+
 // เรียกหลังตอบแต่ละรอบ: ถ้าผู้ใช้คุยมาครบรอบแล้วค่อยไตร่ตรอง (ทำเบื้องหลัง ไม่หน่วงคำตอบ)
 async function maybeReflect(userId, conversationId) {
   try {
@@ -70,6 +89,7 @@ async function maybeReflect(userId, conversationId) {
       [conversationId, userId, REFLECT_EVERY_USER_MSGS]
     );
     if (!r.rows[0]) return null;
+    await logToGeneral(userId, conversationId).catch((e) => console.error('logToGeneral error:', e.message));
     return reflectConversation(userId, conversationId);
   } catch (err) {
     console.error('maybeReflect error:', err.message);
@@ -77,4 +97,4 @@ async function maybeReflect(userId, conversationId) {
   }
 }
 
-module.exports = { reflectConversation, maybeReflect, parseItems, REFLECT_EVERY_USER_MSGS };
+module.exports = { reflectConversation, maybeReflect, logToGeneral, parseItems, REFLECT_EVERY_USER_MSGS };

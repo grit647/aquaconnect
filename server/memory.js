@@ -93,7 +93,7 @@ async function listCategories(userId) {
     `SELECT c.name, c.visibility, count(m.id)::int AS memories
        FROM memory_categories c LEFT JOIN memories m ON m.category_id = c.id
       WHERE c.owner_id = $1
-      GROUP BY c.id ORDER BY c.name`,
+      GROUP BY c.id ORDER BY array_position(ARRAY['ทั่วไป','ความสามารถเลขา']::text[], c.name) NULLS LAST, c.name`,
     [userId]
   );
   return r.rows;
