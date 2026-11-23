@@ -36,4 +36,15 @@ function hostToken({ room, userId, name }) {
   );
 }
 
-module.exports = { configured, appId: APP_ID, hostToken };
+// สถานะการตั้งค่า (ไม่เปิดเผยค่าจริง บอกแค่ว่ามี/ไม่มี/รูปแบบถูกไหม) — ไว้ตรวจเมื่อห้องไม่ใช้ JaaS
+function status() {
+  const key = privateKey();
+  return {
+    appId: !!APP_ID(),
+    keyId: !!String(process.env.JAAS_KEY_ID || '').trim(),
+    privateKey: !key ? 'missing' : /BEGIN [A-Z ]*PRIVATE KEY/.test(key) && /END [A-Z ]*PRIVATE KEY/.test(key) ? 'ok' : 'bad-format',
+    ready: configured(),
+  };
+}
+
+module.exports = { configured, appId: APP_ID, hostToken, status };

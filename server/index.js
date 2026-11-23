@@ -47,7 +47,7 @@ app.get('/api/health', async (req, res) => {
     // คนยิง /api/health (UptimeRobot ทุก 5 นาที) = ปลุกเซิร์ฟเวอร์ + ตรวจนัดที่ถึงเวลาเตือนแล้วส่งไลน์ (ไม่รอผล ไม่ให้ health ช้า)
     runDueReminders().catch((e) => console.error('[reminders]', e.message));
     require('./groupAi').endDueSessions().catch((e) => console.error('[group-ai]', e.message));   // ปิดช่วงเลขาคุยกันเองที่ครบเวลา (และจดความรู้จักกัน)
-    res.json({ ok: true });
+    res.json({ ok: true, jaas: require('./jaas').status() });
   } catch (err) {
     console.error('health check failed:', err.message);
     res.status(503).json({ ok: false });
