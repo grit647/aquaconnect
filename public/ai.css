@@ -452,3 +452,6 @@ body {
 #aiBadge { bottom: 88px; }
 #avatar { bottom: 142px; }
 #connToggle { bottom: 154px; }
+
+/* ป้าย "อนุญาตใช้ข้อมูล": ตัวหนังสือสีขาวทั้งสองสถานะ (สถานะเปิด/ปิดดูจากขอบ: เขียวเรืองแสง = เปิด, ขอบเทา = ปิด) */
+#connToggle, #connToggle.on, #connToggle.off { color: #fff; }
