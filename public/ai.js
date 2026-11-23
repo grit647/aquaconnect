@@ -310,7 +310,7 @@
   }
   // ============================ กลุ่มสนทนา (เต็มจอ) ============================
   // หน้าแรกกลุ่ม → [สร้างกลุ่มใหม่ (ผู้สร้างเป็นแอดมิน สร้างได้ 2 กลุ่ม)] / [ดูกลุ่มทั้งหมด → ขอเข้าร่วม → ผู้สร้างอนุญาต] → แชทกลุ่ม (รูปโปรไฟล์ทุกข้อความ)
-  const sts = { on: false, buffer: [], timer: null, busy: false };   // โหมด STS ในห้องแชทกลุ่ม: พูด→ส่งเข้ากลุ่ม / ข้อความใหม่ในกลุ่ม→อ่านออกเสียง (ทุก 10 วินาที)
+  const sts = { on: false, buffer: [], timer: null, busy: false, busySince: 0 };   // โหมด STS ในห้องแชทกลุ่ม: พูด→ส่งเข้ากลุ่ม / ข้อความใหม่ในกลุ่ม→อ่านออกเสียง (ทุก 10 วินาที)
   const grp = { view: 'home', groupId: null, name: '', lastId: 0, timer: null, sessTimer: null, info: null, back: null, nextTarget: null };
   const gEl = (id) => document.getElementById(id);
   function grpAvatar(name, pic) {
@@ -694,7 +694,7 @@
         if (grp.groupId !== groupId) return;
         const atBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 80;
         r.messages.forEach((m) => { grpAddMsg(body, m); grp.lastId = Math.max(grp.lastId, m.id); });
-        if (sts.on && !first) { r.messages.forEach((m) => { if (!m.mine && m.content) sts.buffer.push(m); }); if (sts.buffer.length > 60) sts.buffer.splice(0, sts.buffer.length - 60); }
+        if (sts.on && !first) { r.messages.forEach((m) => { if (!m.mine && m.content) { m.__at = Date.now(); sts.buffer.push(m); } }); if (sts.buffer.length > 60) sts.buffer.splice(0, sts.buffer.length - 60); stsQueueInfo(); }
         grpUpdateSession(r.session);
         if (r.messages.length && (first || atBottom)) stick();
         if (first && !r.messages.length) gNote(body, 'ยังไม่มีข้อความ — พิมพ์ทักทายเป็นคนแรกได้เลย');
@@ -1377,6 +1377,7 @@
   // พูดจบ (หรือไม่ได้พูด) แล้ว ถ้าอยู่โหมดเรียลไทม์ให้กลับไปฟังต่อเอง
   function afterSpeech() {
     setBotState('idle');
+    if (sts.on) { resumeAfterTurn(); return; }
     if (realtime && me && !appEl.hidden) startListening();
   }
 
@@ -1740,10 +1741,28 @@
   // กดรูปเลขาเปิดตั้งค่าเสียงได้ • กดปุ่ม STS อีกครั้ง = ออกจากโหมด • ใช้หน้าจอสนทนาเสียงเดิม (ไมค์/จับเงียบ/กันจอดับ/ถามซ้ำเมื่อฟังไม่ได้ความ ใช้ร่วมกัน)
   const STS_RELAY_MS = 10000;
   const stsWho = (m) => (m.isSystem ? 'ระบบ' : m.isAi ? (m.myAi ? 'เลขาของคุณ ' + m.name : 'เลขา ' + m.name + ' ของ ' + (m.ownerName || '')) : m.name);
+  // ตัวนับข้อความที่รออ่าน (ให้เห็นว่าข้อความเข้ามาแล้ว แม้ยังไม่ถึงรอบอ่าน)
+  function stsQueueInfo() {
+    const q = $('vStsQ'); if (!q) return;
+    q.hidden = !sts.on || !sts.buffer.length;
+    q.textContent = sts.buffer.length ? '📥 มีข้อความใหม่รออ่าน ' + sts.buffer.length + ' ข้อความ' : '';
+  }
   function stsFlush() {
-    if (!sts.on || !voiceMode || voicePaused || !sts.buffer.length || sts.busy || sending) return;
+    if (!sts.on || !voiceMode) return;
+    if (sts.busy && Date.now() - sts.busySince > 45000) sts.busy = false;   // กันค้าง: ถ้าเสียงอ่านไม่จบ/ไม่ส่งสัญญาณจบนานเกิน 45 วินาที ปลดล็อกให้อ่านรอบถัดไป
+    stsQueueInfo();
+    if (voicePaused || !sts.buffer.length || sts.busy || sending) return;
     if (botState === 'thinking' || botState === 'speaking') return;
-    if (rec && rec.heardSpeech) return;   // ผู้ใช้กำลังพูดอยู่ — รอรอบถัดไป
+    if (rec && rec.heardSpeech) {   // ผู้ใช้กำลังพูดอยู่ — รอรอบถัดไป
+      // แต่ถ้าข้อความรอมานานเกิน 12 วินาที (เช่นไมค์ไวจนได้ยินเสียงรบกวนต่อเนื่อง ทำให้ "กำลังพูด" ไม่จบ) ให้จบรอบอัดตอนนี้ (ส่งสิ่งที่พูดไว้ตามปกติ) แล้วรอบหน้าอ่านข้อความที่รอ
+      if (Date.now() - (sts.buffer[0].__at || Date.now()) > 12000) stopRecording(false);
+      return;
+    }
+    stsRead();
+  }
+  // อ่านข้อความที่รออยู่ในคิวทันที (เรียกจากรอบเช็กทุก 10 วินาที และจาก "จบรอบ" ของการพูด/ส่ง/ฟังไม่ได้ความ — กันกรณีไมค์ไวมีเสียงรบกวนต่อเนื่องจนไม่มีช่วงเงียบให้ระบบอ่านเลย)
+  function stsRead() {
+    if (!sts.on || !voiceMode || voicePaused || !sts.buffer.length || sts.busy) return;
     const cut = (s, n) => (String(s).length > n ? String(s).slice(0, n) + ' ...' : String(s));
     let text = ''; let used = 0;
     for (const m of sts.buffer) {
@@ -1754,9 +1773,15 @@
     const items = sts.buffer.splice(0, used);   // ที่อ่านไม่ทันรอบนี้ค้างไว้อ่านรอบถัดไป (ช่วงเลขาคุยกันเองข้อความเยอะ ไม่ทิ้ง)
     const last = items[items.length - 1];
     stopRecording(true);   // หยุดฟังชั่วคราวตอนอ่าน (กันไมค์รับเสียงลำโพง) อ่านจบแล้วกลับมาฟังต่อเอง
-    sts.busy = true;
+    sts.busy = true; sts.busySince = Date.now();
+    stsQueueInfo();
     vCaption(null, (last.isSystem ? 'ระบบ' : stsWho(last)) + ': ' + cut(last.content, 200));
     speak(text, () => { sts.busy = false; afterSpeech(); });
+  }
+  // จบรอบ (พูดเสร็จ/ส่งเสร็จ/ฟังไม่ได้ความ): ถ้ามีข้อความรออ่านให้อ่านก่อน ไม่งั้นกลับไปฟังต่อ
+  function resumeAfterTurn() {
+    if (sts.on && voiceMode && !voicePaused && sts.buffer.length && !sts.busy) { stsRead(); return; }
+    if (realtime && me && !appEl.hidden && !voicePaused) startListening();
   }
   async function stsPost(text) {
     vCaption('🎙️ ' + text, '');
@@ -1766,13 +1791,13 @@
       vCaption(null, '✓ ส่งเข้ากลุ่มแล้ว');
     } catch (err) { vCaption(null, err.message); }
     setBotState('idle');
-    if (realtime && !voicePaused) startListening();
+    resumeAfterTurn();
   }
   function stsCleanup() {
     sts.on = false; sts.busy = false; sts.buffer = [];
     clearInterval(sts.timer); sts.timer = null;
     const vs = $('voiceScreen'); delete vs.dataset.sts;
-    $('vAi').hidden = true; $('vSts').hidden = true;
+    $('vAi').hidden = true; $('vSts').hidden = true; $('vStsQ').hidden = true;
     updateTopic();
   }
   async function enterSts() {
@@ -2003,6 +2028,7 @@
       if (unclear) {   // มีเสียงแต่ฟังไม่ได้ความ (เสียงแทรก/ไมค์ไวเกิน) → ไม่ส่งเข้าเลขา ให้เลขาถามกลับสั้นๆ ขอพูดใหม่ (ถามไม่เกิน 2 ครั้งติด ถ้ายังเป็นอีกให้เงียบรอ ไม่วนพูดเสียค่าเสียง)
         unclearStreak++;
         setBotState('idle');
+        if (sts.on) { vCaption('(ฟังไม่ได้ความ — ไม่ส่งเข้ากลุ่ม)', null); resumeAfterTurn(); return; }
         if (unclearStreak <= 2) {
           const ask = 'ยังฟังไม่เข้าใจความหมายค่ะ ขอพูดอีกครั้งนะคะ';
           if (voiceMode) vCaption('(ฟังไม่ได้ความ)', ask); else addBubble('hint', ask);
@@ -2019,6 +2045,7 @@
           vCaption('(ไม่ได้ยินชัด ลองพูดใหม่ได้เลยค่ะ)', null);
           if ((++idleCycles, !sts.on && idleCycles >= IDLE_LIMIT)) { pauseVoice('ไม่ได้ยินเสียงชัดเจนนานแล้ว หยุดฟังชั่วคราวค่ะ — แตะไมค์เพื่อคุยต่อ'); return; }
         }
+        if (sts.on) { resumeAfterTurn(); return; }
         if (realtime) startListening();
         return;
       }
