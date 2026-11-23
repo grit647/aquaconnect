@@ -2079,7 +2079,7 @@
     return 'เปิดแชร์ · ค่าบริการ: ' + priceText(c, block);
   }
 
-  async function showCategoryItems(c) {
+  async function showCategoryItems(c, back) {
     const body = openSheet('เนื้อหาในหมวด "' + c.name + '"');
     try {
       const r = await api('GET', '/api/connect/my-categories/' + c.id + '/items');
@@ -2090,7 +2090,7 @@
       });
       if (r.items.length >= 30) note(body, 'แสดง 30 รายการล่าสุด');
     } catch (err) { note(body, err.message); }
-    backButton(body, showDataSettings);
+    backButton(body, back || showDataSettings);
   }
 
   async function saveCategorySetting(c, visibility, priceType, price) {
@@ -2103,18 +2103,19 @@
   }
 
   // popup ยืนยันก่อนลบ: บอกชื่อหมวด จำนวนรายการ และว่ากู้คืนไม่ได้ — ต้องกดปุ่มแดงเองอีกครั้ง
-  function confirmDeleteCategory(c, isMain) {
+  function confirmDeleteCategory(c, isMain, after) {
+    const goBack = after || showDataSettings;
     const body = openSheet(isMain ? 'ยืนยันล้างเนื้อหาทั้งหมด?' : 'ยืนยันลบหมวดและเนื้อหาทั้งหมด?');
     note(body, '⚠️ หมวด "' + c.name + '" มี ' + c.items + ' รายการ\n' + (isMain ? 'เนื้อหาทั้งหมดในหมวดนี้จะถูกลบ (ตัวหมวดยังอยู่)' : 'ตัวหมวดและเนื้อหาทุกรายการจะถูกลบ (ถ้าเคยมีคนใช้หรือจ่ายเครดิตผ่านหมวดนี้ ระบบจะเก็บแค่ชื่อหมวดไว้เป็นประวัติ แต่ล้างเนื้อหาทั้งหมด)') + '\nและกู้คืนไม่ได้');
     miniBtn(body, '🗑️ ยืนยัน ลบเลย', async () => {
       try {
         const res = await api('DELETE', '/api/connect/my-categories/' + c.id);
         if (focusCategory && focusCategory.toLowerCase() === c.name.toLowerCase()) setFocus('');
-        await showDataSettings();
+        await goBack();
         addBubble('assistant', res.categoryRemoved ? 'ลบหมวด "' + c.name + '" และเนื้อหา ' + res.deletedMemories + ' รายการแล้วค่ะ' : 'ล้างเนื้อหาในหมวด "' + c.name + '" ' + res.deletedMemories + ' รายการแล้วค่ะ');
       } catch (err) { note(body, err.message); }
     }, 'danger');
-    miniBtn(body, 'ยกเลิก', () => showDataSettings());
+    miniBtn(body, 'ยกเลิก', () => goBack());
   }
 
   async function showDataSettings() {
@@ -2124,11 +2125,16 @@
     note(body, 'แต่ละหมวดตั้งได้ว่าส่วนตัว ฟรี หรือคิดค่าบริการ (เครดิต) คนอื่นต้องขออนุญาตและคุณกดอนุญาตก่อนจึงจะใช้ข้อมูลได้' +
       (r.connectEnabled ? '' : '\n⚠️ ตอนนี้คุณปิด "อนุญาตใช้ข้อมูล" อยู่ ไม่มีใครเห็นหมวดของคุณ (เปิดได้ที่ปุ่ม 🔓 อนุญาตใช้ข้อมูล ข้างรูปโปรไฟล์)'));
     if (!r.categories.length) note(body, 'ยังไม่มีหมวด — บอกเลขาให้จำเรื่องต่างๆ แล้วหมวดจะมาอยู่ที่นี่');
-    r.categories.forEach((c) => {
+    r.categories.forEach((c) => buildCategoryCard(body, c, r, () => showDataSettings(), () => showDataSettings(), () => showDataSettings()));
+    if (r.categories.some((c) => c.visibility === 'free')) note(body, 'หมวดฟรี: ผู้ใช้ใช้ได้ครั้งละ ' + r.freeMinutes + ' นาทีหลังคุณอนุญาต แล้วระบบตัด ต้องขอใหม่');
+  }
+
+  // การ์ดตั้งค่า 1 หมวด (ส่วนตัว/ฟรี/เสียเงิน + ดูเนื้อหา + ล้าง/ลบ) — ใช้ทั้งหน้า "ตั้งค่าข้อมูล" และปุ่ม ⚙️ ในหน้าเลือกหัวข้อ
+  // reload = วาดหน้านี้ใหม่หลังบันทึก • itemsBack = ปุ่มกลับจากหน้าดูเนื้อหา • afterDelete = กลับไปหน้าไหนหลังลบ/ล้าง
+  function buildCategoryCard(body, c, r, reload, itemsBack, afterDelete) {
       const d = pcard(body, catIcon(c.name) + ' ' + c.name + '  · ' + c.items + ' รายการ', statusText(c, r.blockMinutes), mainCatClass(c.name));
       const row = document.createElement('div'); row.className = 'row2'; d.appendChild(row);
-      const reload = () => showDataSettings();
-      miniBtn(row, 'ดูเนื้อหา', () => showCategoryItems(c));
+      miniBtn(row, 'ดูเนื้อหา', () => showCategoryItems(c, itemsBack));
       if (c.readonly) { const ro = document.createElement('small'); ro.style.color = 'var(--muted)'; ro.textContent = 'คู่มือของระบบ — อ่านอย่างเดียว ลบ/แก้/แชร์ไม่ได้ (ถามเลขาได้เลยว่าใช้งานอย่างไร)'; d.appendChild(ro); return; }
       miniBtn(row, 'ส่วนตัว', async () => { try { if (await saveCategorySetting(c, 'private')) reload(); } catch (err) { note(body, err.message); } }, c.visibility === 'private' ? 'ok' : '');
       miniBtn(row, 'ฟรี', async () => { try { if (await saveCategorySetting(c, 'free')) reload(); } catch (err) { note(body, err.message); } }, c.visibility === 'free' ? 'ok' : '');
@@ -2153,14 +2159,25 @@
       // ลบเนื้อหาทั้งหมดของหมวด (หมวดหลักลบตัวหมวดไม่ได้ ล้างได้เฉพาะเนื้อหา) — ต้องยืนยันก่อนเสมอ
       const isMain = c.name === 'ทั่วไป' || c.name === 'ความสามารถเลขา' || c.name === 'ข้อมูลแชท';
       const rowDel = document.createElement('div'); rowDel.className = 'row2'; d.appendChild(rowDel);
-      miniBtn(rowDel, isMain ? '🗑️ ล้างเนื้อหาทั้งหมด' : '🗑️ ลบหมวดและเนื้อหาทั้งหมด', () => confirmDeleteCategory(c, isMain), 'danger');
-    });
-    if (r.categories.some((c) => c.visibility === 'free')) note(body, 'หมวดฟรี: ผู้ใช้ใช้ได้ครั้งละ ' + r.freeMinutes + ' นาทีหลังคุณอนุญาต แล้วระบบตัด ต้องขอใหม่');
+      miniBtn(rowDel, isMain ? '🗑️ ล้างเนื้อหาทั้งหมด' : '🗑️ ลบหมวดและเนื้อหาทั้งหมด', () => confirmDeleteCategory(c, isMain, afterDelete), 'danger');
+  }
+
+  // ตั้งค่าเฉพาะหมวดเดียว (เปิดจากปุ่ม ⚙️ ในหน้าเลือกหัวข้อการสนทนา)
+  async function showCategorySettings(name, back) {
+    const body = openSheet('ตั้งค่าหมวด "' + name + '"');
+    let r;
+    try { r = await api('GET', '/api/connect/my-categories'); } catch (err) { note(body, err.message); backButton(body, back); return; }
+    const c = r.categories.find((x) => x.name === name);
+    if (!c) { note(body, 'ไม่พบหมวดนี้'); backButton(body, back); return; }
+    if (!r.connectEnabled) note(body, '⚠️ ตอนนี้คุณปิด "อนุญาตใช้ข้อมูล" อยู่ ไม่มีใครเห็นหมวดของคุณ (เปิดได้ที่ป้าย 🔓 อนุญาตใช้ข้อมูล บนหน้าหลัก)');
+    buildCategoryCard(body, c, r, () => showCategorySettings(name, back), () => showCategorySettings(name, back), back);
+    if (c.visibility === 'free') note(body, 'หมวดฟรี: ผู้ใช้ใช้ได้ครั้งละ ' + r.freeMinutes + ' นาทีหลังคุณอนุญาต แล้วระบบตัด ต้องขอใหม่');
+    backButton(body, back);
   }
 
   // ปุ่ม "จำไว้ให้เลขา": เลือกหมวด (หรือพิมพ์ชื่อหมวดใหม่) แล้วสั่งให้เลขาสรุปบทสนทนานี้เก็บเข้าความจำ
-  $('saveMemoryBtn').addEventListener('click', async () => {
-    if (sending) return;
+  // เลือกหัวข้อการสนทนา: แตะชื่อหมวด = คุยต่อ/อัปเดตในหมวดนั้น • ⚙️ ตั้งค่า = ส่วนตัว/ฟรี/เสียเงินของหมวดนั้น • 🗑️ ลบ = ล้างเนื้อหา (หมวดหลัก 3 หมวดลบตัวหมวดไม่ได้) พร้อม popup ยืนยัน
+  async function showTopicChooser() {
     const body = openSheet('เลือกหัวข้อที่จะคุยต่อ / อัปเดตข้อมูล');
     const go = (cat, count) => {
       closeSheet();
@@ -2168,18 +2185,30 @@
       addBubble('assistant', 'เลือกหมวด "' + cat + '" แล้วค่ะ' + (count ? ' ตอนนี้มีข้อมูลอยู่ ' + count + ' รายการ' : ' เป็นหมวดใหม่ค่ะ') + ' เล่าข้อมูลใหม่หรือเรื่องที่จะอัปเดตได้เลย เลขาจะถามยืนยันก่อนบันทึกค่ะ');
     };
     try {
-      const { categories } = await api('GET', '/api/chat/categories');
-      categories.forEach((c) => sheetButton(body, catIcon(c.name) + ' ' + c.name + ' (' + c.memories + ')', () => go(c.name, c.memories), mainCatClass(c.name)));
-    } catch (e) { /* โหลดหมวดไม่ได้ก็ยังตั้งหมวดใหม่ได้ */ }
+      const r = await api('GET', '/api/connect/my-categories');
+      r.categories.forEach((c) => {
+        const row = document.createElement('div'); row.style.cssText = 'display:flex;gap:6px;align-items:stretch;margin-bottom:8px';
+        const main = sheetButton(row, catIcon(c.name) + ' ' + c.name + ' (' + c.items + ')', () => go(c.name, c.items), mainCatClass(c.name));
+        main.style.flex = '1'; main.style.minWidth = '0';
+        if (!c.readonly) {   // คู่มือแพลตฟอร์มอ่านอย่างเดียว ไม่มีตั้งค่า/ลบ
+          const isMain = c.name === 'ทั่วไป' || c.name === 'ความสามารถเลขา' || c.name === 'ข้อมูลแชท';
+          const st = sheetButton(row, '⚙️ ตั้งค่า', () => showCategorySettings(c.name, showTopicChooser)); st.style.padding = '8px 10px'; st.style.fontSize = '13px';
+          const del = sheetButton(row, '🗑️ ' + (isMain ? 'ล้าง' : 'ลบ'), () => confirmDeleteCategory(c, isMain, showTopicChooser), 'danger'); del.style.padding = '8px 10px'; del.style.fontSize = '13px';
+        }
+        body.appendChild(row);
+      });
+    } catch (e) { /* โหลดหมวดไม่ได้ก็ยังเพิ่มหัวข้อใหม่ได้ */ }
+    note(body, 'เพิ่มหัวข้อใหม่', 'sub');
     const inp = document.createElement('input');
-    inp.type = 'text'; inp.maxLength = 40; inp.placeholder = 'หรือพิมพ์ชื่อหมวดใหม่ แล้วกดตกลง';
+    inp.type = 'text'; inp.maxLength = 40; inp.placeholder = 'พิมพ์ชื่อหัวข้อใหม่ เช่น ฟาร์มกุ้ง แล้วกดเริ่มคุย';
     body.appendChild(inp);
-    sheetButton(body, '✓ ตกลง เริ่มคุยในหมวดนี้', () => {
+    sheetButton(body, '✓ เพิ่มหัวข้อใหม่ และเริ่มคุย', () => {
       const v = inp.value.trim();
       if (!v) { inp.focus(); return; }
       go(v);
     });
-  });
+  }
+  $('saveMemoryBtn').addEventListener('click', () => { if (sending) return; showTopicChooser(); });
 
   // ---------- เปิดผ่านไลน์ (LIFF) ----------
   async function initLiff() {
