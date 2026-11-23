@@ -13,6 +13,7 @@ const { nowText } = require('../calendar');
 const { pendingCount } = sharing;
 
 const suggest = require('../suggest');
+const tts = require('../tts');
 const router = express.Router();
 router.use(requireAuth);
 
@@ -133,6 +134,32 @@ router.get('/categories', async (req, res) => {
   } catch (err) {
     console.error('GET categories error:', err);
     res.status(500).json({ error: 'เกิดข้อผิดพลาดฝั่งเซิร์ฟเวอร์ ลองใหม่อีกครั้ง' });
+  }
+});
+
+// ---------- เสียงเลขาพรีเมียม (Gemini TTS) ----------
+// กันยิงรัว: ต่อผู้ใช้ 30 ครั้ง/นาที (ทุกครั้งที่เรียกจริงมีต้นทุน)
+const ttsHits = new Map();
+function ttsLimited(userId) {
+  const now = Date.now();
+  const arr = (ttsHits.get(userId) || []).filter((t) => now - t < 60000);
+  arr.push(now); ttsHits.set(userId, arr);
+  if (ttsHits.size > 2000) for (const [k, v] of ttsHits) if (!v.some((t) => now - t < 60000)) ttsHits.delete(k);
+  return arr.length > 30;
+}
+router.get('/tts/status', async (req, res) => {
+  try { res.json(await tts.status(req.user.id)); } catch (err) { console.error('tts status error:', err.message); res.json({ allowed: false }); }
+});
+router.post('/tts', async (req, res) => {
+  try {
+    if (ttsLimited(req.user.id)) return res.status(429).json({ error: 'ขอเสียงถี่เกินไป รอสักครู่', code: 'rate' });
+    const r = await tts.synthesizeForUser(req.user.id, req.body && req.body.text);
+    res.set({ 'Content-Type': 'audio/wav', 'Cache-Control': 'no-store', 'X-TTS-Seconds': String(r.seconds), 'X-TTS-Free-Left': String(r.freeSecondsLeft), 'X-TTS-Credits': String(r.creditsCharged) });
+    res.send(r.wav);
+  } catch (err) {
+    if (err instanceof tts.TtsError) return res.status(err.status).json({ error: err.message, code: err.code });
+    console.error('tts error:', err.message);
+    res.status(502).json({ error: 'เสียงพรีเมียมใช้ไม่ได้ในตอนนี้ (ใช้เสียงเบราว์เซอร์แทน)', code: 'upstream' });
   }
 });
 

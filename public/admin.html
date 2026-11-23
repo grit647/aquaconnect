@@ -85,6 +85,7 @@ button.act.danger { color:var(--danger); border-color:var(--danger); }
     <h2>ค่าตั้งระบบ</h2>
     <div class="box" id="settings"></div>
     <h2>ผู้ใช้ทั้งหมด</h2>
+    <div class="box" id="ttsUsage" style="margin-bottom:10px;font-size:13px;color:var(--muted)"></div>
     <div class="box tablewrap"><table id="users"></table></div>
   </main>
 </div>
@@ -218,10 +219,19 @@ button.act.danger { color:var(--danger); border-color:var(--danger); }
     box.appendChild(tbl);
   }
 
+  // สรุปเสียงพรีเมียมเดือนนี้: ใช้ไปเท่าไหร่เทียบงบ (ต้นทุนโดยประมาณตามอัตราที่ตั้งในค่าตั้งระบบ)
+  async function loadTtsUsage() {
+    try {
+      const t = await api('GET', '/api/admin/tts-usage');
+      const box = $('ttsUsage'); if (!box) return;
+      box.textContent = '🔊 เสียงพรีเมียมเดือน ' + t.month + ': ใช้ ' + Math.round((t.seconds / 60) * 10) / 10 + ' นาที · ต้นทุนโดยประมาณ ฿' + t.spentThb + ' จากงบ ฿' + t.budgetThb + (t.budgetThb > 0 && t.spentThb >= t.budgetThb ? ' (เต็มแล้ว ปิดอัตโนมัติ)' : '') + ' · หักเครดิตผู้ใช้ไป ' + t.creditsCharged + ' เครดิต · เปิดสิทธิ์ ' + t.enabledUsers + ' คน';
+    } catch (e) { /* ไม่มีก็ข้าม */ }
+  }
   async function loadUsers() {
+    loadTtsUsage();
     const { users } = await api('GET', '/api/admin/users');
     const t = $('users'); t.textContent = '';
-    const head = el('tr'); ['ชื่อ', 'เบอร์', 'ไลน์', 'ข้อความ', 'ความจำ', 'เครดิต', 'ค้นหา Google', 'สถานะ', ''].forEach((h) => head.appendChild(el('th', h))); t.appendChild(head);
+    const head = el('tr'); ['ชื่อ', 'เบอร์', 'ไลน์', 'ข้อความ', 'ความจำ', 'เครดิต', 'ค้นหา Google', 'เสียงพรีเมียม', 'สถานะ', ''].forEach((h) => head.appendChild(el('th', h))); t.appendChild(head);
     users.forEach((u) => {
       const tr = el('tr');
       const nameTd = el('td'); const who = el('div', undefined, 'who'); who.appendChild(avatarEl(u.name, u.picture)); who.appendChild(el('span', u.name + (u.is_admin ? ' (แอดมิน)' : ''))); nameTd.appendChild(who); tr.appendChild(nameTd);
@@ -245,6 +255,14 @@ button.act.danger { color:var(--danger); border-color:var(--danger); }
         catch (e) { toast(e.message); }
       });
       gTd.appendChild(gb); tr.appendChild(gTd);
+      const vTd = el('td');
+      const vb = el('button', (u.tts_enabled ? '✅ เปิด' : '🔒 ปิด') + ' (' + (Math.round((u.tts_seconds / 60) * 10) / 10) + ' นาที)', 'act' + (u.tts_enabled ? '' : ' danger'));
+      vb.title = 'กดเพื่อสลับสิทธิ์ใช้เสียงเลขาพรีเมียม (Gemini TTS) ของคนนี้ (ตัวเลข = นาทีเสียงที่ใช้ในเดือนนี้) — ค่าเริ่มต้นปิด';
+      vb.addEventListener('click', async () => {
+        try { await api('PATCH', '/api/admin/users/' + u.id + '/tts', { enabled: !u.tts_enabled }); toast('เรียบร้อย'); loadUsers(); loadTtsUsage(); }
+        catch (e) { toast(e.message); }
+      });
+      vTd.appendChild(vb); tr.appendChild(vTd);
       const st = el('td'); st.appendChild(el('span', u.status === 'active' ? 'ใช้งาน' : 'ถูกระงับ', 'pill ' + (u.status === 'active' ? 'ok' : 'bad'))); tr.appendChild(st);
       const act = el('td');
       if (!u.is_admin) {

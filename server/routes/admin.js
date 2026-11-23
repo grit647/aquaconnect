@@ -26,6 +26,11 @@ const SETTINGS = {
   group_ai_session_max_messages: { label: 'ช่วงเลขาคุยกันเอง พูดได้รวมกี่ข้อความ (เพดานค่า AI)', min: 2, max: 200 },
   group_ai_session_pace_sec: { label: 'ช่วงเลขาคุยกันเอง: เลขาพูดห่างกันกี่วินาที (มาก = ช้า)', min: 3, max: 120 },
   group_ai_msgs_per_issue: { label: 'ช่วงเลขาคุยกันเอง: คุยประเด็นละกี่ข้อความก่อนขยับประเด็น', min: 1, max: 20 },
+  tts_free_seconds_per_month: { label: 'เสียงพรีเมียม: โควตาฟรีต่อคนต่อเดือน (วินาที) เกินแล้วหักเครดิต', min: 0, max: 36000 },
+  tts_credits_per_minute: { label: 'เสียงพรีเมียม: เกินโควตาฟรีแล้วหักกี่เครดิตต่อนาทีเสียง', min: 0, max: 100 },
+  tts_cost_thb_per_minute: { label: 'เสียงพรีเมียม: ต้นทุนจริงของเราต่อนาทีเสียง (บาท) ใช้คิดงบรวม — ตอนนี้ราว 0.5 ปรับเป็นราว 1 ตั้งแต่ 1 ม.ค. 2570', min: 0, max: 100 },
+  tts_monthly_budget_thb: { label: 'เสียงพรีเมียม: งบรวมของแพลตฟอร์มต่อเดือน (บาท) ครบแล้วปิดทั้งระบบ (0 = ปิดเสียงพรีเมียมทั้งหมด)', min: 0, max: 100000 },
+  tts_voice_index: { label: 'เสียงพรีเมียม: เลือกเสียง (0 Kore, 1 Aoede, 2 Zephyr, 3 Leda, 4 Puck, 5 Charon)', min: 0, max: 5 },
   topup_min:        { label: 'เติมเครดิตขั้นต่ำต่อครั้ง (บาท)', min: 1, max: 10000 },
   topup_max:        { label: 'เติมเครดิตสูงสุดต่อครั้ง (บาท)', min: 100, max: 100000 },
 };
@@ -54,16 +59,16 @@ router.get('/overview', async (req, res) => {
 router.get('/users', async (req, res) => {
   try {
     const r = await query(
-      `SELECT u.id, u.name, u.phone, u.is_admin, u.status, (u.line_user_id IS NOT NULL) AS line_linked, u.google_search_enabled, (CASE WHEN u.google_search_month = $1 THEN u.google_search_count ELSE 0 END) AS google_search_count, u.line_picture_url AS picture, u.created_at,
+      `SELECT u.id, u.name, u.phone, u.is_admin, u.status, (u.line_user_id IS NOT NULL) AS line_linked, u.google_search_enabled, (CASE WHEN u.google_search_month = $1 THEN u.google_search_count ELSE 0 END) AS google_search_count, u.tts_enabled, (CASE WHEN u.tts_seconds_month = $2 THEN u.tts_seconds_used ELSE 0 END) AS tts_seconds, u.line_picture_url AS picture, u.created_at,
               (SELECT count(*)::int FROM messages m WHERE m.user_id = u.id AND m.role = 'user') AS messages,
               (SELECT count(*)::int FROM memories x WHERE x.owner_id = u.id) AS memories,
               COALESCE(b.balance, 0) AS balance,
               (SELECT count(*)::int FROM topups t WHERE t.user_id = u.id) AS topup_count,
               (SELECT count(*)::int FROM credit_ledger l WHERE l.user_id = u.id) AS ledger_count
          FROM users u LEFT JOIN credit_balances b ON b.user_id = u.id ORDER BY u.created_at DESC LIMIT 500`,
-      [require('../webSearch').currentMonth()]
+      [require('../webSearch').currentMonth(), require('../tts').monthNow()]
     );
-    res.json({ users: r.rows.map((x) => ({ ...x, balance: Number(x.balance) })) });
+    res.json({ users: r.rows.map((x) => ({ ...x, balance: Number(x.balance), tts_seconds: Number(x.tts_seconds) })) });
   } catch (err) {
     console.error('admin users error:', err);
     res.status(500).json({ error: 'เกิดข้อผิดพลาดฝั่งเซิร์ฟเวอร์' });
@@ -80,6 +85,35 @@ router.patch('/users/:id/google', async (req, res) => {
     res.json({ ok: true, user: r.rows[0] });
   } catch (err) {
     console.error('admin google flag error:', err);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดฝั่งเซิร์ฟเวอร์' });
+  }
+});
+
+// แอดมินกำหนดว่าใครใช้เสียงพรีเมียมได้ (ผู้ใช้เปิดเองไม่ได้) + สรุปการใช้เดือนนี้เทียบงบ
+router.patch('/users/:id/tts', async (req, res) => {
+  try {
+    if (!UUID_RE.test(req.params.id)) return res.status(404).json({ error: 'ไม่พบผู้ใช้' });
+    const enabled = !!(req.body && req.body.enabled === true);
+    const r = await query('UPDATE users SET tts_enabled = $2 WHERE id = $1 RETURNING id, tts_enabled', [req.params.id, enabled]);
+    if (!r.rows[0]) return res.status(404).json({ error: 'ไม่พบผู้ใช้' });
+    res.json({ ok: true, user: r.rows[0] });
+  } catch (err) {
+    console.error('admin tts flag error:', err);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดฝั่งเซิร์ฟเวอร์' });
+  }
+});
+router.get('/tts-usage', async (req, res) => {
+  try {
+    const tts = require('../tts');
+    const [spent, budget, enabledUsers] = await Promise.all([
+      tts.monthSpentThb(),
+      query("SELECT value FROM app_settings WHERE key = 'tts_monthly_budget_thb'"),
+      query('SELECT count(*)::int AS n FROM users WHERE tts_enabled'),
+    ]);
+    const credits = await query('SELECT COALESCE(sum(credits_charged), 0) AS c FROM tts_usage WHERE month = $1', [tts.monthNow()]);
+    res.json({ month: tts.monthNow(), spentThb: Math.round(spent.thb * 100) / 100, seconds: Math.round(spent.seconds), budgetThb: Number(budget.rows[0] && budget.rows[0].value) || 0, creditsCharged: Number(credits.rows[0].c), enabledUsers: enabledUsers.rows[0].n });
+  } catch (err) {
+    console.error('admin tts usage error:', err);
     res.status(500).json({ error: 'เกิดข้อผิดพลาดฝั่งเซิร์ฟเวอร์' });
   }
 });

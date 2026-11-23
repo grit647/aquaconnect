@@ -460,3 +460,14 @@ body {
 #msgInput::placeholder { color: #9aa6d6; opacity: 0.85; }
 #sendBtn.suggest { background: linear-gradient(135deg, #f59e0b, #fb923c); color: #1a0f00; box-shadow: 0 0 14px rgba(245, 158, 11, 0.55); }
 #msgInput { text-overflow: ellipsis; }
+
+/* ป๊อปอัป ตั้งค่าเสียง: ส่วนเลือกเสียงที่เลขาใช้อ่านคำตอบ */
+#tickPop .tvoice { margin: 14px 0 12px; padding-top: 12px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; }
+#tickPop .tvh { font-weight: 700; font-size: 14px; }
+#tickPop .topt { text-align: left; border: 1px solid var(--line); background: transparent; color: #fff; border-radius: 10px; padding: 9px 10px; font: inherit; font-size: 13px; cursor: pointer; }
+#tickPop .topt.on { border-color: var(--neon); color: var(--neon); }
+#tickPop .topt:disabled { opacity: 0.55; cursor: not-allowed; }
+#tickPop .tvi { color: var(--muted); font-size: 12px; line-height: 1.5; }
+#tickPop .ttest { border: 1px solid var(--neon2); background: transparent; color: var(--neon2); border-radius: 999px; padding: 7px; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
+#tickPop .ttest[hidden] { display: none; }
+#tickPop { max-height: 90vh; overflow-y: auto; }

@@ -636,7 +636,7 @@
       const r = await api('POST', '/api/chat/conversations/' + conversationId + '/messages', { content: text, source: source === 'voice' ? 'voice' : 'text', groupContext: grp.groupId });
       ans.tx.textContent = r.reply;
       body.scrollTop = body.scrollHeight;
-      if (source === 'voice' && ttsSupported) speak(r.reply, () => setBotState('idle'));
+      if (source === 'voice' && (ttsSupported || premiumActive())) speak(r.reply, () => setBotState('idle'));
     } catch (err) { ans.tx.textContent = err.message; }
   }
 
@@ -973,6 +973,7 @@
       else await newConversation();
       refreshGroupsBadge();   // ป้ายแจ้งจำนวนคำขอเข้าร่วมกลุ่มที่รอผู้สร้างอนุญาต + ข้อความกลุ่มที่ยังไม่อ่าน
       refreshRuleSuggestion();   // ของค้างตอนเปิดแอป → ข้อความสีเทาในช่องพิมพ์
+      loadPremiumInfo();   // สิทธิ์เสียงพรีเมียม (ถ้าผู้ใช้เลือกโหมดพรีเมียมไว้)
       checkOrganize();   // กลับเข้าแอป: มีข้อเสนอรอยืนยัน/บทสนทนาที่ยังไม่ได้สรุปแยกหมวดไหม (ถามครั้งเดียว)
     } catch (err) {
       addBubble('error', err.message);
@@ -1200,18 +1201,128 @@
   renderTts();
 
   let speechToken = 0;
-  function unlockSpeech() { // มือถือบางเครื่องต้องให้ผู้ใช้แตะก่อนถึงจะพูดได้
+  function unlockSpeech() { // มือถือบางเครื่องต้องให้ผู้ใช้แตะก่อนถึงจะพูดได้ (ทั้งเสียงเบราว์เซอร์และเสียงพรีเมียมที่เล่นผ่าน <audio>)
     try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; window.speechSynthesis.speak(u); } catch (e) { /* ignore */ }
+    try { if (!premAudio.src) { premAudio.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA='; premAudio.play().catch(() => {}); } } catch (e) { /* ignore */ }
   }
   function cancelSpeech() {
     speechToken++;
+    stopPremium();
     if (ttsSupported) window.speechSynthesis.cancel();
   }
   // การเตรียมข้อความก่อนอ่านออกเสียง (ทศนิยม "0.25" → "0 จุด 25", เดือนย่อ "พ.ย." → "พฤศจิกายน", ตัด markdown/อีโมจิ)
   // อยู่ที่ speech.js (ไฟล์เดียวกับที่ชุดทดสอบใช้)
   const cleanForSpeech = (t) => window.aqSpeech.forSpeech(t);
   const chunkText = (t) => window.aqSpeech.chunkText(t);
+  // ---------- เสียงเลขาพรีเมียม (Gemini TTS) — แอดมินเปิดสิทธิ์รายคน มีโควตาฟรีต่อเดือน เกินแล้วหักเครดิต ----------
+  // เลือกโหมดได้ที่ป๊อปอัป "ตั้งค่าเสียง" (แตะรูปเลขา AI) • เกิดข้อผิดพลาดอะไรก็ถอยกลับไปใช้เสียงเบราว์เซอร์ทันที ไม่ให้เสียงเงียบ
+  let premiumChoice = 'browser';
+  try { if (localStorage.getItem('aq_voice_mode') === 'premium') premiumChoice = 'premium'; } catch (e) { /* ignore */ }
+  let premiumInfo = null;          // ผลจาก GET /api/chat/tts/status
+  let premiumBlockedUntil = 0;     // ขอไม่ได้ (งบหมด/โควตาหมด) → พักไม่ขอซ้ำช่วงสั้นๆ
+  const premAudio = new Audio();
+  async function loadPremiumInfo() {
+    try { premiumInfo = await api('GET', '/api/chat/tts/status'); } catch (e) { premiumInfo = null; }
+    return premiumInfo;
+  }
+  const premiumActive = () => premiumChoice === 'premium' && !!premiumInfo && !!premiumInfo.available && Date.now() > premiumBlockedUntil;
+  async function fetchPremiumAudio(text) {
+    const r = await fetch('/api/chat/tts', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
+    if (!r.ok) {
+      let j = {}; try { j = await r.json(); } catch (e) { /* ไม่มี body */ }
+      const err = new Error(j.error || 'เสียงพรีเมียมใช้ไม่ได้'); err.code = j.code || 'upstream'; throw err;
+    }
+    const left = r.headers.get('x-tts-free-left');
+    if (premiumInfo && left !== null) premiumInfo.freeSecondsLeft = Number(left);
+    return r.blob();
+  }
+  function stopPremium() { try { premAudio.pause(); premAudio.removeAttribute('src'); premAudio.load(); } catch (e) { /* ignore */ } }
+  // เล่นเสียงพรีเมียมทีละท่อน (ท่อนถัดไปขอล่วงหน้าระหว่างที่ท่อนนี้เล่น) — คืนจริงเมื่อเล่นจบ, โยน error ถ้าท่อนแรกใช้ไม่ได้
+  function speakPremium(text, done) {
+    const raw = chunkText(cleanForSpeech(text));
+    const chunks = [];   // รวมท่อนสั้นๆ ให้ยาวไม่เกิน ~450 ตัวอักษร ลดจำนวนครั้งที่เรียก
+    raw.forEach((c) => { if (chunks.length && (chunks[chunks.length - 1] + ' ' + c).length <= 450) chunks[chunks.length - 1] += ' ' + c; else chunks.push(c); });
+    if (!chunks.length) { done && done(); return; }
+    const myToken = ++speechToken;
+    setBotState('speaking');
+    let i = 0;
+    let pending = fetchPremiumAudio(chunks[0]);
+    const fallback = (err) => {
+      if (myToken !== speechToken) return;
+      const first = i <= 1;
+      if (err && ['budget', 'no_credit', 'not_allowed', 'rate'].includes(err.code)) premiumBlockedUntil = Date.now() + 5 * 60 * 1000;
+      if (err && err.code === 'budget' && premiumInfo) premiumInfo.available = false;
+      if (first && !premiumNoticeShown) { premiumNoticeShown = true; addBubble('hint', (err && err.message ? err.message : 'เสียงพรีเมียมใช้ไม่ได้') + ' — ใช้เสียงเบราว์เซอร์แทนค่ะ'); }
+      if (first) speakBrowser(text, done); else done && done();
+    };
+    const playNext = async () => {
+      if (myToken !== speechToken) return;
+      if (i >= chunks.length) { done && done(); return; }
+      const mine = pending; i++;
+      pending = i < chunks.length ? fetchPremiumAudio(chunks[i]) : null;
+      if (pending) pending.catch(() => { /* จัดการตอนถึงท่อนนั้น */ });
+      let blob;
+      try { blob = await mine; } catch (err) { fallback(err); return; }
+      if (myToken !== speechToken) return;
+      const url = URL.createObjectURL(blob);
+      premAudio.onended = () => { URL.revokeObjectURL(url); playNext(); };
+      premAudio.onerror = () => { URL.revokeObjectURL(url); fallback(new Error('เล่นเสียงไม่ได้')); };
+      premAudio.src = url;
+      try { await premAudio.play(); } catch (err) { URL.revokeObjectURL(url); fallback(new Error('เบราว์เซอร์ไม่ยอมเล่นเสียง (แตะหน้าจอแล้วลองใหม่)')); }
+    };
+    playNext();
+  }
+  let premiumNoticeShown = false;
   function speak(text, done) {
+    if (premiumActive()) { speakPremium(text, done); return; }
+    speakBrowser(text, done);
+  }
+
+  // ส่วน "เสียงที่เลขาใช้อ่านคำตอบ" ในป๊อปอัป ตั้งค่าเสียง (tick.js เรียกตอนเปิด)
+  window.aqVoiceUi = (pop) => {
+    const box = document.createElement('div'); box.className = 'tvoice';
+    const hd = document.createElement('div'); hd.className = 'tvh'; hd.textContent = '🗣️ เสียงที่เลขาใช้อ่านคำตอบ';
+    const optBrowser = document.createElement('button'); optBrowser.type = 'button'; optBrowser.className = 'topt';
+    const optPrem = document.createElement('button'); optPrem.type = 'button'; optPrem.className = 'topt';
+    const info = document.createElement('div'); info.className = 'tvi';
+    const test = document.createElement('button'); test.type = 'button'; test.className = 'ttest'; test.textContent = '▶ ลองฟังเสียงพรีเมียม';
+    box.append(hd, optBrowser, optPrem, info, test); pop.appendChild(box);
+    const mins = (s) => (Math.round((s / 60) * 10) / 10);
+    const paint = () => {
+      const p = premiumInfo;
+      const can = !!p && !!p.available;
+      optBrowser.textContent = (premiumChoice === 'browser' || !can ? '● ' : '○ ') + '🔊 เสียงเบราว์เซอร์ (ฟรี)';
+      optBrowser.classList.toggle('on', premiumChoice === 'browser' || !can);
+      optPrem.textContent = (premiumChoice === 'premium' && can ? '● ' : '○ ') + '✨ เสียงพรีเมียม (เสียงธรรมชาติ)';
+      optPrem.classList.toggle('on', premiumChoice === 'premium' && can);
+      optPrem.disabled = !can;
+      test.hidden = !can;
+      if (!p) info.textContent = 'กำลังตรวจสอบสิทธิ์...';
+      else if (!p.allowed) info.textContent = '🔒 เสียงพรีเมียมยังไม่เปิดให้บัญชีนี้ — ขอแอดมินเปิดสิทธิ์ให้ได้ (ตอนนี้ใช้เสียงเบราว์เซอร์)';
+      else if (!p.budgetOk) info.textContent = 'งบเสียงพรีเมียมของระบบเดือนนี้เต็มแล้ว ใช้เสียงเบราว์เซอร์ไปก่อน (รีเซ็ตต้นเดือน)';
+      else info.textContent = 'โควตาฟรีเดือนนี้เหลือ ' + mins(p.freeSecondsLeft) + ' นาที (จาก ' + mins(p.freeSecondsTotal) + ' นาที) • เกินแล้วหัก ' + p.creditsPerMinute + ' เครดิต/นาที (ตอนนี้มี ' + p.balance + ' เครดิต) • ถ้าใช้ไม่ได้ ระบบกลับไปใช้เสียงเบราว์เซอร์ให้เอง';
+    };
+    const choose = (v) => {
+      premiumChoice = v;
+      try { localStorage.setItem('aq_voice_mode', v); } catch (e) { /* ignore */ }
+      premiumBlockedUntil = 0;
+      paint();
+    };
+    optBrowser.addEventListener('click', () => choose('browser'));
+    optPrem.addEventListener('click', () => { if (premiumInfo && premiumInfo.available) { choose('premium'); unlockSpeech(); } });
+    test.addEventListener('click', async () => {
+      unlockSpeech(); test.disabled = true;
+      try {
+        const blob = await fetchPremiumAudio('สวัสดีค่ะ น้อง' + ((me && me.secretaryName) || 'เลขา').replace(/^น้อง/, '') + 'พร้อมช่วยคุณแล้วนะคะ');
+        const url = URL.createObjectURL(blob); premAudio.onended = () => URL.revokeObjectURL(url); premAudio.onerror = null; premAudio.src = url; await premAudio.play();
+      } catch (err) { info.textContent = err.message; }
+      await loadPremiumInfo(); paint(); test.disabled = false;
+    });
+    paint();
+    loadPremiumInfo().then(paint);
+  };
+
+  function speakBrowser(text, done) {
     if (!ttsSupported) { done && done(); return; }
     const chunks = chunkText(cleanForSpeech(text));
     if (!chunks.length) { done && done(); return; }
@@ -1272,7 +1383,7 @@
     voiceMode = true; voicePaused = !!startPaused; idleCycles = 0; realtime = !startPaused;
     $('voiceScreen').hidden = false;
     vCaption('', '');
-    if (ttsSupported) unlockSpeech();
+    if (ttsSupported || premiumActive()) unlockSpeech();
     lockScreen();
     if (startPaused) { pauseVoice('แตะไมค์เพื่อเริ่มคุย'); return; }
     $('voiceScreen').className = 'state-idle';
@@ -1290,7 +1401,7 @@
   function resumeVoice() {
     voicePaused = false; realtime = true; idleCycles = 0;
     $('voiceScreen').className = 'state-idle';
-    if (ttsSupported) unlockSpeech();
+    if (ttsSupported || premiumActive()) unlockSpeech();
     lockScreen();
     setBotState('idle');
     if (!sending) startListening();
@@ -1627,7 +1738,7 @@
     try { info = await api('GET', '/api/credits/me'); } catch (err) { note(body, err.message); return; }
     note(body, info.balance.toLocaleString('th-TH') + ' เครดิต', 'bal');
     note(body, 'เครดิต 1 = 1 บาท' + (info.pendingTopups ? ' • มี ' + info.pendingTopups + ' รายการรอแอดมินตรวจสลิป' : ''));
-    info.ledger.slice(0, 5).forEach((l) => note(body, (l.amount > 0 ? '+' : '') + l.amount + '  ' + (LEDGER_LABEL[l.type] || l.type) + (l.note ? ' (' + l.note + ')' : ''), 'ledger'));
+    info.ledger.slice(0, 5).forEach((l) => note(body, (l.amount > 0 ? '+' : '') + l.amount + '  ' + (l.ref_type === 'tts' ? 'เสียงเลขาพรีเมียม' : (LEDGER_LABEL[l.type] || l.type)) + (l.note && l.ref_type !== 'tts' ? ' (' + l.note + ')' : ''), 'ledger'));
 
     note(body, 'เติมเครดิต', 'sub');
     if (!info.qrAvailable) { note(body, 'ยังไม่ได้ตั้งค่า QR รับเงิน — แจ้งแอดมิน'); return; }

@@ -232,4 +232,4 @@ async function runAgent({ systemPrompt, history, tools, maxSteps = 4 }) {
   return { text: '(เลขาทำงานหลายขั้นตอนเกินไป ลองบอกใหม่ให้สั้นลงนะคะ)', executed, usage };
 }
 
-module.exports = { isConfigured, runAgent, googleSearch, setGoogleSearchForTests, setCallModelForTests, transcribeAudio, setTranscribeForTests, readSlipAmount, setReadSlipForTests };
+module.exports = { getAccessToken, getVertexProjectId, isConfigured, runAgent, googleSearch, setGoogleSearchForTests, setCallModelForTests, transcribeAudio, setTranscribeForTests, readSlipAmount, setReadSlipForTests };

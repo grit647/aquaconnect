@@ -35,9 +35,9 @@
     if (overlay) return;
     overlay = document.createElement('div'); overlay.id = 'tickOverlay';
     pop = document.createElement('div'); pop.id = 'tickPop';
-    var title = document.createElement('div'); title.className = 'tt'; title.textContent = '🔊 เสียงประมวลผล';
+    var title = document.createElement('div'); title.className = 'tt'; title.textContent = '🔊 ตั้งค่าเสียง';
     var note = document.createElement('div'); note.className = 'tn';
-    note.textContent = 'ติ๊กๆ = เลขากำลังคิด · ตี๊ดๆ = เลขาพูดจบ ถึงตาคุณพูดได้แล้ว (เลื่อนไปซ้ายสุด = ปิดเสียง)';
+    note.textContent = 'เสียงบอกสถานะ — ติ๊กๆ = เลขากำลังคิด · ตี๊ดๆ = เลขาพูดจบ ถึงตาคุณพูดได้แล้ว (เลื่อนไปซ้ายสุด = ปิดเสียง)';
     var rng = document.createElement('input'); rng.type = 'range'; rng.min = '0'; rng.max = '100'; rng.value = String(Math.round(vol * 100));
     var lab = document.createElement('div'); lab.className = 'tv';
     function paint() { lab.textContent = vol <= 0 ? 'ปิดเสียง' : 'ความดัง ' + Math.round(vol * 100) + '%'; }
@@ -49,7 +49,9 @@
     var row = document.createElement('div'); row.className = 'tb';
     function mk(t, fn) { var b = document.createElement('button'); b.type = 'button'; b.textContent = t; b.addEventListener('click', fn); return b; }
     row.append(mk('ลองฟังติ๊ก', function () { click(); setTimeout(click, 300); setTimeout(click, 600); }), mk('ลองฟังตี๊ด', doneBeep), mk('ปิด', close));
-    pop.append(title, note, rng, lab, row);
+    pop.append(title, note, rng, lab);
+    if (typeof window.aqVoiceUi === 'function') { try { window.aqVoiceUi(pop); } catch (e) { /* ส่วนเสียงเลขาพังก็ไม่กระทบเสียงบอกสถานะ */ } }
+    pop.append(row);
     overlay.appendChild(pop);
     overlay.addEventListener('click', function (e) { if (e.target === overlay) close(); });
     document.body.appendChild(overlay);

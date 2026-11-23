@@ -67,7 +67,7 @@ async function notifyAdmins(text) {
 async function myCredits(userId) {
   const [balance, ledger, pending, qr] = await Promise.all([
     getBalance(userId),
-    query('SELECT amount, type, note, balance_after, created_at FROM credit_ledger WHERE user_id = $1 ORDER BY id DESC LIMIT 10', [userId]),
+    query('SELECT amount, type, ref_type, note, balance_after, created_at FROM credit_ledger WHERE user_id = $1 ORDER BY id DESC LIMIT 10', [userId]),
     query("SELECT count(*)::int AS n FROM topups WHERE user_id = $1 AND status = 'pending'", [userId]),
     query("SELECT 1 FROM app_settings WHERE key = 'payment_qr'"),
   ]);
@@ -218,4 +218,4 @@ async function refundAsk(requesterId, ownerId, charge) {
   });
 }
 
-module.exports = { getBalance, myCredits, createTopup, approveTopup, rejectTopup, chargeAsk, refundAsk, InsufficientCredit };
+module.exports = { applyDeltaIn: applyDelta, getBalance, myCredits, createTopup, approveTopup, rejectTopup, chargeAsk, refundAsk, InsufficientCredit };
