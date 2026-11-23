@@ -11,12 +11,24 @@ function keyId() {
   if (!raw) return '';
   return raw.includes('/') ? raw : `${APP_ID()}/${raw}`;
 }
-// Environment บางที่เก็บขึ้นบรรทัดใหม่เป็นตัวอักษร \n — แปลงกลับให้เป็นบรรทัดจริง
+// กุญแจที่วางใน Environment อาจเพี้ยนได้หลายแบบ (ขึ้นบรรทัดใหม่เป็นตัวอักษร \n, บรรทัดถูกยุบเป็นช่องว่าง, มีเครื่องหมายคำพูดครอบ, ลืมวางบรรทัด BEGIN/END)
+// → ดึงเฉพาะเนื้อ base64 แล้วประกอบเป็นไฟล์ PEM ใหม่ให้ถูกรูปแบบ (ชนิดตามบรรทัด BEGIN ถ้ามี ไม่งั้นใช้ PKCS8 "PRIVATE KEY" ซึ่งเป็นแบบที่ JaaS ให้ดาวน์โหลด)
+const NL = String.fromCharCode(10);
+const BACKSLASH_N = String.fromCharCode(92) + 'n';
+function keyParts() {
+  // ตัวอักษร backslash-n (ที่ Environment บางที่เก็บแทนการขึ้นบรรทัดใหม่) ต้องแปลงก่อน ไม่งั้นตัว "n" จะติดเข้าไปในเนื้อกุญแจ
+  const raw = String(process.env.JAAS_PRIVATE_KEY || '').trim().split(BACKSLASH_N).join(NL).replace(/^["']+|["']+$/g, '');
+  const m = /-----BEGIN ([A-Z ]*PRIVATE KEY)-----/.exec(raw);
+  const body = raw.replace(/-----[^-]+-----/g, '').replace(/[^A-Za-z0-9+/=]/g, '');
+  return { type: m ? m[1] : 'PRIVATE KEY', body };
+}
 function privateKey() {
-  return String(process.env.JAAS_PRIVATE_KEY || '').trim().replace(/\\n/g, '\n');
+  const { type, body } = keyParts();
+  if (body.length < 400) return '';   // กุญแจ RSA 2048+ ยาวกว่านี้มาก = วางไม่ครบ
+  return '-----BEGIN ' + type + '-----' + NL + body.match(/.{1,64}/g).join(NL) + NL + '-----END ' + type + '-----' + NL;
 }
 
-const configured = () => !!(APP_ID() && keyId() && /BEGIN [A-Z ]*PRIVATE KEY/.test(privateKey()));
+const configured = () => !!(APP_ID() && keyId() && privateKey());
 
 // โทเค็นสำหรับผู้จัด 1 ห้อง (อายุสั้น 3 ชั่วโมง ผูกกับห้องนั้นห้องเดียว)
 function hostToken({ room, userId, name }) {
@@ -42,7 +54,8 @@ function status() {
   return {
     appId: !!APP_ID(),
     keyId: !!String(process.env.JAAS_KEY_ID || '').trim(),
-    privateKey: !key ? 'missing' : /BEGIN [A-Z ]*PRIVATE KEY/.test(key) && /END [A-Z ]*PRIVATE KEY/.test(key) ? 'ok' : 'bad-format',
+    privateKey: !String(process.env.JAAS_PRIVATE_KEY || '').trim() ? 'missing' : key ? 'ok' : 'bad-format',
+    keyChars: keyParts().body.length,   // จำนวนตัวอักษรเนื้อกุญแจที่อ่านได้ (RSA 2048 ปกติ ~1600 ตัว) — ไว้ดูว่าวางครบไหม ไม่เปิดเผยเนื้อกุญแจ
     ready: configured(),
   };
 }

@@ -92,6 +92,22 @@ async function call(method, path, body, cookie) {
   check('ห้องที่จบแล้ว ไม่ออกโทเค็นผู้จัด', !((await call('GET', '/api/meetings/public/' + c3.json.meeting.code, null, A.cookie)).json.meeting.jaas));
   process.env.JAAS_PRIVATE_KEY = 'ไม่ใช่กุญแจ';
   check('ค่ากุญแจไม่ถูกรูปแบบ → ถือว่ายังไม่ตั้งค่า (ไม่พังหน้าห้อง)', !((await call('GET', '/api/meetings/public/' + m1.code)).json.meeting || {}).jaas);
+  // วางกุญแจเพี้ยนใน Environment หลายแบบ → ยังใช้ได้ (ดึงเนื้อ base64 มาประกอบ PEM ใหม่) และตรวจลายเซ็นผ่านเหมือนเดิม
+  const jaasLib = require('./jaas');
+  const NL = String.fromCharCode(10);
+  const bodyOnly = kp.privateKey.split(NL).filter((l) => l && !l.startsWith('-----')).join('');
+  const variants = {
+    'ยุบบรรทัดเป็นช่องว่าง': kp.privateKey.split(NL).join(' '),
+    'ครอบด้วยเครื่องหมายคำพูด': '"' + kp.privateKey.split(NL).join(String.fromCharCode(92) + 'n') + '"',
+    'วางแต่เนื้อ ไม่มีบรรทัด BEGIN/END': bodyOnly,
+  };
+  for (const [label, val] of Object.entries(variants)) {
+    process.env.JAAS_APP_ID = 'vpaas-magic-cookie-testapp'; process.env.JAAS_KEY_ID = 'abc123'; process.env.JAAS_PRIVATE_KEY = val;
+    let ok = false; try { jwtLib.verify(jaasLib.hostToken({ room: 'r', userId: 'u', name: 'n' }), kp.publicKey, { algorithms: ['RS256'] }); ok = jaasLib.status().ready === true; } catch (e) { ok = false; }
+    check('กุญแจใน Environment แบบ "' + label + '" → ยังใช้เซ็นโทเค็นได้', ok);
+  }
+  process.env.JAAS_PRIVATE_KEY = '-----BEGIN PRIVATE KEY-----' + NL + 'MIIEvQIBADAN';
+  check('กุญแจวางไม่ครบ (ขาดท่อนหลัง) → สถานะ bad-format พร้อมจำนวนตัวอักษรที่อ่านได้ ไม่เผยเนื้อกุญแจ', jaasLib.status().privateKey === 'bad-format' && jaasLib.status().keyChars < 400 && !JSON.stringify(jaasLib.status()).includes('MIIE'));
   delete process.env.JAAS_APP_ID; delete process.env.JAAS_KEY_ID; delete process.env.JAAS_PRIVATE_KEY;
 
   // ลบผู้ใช้ → ห้องหายตาม (ไม่ค้างขยะ)
