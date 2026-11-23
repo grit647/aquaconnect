@@ -1243,7 +1243,9 @@
         stopCam();
         if (!blob) { addBubble('error', 'ถ่ายรูปไม่สำเร็จ ลองใหม่อีกครั้งค่ะ'); return; }
         await addFiles([new File([blob], 'ภาพจากกล้อง.jpg', { type: 'image/jpeg' })]);
-        inputEl.placeholder = 'พิมพ์ถามเลขาเกี่ยวกับรูปนี้ หรือกดส่งเลย...'; if (!voiceMode) inputEl.focus();   // โหมดเสียงไม่โฟกัสช่องพิมพ์ (กันคีย์บอร์ดเด้ง)
+        if (voiceMode) {   // หน้าสนทนาเสียง: ถ่ายเสร็จส่งเข้าห้องสนทนาให้เลขาดูทันที (ไม่ต้องพิมพ์/พูดซ้ำ) ถ้าอยากถามเฉพาะเรื่อง ค่อยพูดต่อรอบถัดไป
+          if (!sending) { stopRecording(true); cancelSpeech(); await send('ช่วยดูรูปนี้ให้หน่อย บอกว่าเห็นอะไร', 'voice'); }
+        } else { inputEl.placeholder = 'พิมพ์ถามเลขาเกี่ยวกับรูปนี้ หรือกดส่งเลย...'; inputEl.focus(); }
       }, 'image/jpeg', 0.88);
     });
   }
