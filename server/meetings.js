@@ -2,6 +2,7 @@
 // ฝั่งเซิร์ฟเวอร์ไม่แตะภาพ/เสียงเลย: เก็บแค่ "ห้อง" (ชื่อ ประเภท ผู้จัด วันหมดอายุ) • ชื่อห้องใน Jitsi สุ่มเดาไม่ได้ (ไม่ใช้ชื่อที่ผู้ใช้ตั้ง)
 const crypto = require('crypto');
 const { query } = require('./db');
+const jaas = require('./jaas');
 
 const TYPES = { meeting: 'ประชุม', seminar: 'สัมมนา' };
 const MAX_TITLE = 80;
@@ -65,7 +66,7 @@ async function endMeeting(userId, id) {
 }
 
 // ข้อมูลห้องสำหรับหน้า /meet/<code> (เปิดสาธารณะ — คืนเฉพาะข้อมูลที่ต้องใช้เข้าห้อง ไม่มีเบอร์/ไอดีผู้จัด)
-async function publicInfo(code, viewerUserId) {
+async function publicInfo(code, viewerUserId, viewerName) {
   const c = String(code || '').toLowerCase();
   if (!CODE_RE.test(c)) return null;
   const r = await query('SELECT m.*, u.name AS host_name FROM meetings m JOIN users u ON u.id = m.host_id WHERE m.code = $1', [c]);
@@ -74,6 +75,11 @@ async function publicInfo(code, viewerUserId) {
   const out = present(m, m.host_name);
   out.room = roomName(m.code);
   out.isHost = !!viewerUserId && String(m.host_id) === String(viewerUserId);
+  // ใช้ JaaS (ผู้จัดเป็น moderator โดยไม่ต้องล็อกอิน Jitsi) เมื่อตั้งค่าไว้ครบ — โทเค็นออกให้เฉพาะผู้จัดตัวจริงของห้องนี้ ผู้เข้าร่วมอื่นไม่ต้องมีโทเค็น
+  if (jaas.configured() && !out.ended) {
+    out.jaas = { appId: jaas.appId(), room: m.code };
+    if (out.isHost) out.jaas.jwt = jaas.hostToken({ room: m.code, userId: m.host_id, name: viewerName || out.hostName });
+  }
   return out;
 }
 

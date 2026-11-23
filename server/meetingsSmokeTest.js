@@ -72,6 +72,28 @@ async function call(method, path, body, cookie) {
   check('สร้างห้องเกินเพดานต่อวัน → ปฏิเสธพร้อมบอกเหตุผล', c3.status === 200 && c4.status === 400 && /ครบ 3 ห้อง/.test(c4.json.error), JSON.stringify(c4.json));
   await query("UPDATE app_settings SET value = '5' WHERE key = 'meetings_per_day'");
 
+  // ---------- JaaS: ผู้จัดเป็น moderator ด้วยโทเค็นเซ็นฝั่งเซิร์ฟเวอร์ (ไม่ต้องล็อกอิน Jitsi) ----------
+  const nojaas = await call('GET', '/api/meetings/public/' + c3.json.meeting.code, null, A.cookie);
+  check('ยังไม่ตั้งค่า JaaS → ไม่มีข้อมูล jaas (ถอยไปใช้ meet.jit.si)', nojaas.status === 200 && !nojaas.json.meeting.jaas);
+  const crypto = require('crypto'); const jwtLib = require('jsonwebtoken');
+  const kp = crypto.generateKeyPairSync('rsa', { modulusLength: 2048, publicKeyEncoding: { type: 'spki', format: 'pem' }, privateKeyEncoding: { type: 'pkcs8', format: 'pem' } });
+  process.env.JAAS_APP_ID = 'vpaas-magic-cookie-testapp'; process.env.JAAS_KEY_ID = 'abc123'; process.env.JAAS_PRIVATE_KEY = kp.privateKey.split(String.fromCharCode(10)).join(String.fromCharCode(92) + 'n');   // จำลอง Environment ที่เก็บขึ้นบรรทัดใหม่เป็นตัวอักษร backslash-n
+
+  const withJaas = await call('GET', '/api/meetings/public/' + c3.json.meeting.code, null, A.cookie);
+  const jj = (withJaas.json.meeting || {}).jaas || {};
+  let claims = null; try { claims = jwtLib.verify(jj.jwt, kp.publicKey, { algorithms: ['RS256'], complete: true }); } catch (e) { claims = { err: e.message }; }
+  check('ตั้งค่า JaaS แล้ว ผู้จัดได้โทเค็น RS256 ที่ตรวจด้วยกุญแจสาธารณะผ่าน + kid ถูกรูปแบบ <AppID>/<keyId>', claims && claims.header && claims.header.kid === 'vpaas-magic-cookie-testapp/abc123' && claims.header.alg === 'RS256', JSON.stringify(claims && (claims.header || claims)));
+  const pl = (claims && claims.payload) || {};
+  check('โทเค็นผู้จัด: aud/iss/sub ถูก, ผูกกับห้องนี้ห้องเดียว, เป็น moderator, อายุไม่เกิน 3 ชม., ใช้ชื่อบัญชี', pl.aud === 'jitsi' && pl.iss === 'chat' && pl.sub === 'vpaas-magic-cookie-testapp' && pl.room === c3.json.meeting.code && pl.context.user.moderator === 'true' && pl.exp - pl.nbf <= 3 * 3600 + 20 && pl.context.user.name === 'ทดสอบ ผู้จัด', JSON.stringify(pl));
+  const guestJ = await call('GET', '/api/meetings/public/' + c3.json.meeting.code);
+  const otherJ = await call('GET', '/api/meetings/public/' + c3.json.meeting.code, null, B.cookie);
+  check('คนไม่ล็อกอิน/สมาชิกคนอื่น ไม่ได้โทเค็น moderator (ได้แค่ appId + room)', guestJ.json.meeting.jaas && !guestJ.json.meeting.jaas.jwt && otherJ.json.meeting.jaas && !otherJ.json.meeting.jaas.jwt && !JSON.stringify(guestJ.json).includes('PRIVATE KEY'));
+  await call('POST', '/api/meetings/' + c3.json.meeting.id + '/end', {}, A.cookie);
+  check('ห้องที่จบแล้ว ไม่ออกโทเค็นผู้จัด', !((await call('GET', '/api/meetings/public/' + c3.json.meeting.code, null, A.cookie)).json.meeting.jaas));
+  process.env.JAAS_PRIVATE_KEY = 'ไม่ใช่กุญแจ';
+  check('ค่ากุญแจไม่ถูกรูปแบบ → ถือว่ายังไม่ตั้งค่า (ไม่พังหน้าห้อง)', !((await call('GET', '/api/meetings/public/' + m1.code)).json.meeting || {}).jaas);
+  delete process.env.JAAS_APP_ID; delete process.env.JAAS_KEY_ID; delete process.env.JAAS_PRIVATE_KEY;
+
   // ลบผู้ใช้ → ห้องหายตาม (ไม่ค้างขยะ)
   const del = await query('DELETE FROM users WHERE phone = ANY($1)', [PHONES]);
   const left = (await query("SELECT count(*)::int AS n FROM meetings WHERE title IN ('คุยเรื่องอาหารกุ้ง','ประชุมทั่วไป','ห้อง 3')")).rows[0].n;

@@ -21,7 +21,7 @@ router.get('/public/:code', async (req, res) => {
   try {
     if (limited(req)) return res.status(429).json({ error: 'ลองบ่อยเกินไป รอสักครู่' });
     const viewer = getUserFromReq(req);
-    const info = await meetings.publicInfo(req.params.code, viewer && viewer.id);
+    const info = await meetings.publicInfo(req.params.code, viewer && viewer.id, viewer && viewer.name);
     if (!info) return res.status(404).json({ error: 'ไม่พบห้องนี้ ตรวจลิงก์อีกครั้ง' });
     res.json({ meeting: info, me: viewer ? { name: viewer.name } : null });
   } catch (err) { console.error('meeting public error:', err.message); res.status(500).json({ error: 'เกิดข้อผิดพลาดฝั่งเซิร์ฟเวอร์' }); }
