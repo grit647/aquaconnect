@@ -38,6 +38,7 @@ app.use('/api/calendar', calendarRouter);
 app.use('/api/me', require('./routes/me'));
 app.use('/api/groups', require('./routes/groups'));
 app.use('/api/admin', adminRouter);
+app.use('/api/meetings', require('./routes/meetings'));
 
 // เช็คสุขภาพระบบ (ใช้กับ UptimeRobot ได้) — แตะฐานข้อมูลเบาๆ ด้วย ช่วยกันโปรเจกต์ Supabase แผนฟรีโดนพักจากไม่มีการใช้งาน
 app.get('/api/health', async (req, res) => {
@@ -57,6 +58,8 @@ app.get('/api/health', async (req, res) => {
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 app.use(express.static(PUBLIC_DIR, { index: 'ai.html' }));
 app.get('/admin', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'admin.html')));
+// หน้าห้องสัมมนา/ประชุม (ลิงก์ที่ส่งให้คนอื่น — เปิดได้โดยไม่ต้องสมัคร)
+app.get('/meet/:code', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'meet.html')));
 
 // เส้นทางที่ไม่ใช่ /api/* และไม่ตรงไฟล์ static ให้ส่งหน้า AI เลขา
 app.get('*', (req, res) => {

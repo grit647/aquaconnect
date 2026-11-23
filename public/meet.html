@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>ห้องประชุมออนไลน์ — AquaConnect</title>
+<style>
+  :root { --bg: #070b1a; --panel: #131a30; --line: #2a3460; --text: #e8ecff; --muted: #8d98c4; --neon: #22d3ee; --neon2: #a78bfa; --err: #fb7185; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, "Noto Sans Thai", "Sarabun", sans-serif; }
+  #wrap { min-height: 100%; display: flex; align-items: center; justify-content: center; padding: 20px; }
+  .card { width: 100%; max-width: 420px; background: var(--panel); border: 1px solid var(--neon2); border-radius: 16px; padding: 22px; text-align: center; }
+  .logo { font-size: 14px; color: var(--muted); margin-bottom: 10px; }
+  h1 { font-size: 20px; margin: 6px 0; word-break: break-word; }
+  .tag { display: inline-block; padding: 3px 12px; border-radius: 999px; border: 1px solid var(--neon); color: var(--neon); font-size: 12px; font-weight: 700; }
+  .host { color: var(--muted); font-size: 13px; margin: 10px 0 16px; }
+  .note { font-size: 13px; color: var(--muted); margin: 10px 0; line-height: 1.5; }
+  .err { color: var(--err); font-size: 14px; margin: 14px 0; }
+  input { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid var(--line); background: #0b1126; color: var(--text); font: inherit; font-size: 16px; margin-bottom: 12px; }
+  button, a.btn { display: block; width: 100%; padding: 13px; border-radius: 999px; border: 0; background: linear-gradient(90deg, #0ea5b7, #7c3aed); color: #fff; font: inherit; font-size: 16px; font-weight: 700; cursor: pointer; text-decoration: none; margin-top: 8px; }
+  a.btn.ghost, button.ghost { background: transparent; border: 1px solid var(--neon2); color: var(--neon2); font-size: 14px; }
+  #room { position: fixed; inset: 0; display: none; flex-direction: column; background: #000; }
+  #room iframe { flex: 1; width: 100%; border: 0; }
+  #bar { display: flex; gap: 8px; padding: 8px 10px; background: var(--panel); border-bottom: 1px solid var(--line); align-items: center; }
+  #bar span { flex: 1; font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #bar a, #bar button { width: auto; margin: 0; padding: 7px 14px; font-size: 13px; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div class="card" id="card">
+    <div class="logo">🦐 AquaConnect · AI เลขาส่วนตัว</div>
+    <div id="body">กำลังโหลดห้อง...</div>
+  </div>
+</div>
+<div id="room">
+  <div id="bar"><span id="barTitle"></span><a class="btn ghost" id="barOpen" target="_blank" rel="noopener">เปิดในหน้าต่างใหม่</a><button type="button" class="ghost" id="barLeave">ออก</button></div>
+</div>
+<script>
+(function () {
+  'use strict';
+  var parts = location.pathname.split('/').filter(Boolean);
+  var code = (parts[1] || '').toLowerCase();
+  var body = document.getElementById('body');
+  function el(tag, text, cls) { var e = document.createElement(tag); if (text) e.textContent = text; if (cls) e.className = cls; return e; }
+  function show(nodes) { body.textContent = ''; nodes.forEach(function (n) { body.appendChild(n); }); }
+
+  function jitsiUrl(m, name) {
+    var cfg = ['config.prejoinPageEnabled=false', 'config.disableDeepLinking=true', 'userInfo.displayName=' + encodeURIComponent(JSON.stringify(name))];
+    // สัมมนา: ผู้ฟังเข้ามาปิดไมค์/กล้องไว้ก่อน (ผู้จัดเปิดได้ปกติ) — ผู้ฟังกดเปิดเองได้ถ้าจำเป็น
+    if (m.type === 'seminar' && !m.isHost) cfg.push('config.startWithAudioMuted=true', 'config.startWithVideoMuted=true');
+    return 'https://meet.jit.si/' + encodeURIComponent(m.room) + '#' + cfg.join('&');
+  }
+
+  function enter(m, name) {
+    var url = jitsiUrl(m, name);
+    var room = document.getElementById('room');
+    document.getElementById('barTitle').textContent = '🎥 ' + m.title;
+    document.getElementById('barOpen').href = url;
+    var f = document.createElement('iframe');
+    f.allow = 'camera; microphone; fullscreen; display-capture; autoplay; clipboard-write';
+    f.src = url;
+    room.appendChild(f);
+    room.style.display = 'flex';
+    document.getElementById('wrap').style.display = 'none';
+    document.getElementById('barLeave').onclick = function () { f.remove(); room.style.display = 'none'; document.getElementById('wrap').style.display = ''; };
+  }
+
+  fetch('/api/meetings/public/' + encodeURIComponent(code), { credentials: 'same-origin' })
+    .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+    .then(function (r) {
+      if (!r.ok) { show([el('div', r.j.error || 'เปิดห้องไม่ได้', 'err'), (function () { var a = el('a', 'ไปหน้าแอป AquaConnect', 'btn ghost'); a.href = '/'; return a; })()]); return; }
+      var m = r.j.meeting, me = r.j.me;
+      document.title = m.title + ' — AquaConnect';
+      var nodes = [el('h1', m.title), el('span', m.typeLabel === 'สัมมนา' ? '🎓 สัมมนา' : '👥 ประชุม', 'tag'), el('div', 'ผู้จัด: ' + m.hostName, 'host')];
+      if (m.ended) {
+        nodes.push(el('div', 'ห้องนี้ปิดแล้วหรือลิงก์หมดอายุ', 'err'));
+      } else {
+        if (m.type === 'seminar' && !m.isHost) nodes.push(el('div', 'เป็นห้องสัมมนา: ผู้จัดพูดเป็นหลัก คุณจะเข้ามาโดยปิดไมค์และกล้องไว้ก่อน (กดเปิดเองได้ภายหลัง)', 'note'));
+        var inp = null;
+        if (!me) { inp = el('input'); inp.type = 'text'; inp.maxLength = 40; inp.placeholder = 'ชื่อของคุณ (ให้คนอื่นเห็นในห้อง)'; nodes.push(inp); }
+        else nodes.push(el('div', 'เข้าห้องในชื่อ: ' + me.name, 'note'));
+        var go = el('button', 'เข้าร่วมห้อง');
+        go.type = 'button';
+        go.addEventListener('click', function () {
+          var name = me ? me.name : (inp.value || '').trim();
+          if (!name) { inp.focus(); return; }
+          enter(m, name);
+        });
+        nodes.push(go);
+        nodes.push(el('div', 'ต้องอนุญาตให้เบราว์เซอร์ใช้กล้อง/ไมค์ เมื่อมีหน้าต่างถาม ถ้าเปิดในแอปไลน์แล้วเข้าไม่ได้ ให้เปิดลิงก์ในเบราว์เซอร์ Chrome/Safari', 'note'));
+      }
+      if (!me) { var s = el('a', '✨ สมัครสมาชิกฟรี — มี AI เลขาส่วนตัวของคุณเอง', 'btn ghost'); s.href = '/'; nodes.push(s); }
+      show(nodes);
+    })
+    .catch(function () { show([el('div', 'โหลดห้องไม่สำเร็จ ตรวจอินเทอร์เน็ตแล้วรีเฟรชหน้า', 'err')]); });
+})();
+</script>
+</body>
+</html>

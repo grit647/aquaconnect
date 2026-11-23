@@ -170,7 +170,7 @@
     // แถบการใช้งาน 2 แถว ต่อจากรูปโปรไฟล์ (ข้อมูลส่วนตัว + การค้นหาด้วย Google) — แตะดูรายละเอียดได้
     const meters = document.createElement('div'); meters.className = 'meters'; body.appendChild(meters);
     sheetButton(body, '✏️ อัปเดตโปรไฟล์', showProfileEdit);
-    sheetButton(body, '🎥 สัมมนา / ประชุมออนไลน์ (เร็วๆ นี้)', showSeminarSoon);
+    sheetButton(body, '🎥 สัมมนา / ประชุมออนไลน์', showMeetings);
     api('GET', '/api/me/summary').then((s) => {
       const u = s.usage; const g = s.google;
       // สถานะปัจจุบัน (ถ้าเลือกไว้) แสดงใต้ชื่อ
@@ -756,6 +756,40 @@
       gBtn(body, '🚪 ออกจากกลุ่ม', async () => { try { await api('POST', '/api/groups/' + groupId + '/leave', {}); grpBackToPopup(); } catch (err) { gNote(body, err.message); } }, 'danger');
     }
   });
+  // ---------- สัมมนา / ประชุมออนไลน์: สร้างห้อง + ส่งลิงก์ (ใครมีลิงก์เข้าได้โดยไม่ต้องสมัคร) ----------
+  const meetUrl = (m) => location.origin + '/meet/' + m.code;
+  async function copyText(text) {
+    try { await navigator.clipboard.writeText(text); return true; } catch (e) { /* ลองวิธีสำรอง */ }
+    try { const t = document.createElement('textarea'); t.value = text; t.style.position = 'fixed'; t.style.opacity = '0'; document.body.appendChild(t); t.select(); const ok = document.execCommand('copy'); t.remove(); return ok; } catch (e) { return false; }
+  }
+  async function showMeetings() {
+    const body = openSheet('สัมมนา / ประชุมออนไลน์');
+    note(body, 'สร้างห้องวิดีโอแล้วส่งลิงก์ให้ใครก็ได้ — คนที่มีลิงก์เข้าห้องได้เลยโดยไม่ต้องสมัคร (และจะเห็นปุ่มชวนสมัครสมาชิกให้ด้วย)\nประชุม = ทุกคนพูดได้ • สัมมนา = ผู้ฟังเข้ามาแบบปิดไมค์/กล้องไว้ก่อน');
+    const title = document.createElement('input'); title.type = 'text'; title.maxLength = 80; title.placeholder = 'ชื่อห้อง เช่น คุยเรื่องอาหารกุ้งช่วงฤดูหนาว'; body.appendChild(title);
+    const type = document.createElement('select');
+    [['meeting', '👥 ประชุม (ทุกคนพูดได้)'], ['seminar', '🎓 สัมมนา (ผู้จัดพูดเป็นหลัก)']].forEach(([v, t]) => { const o = document.createElement('option'); o.value = v; o.textContent = t; type.appendChild(o); });
+    body.appendChild(type);
+    const msg = note(body, '');
+    sheetButton(body, '➕ สร้างห้อง', async () => {
+      msg.textContent = '';
+      try { const r = await api('POST', '/api/meetings', { title: title.value, type: type.value }); showMeetings(); } catch (err) { msg.textContent = err.message; }
+    });
+    let list = [];
+    try { list = (await api('GET', '/api/meetings')).meetings; } catch (err) { note(body, err.message); }
+    if (list.length) note(body, 'ห้องของฉัน (ยังเปิดอยู่)', 'sub');
+    list.forEach((m) => {
+      const d = pcard(body, (m.type === 'seminar' ? '🎓 ' : '👥 ') + m.title, meetUrl(m) + '\nลิงก์ใช้ได้ถึง ' + new Date(m.expiresAt).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' }));
+      const row = document.createElement('div'); row.className = 'row2'; d.appendChild(row);
+      miniBtn(row, '🚪 เข้าห้อง', () => { window.open(meetUrl(m), '_blank'); }, 'ok');
+      const cp = miniBtn(row, '🔗 คัดลอกลิงก์', async () => { cp.textContent = (await copyText(meetUrl(m))) ? '✓ คัดลอกแล้ว' : 'คัดลอกไม่ได้ — กดค้างที่ลิงก์เอง'; });
+      const row2 = document.createElement('div'); row2.className = 'row2'; d.appendChild(row2);
+      miniBtn(row2, '💬 ส่งทางไลน์', () => { window.open('https://line.me/R/msg/text/?' + encodeURIComponent('ขอเชิญเข้าร่วม' + (m.type === 'seminar' ? 'สัมมนา' : 'ประชุม') + ' "' + m.title + '"\n' + meetUrl(m)), '_blank'); });
+      miniBtn(row2, '⏹ จบห้อง', async () => {
+        if (!confirm('จบห้อง "' + m.title + '" ? ลิงก์จะใช้เข้าห้องไม่ได้อีก')) return;
+        try { await api('POST', '/api/meetings/' + m.id + '/end', {}); showMeetings(); } catch (err) { alert(err.message); }
+      }, 'danger');
+    });
+  }
   function showSeminarSoon() {
     const body = openSheet('สัมมนา / ประชุมออนไลน์');
     note(body, '🎥 สัมมนา / ประชุมออนไลน์ (กำลังพัฒนา)\nเร็วๆ นี้จะมีห้องสัมมนาและห้องประชุมออนไลน์บนแพลตฟอร์มของเรา ไว้นัดคุยและแลกเปลี่ยนความรู้กับคนอื่นได้โดยไม่ต้องออกจากแอป');
@@ -1506,6 +1540,7 @@
     sheetButton(body, '➕ เริ่มหัวข้อใหม่', async () => { try { await newConversation(); } catch (err) { addBubble('error', err.message); } });
     sheetButton(body, '🗂️ หัวข้อที่เคยคุย', showTopics);
     sheetButton(body, '💡 ให้เลขาทบทวนสิ่งที่ฉันสอน', async () => { closeSheet(); try { const r = await api('POST', '/api/chat/reflect', {}); showProposals(r.proposals); if (!r.proposals.length) addBubble('assistant', 'ตอนนี้ยังไม่มีอะไรใหม่ที่เลขาอยากจดไว้ค่ะ คุยกันอีกสักพักแล้วลองใหม่นะคะ'); } catch (err) { addBubble('error', err.message); } });
+    sheetButton(body, '🎥 สัมมนา / ประชุมออนไลน์', showMeetings);
     sheetButton(body, '📅 ปฏิทิน & เตือน' + (dueCount ? ' (' + dueCount + ')' : ''), () => { closeSheet(); openCal(); });
     sheetButton(body, '🎙️ คุยด้วยเสียงต่อเนื่อง (ใช้กับหูฟังบลูทูธ)', () => { closeSheet(); enterVoiceMode(false); });
     if (!isStandalone()) sheetButton(body, '📲 ติดตั้งไอคอนบนหน้าจอหลัก', installApp);
