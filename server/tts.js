@@ -8,7 +8,19 @@ const aiLib = require('./ai');
 
 const MODEL = process.env.TTS_MODEL || 'gemini-3.8-flash-tts';
 const LOCATION = process.env.TTS_LOCATION || 'global';   // ทดสอบจริง: โมเดลนี้ใช้ได้ที่ location global เท่านั้น (us-central1 = 404)
-const VOICES = ['Kore', 'Aoede', 'Zephyr', 'Leda', 'Puck', 'Charon'];
+const VOICES = ['Kore', 'Aoede', 'Zephyr', 'Leda', 'Puck', 'Charon'];   // ลำดับสำหรับค่าตั้ง tts_voice_index ของแอดมิน (เสียงเริ่มต้น)
+// เสียงที่ให้ผู้ใช้เลือก แยกตามเพศ (ชื่อเสียงของ Gemini TTS) — ผมจัดเพศตามเอกสารของ Google ให้คุณต้นฟังยืนยันอีกที
+const VOICE_GROUPS = { female: ['Kore', 'Aoede', 'Zephyr', 'Leda'], male: ['Puck', 'Charon'] };
+const ALL_VOICES = [...VOICE_GROUPS.female, ...VOICE_GROUPS.male];
+// สไตล์การพูดที่ติ๊กได้ (en = คำบรรยายสไตล์ที่ส่งให้โมเดลผ่านฟิลด์ speech_metadata.style — ทดสอบแล้วว่าไม่ถูกอ่านออกเสียง และเปลี่ยนจังหวะการพูดจริง)
+// conflicts = คู่ที่ขัดกัน (ติ๊กพร้อมกันไม่ได้) • slow = ทำให้เสียงยาวขึ้น (กินโควตา/ต้นทุนเพิ่ม)
+const STYLES = {
+  polite:   { label: 'สุภาพ อบอุ่น', en: 'warm, polite and gentle', conflicts: [] },
+  cheerful: { label: 'สดใส ร่าเริง', en: 'bright, cheerful and energetic', conflicts: ['serious'] },
+  calm:     { label: 'ใจเย็น พูดช้าๆ', en: 'very calm and relaxed, speaking slowly', conflicts: ['brisk'], slow: true },
+  brisk:    { label: 'กระชับ พูดเร็ว', en: 'concise and brisk, speaking a little faster', conflicts: ['calm'] },
+  serious:  { label: 'จริงจัง เป็นทางการ', en: 'serious, composed and professional', conflicts: ['cheerful'] },
+};
 const MAX_CHARS = 1200;
 const EST_CHARS_PER_SEC = 9;      // ประมาณการก่อนสังเคราะห์ (วัดจริงภาษาไทย ~11 ตัวอักษร/วินาที — ใช้ค่าต่ำกว่าเพื่อกันประเมินต่ำไป)
 const REQUEST_TIMEOUT_MS = 40000;
@@ -49,7 +61,7 @@ function pcmToWav(pcm, rate) {
 }
 
 // เรียก Gemini TTS จริง — คืน { wav: Buffer, seconds }
-async function realSynth(text, voice) {
+async function realSynth(text, voice, style) {
   const projectId = aiLib.getVertexProjectId();
   const token = await aiLib.getAccessToken();
   const host = LOCATION === 'global' ? 'aiplatform.googleapis.com' : `${LOCATION}-aiplatform.googleapis.com`;
@@ -61,7 +73,7 @@ async function realSynth(text, voice) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text }] }],
+        contents: [{ role: 'user', parts: [style ? { text, speech_metadata: { style } } : { text }] }],
         generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } } },
       }),
       signal: ctrl.signal,
@@ -95,7 +107,7 @@ async function monthSpentThb() {
 const SETTING_KEYS = ['tts_free_seconds_per_month', 'tts_credits_per_minute', 'tts_cost_thb_per_minute', 'tts_monthly_budget_thb', 'tts_voice_index'];
 async function loadStatus(userId) {
   const r = await query(
-    `SELECT u.tts_enabled, u.tts_seconds_month, u.tts_seconds_used,
+    `SELECT u.tts_enabled, u.tts_seconds_month, u.tts_seconds_used, u.tts_voice, u.tts_styles,
             COALESCE((SELECT balance FROM credit_balances WHERE user_id = u.id), 0) AS balance,
             (SELECT COALESCE(sum(cost_thb), 0) FROM tts_usage WHERE month = $2) AS spent,
             (SELECT json_object_agg(key, value) FROM app_settings WHERE key = ANY($3)) AS settings
@@ -119,14 +131,43 @@ async function loadStatus(userId) {
     creditsPerMinute: cpm,
     costThbPerMinute: num('tts_cost_thb_per_minute', 0.5),
     balance: Number(row.balance),
-    voice: VOICES[Math.min(VOICES.length - 1, Math.max(0, Math.round(voiceIdx)))],
+    voice: ALL_VOICES.includes(row.tts_voice) ? row.tts_voice : VOICES[Math.min(VOICES.length - 1, Math.max(0, Math.round(voiceIdx)))],   // ผู้ใช้เลือกเอง > เสียงเริ่มต้นของแอดมิน
+    style: cleanStyles(row.tts_styles).map((k) => STYLES[k].en).join(', '),
+    prefs: { voice: ALL_VOICES.includes(row.tts_voice) ? row.tts_voice : null, styles: cleanStyles(row.tts_styles) },
   };
+}
+
+// กรองสไตล์ที่ผู้ใช้ส่งมา: รับเฉพาะที่อยู่ในรายการ ไม่ซ้ำ และตัดคู่ที่ขัดกัน (อันที่มาก่อนชนะ) — ไม่รับข้อความอิสระเด็ดขาด (กันใส่คำสั่งแปลกๆ ให้โมเดล)
+function cleanStyles(list) {
+  const out = [];
+  for (const k of Array.isArray(list) ? list : []) {
+    if (!STYLES[k] || out.includes(k)) continue;
+    if (STYLES[k].conflicts.some((c) => out.includes(c))) continue;
+    out.push(k);
+  }
+  return out;
+}
+// ตัวเลือกให้หน้าจอวาดช่องติ๊ก
+function optionsForUi() {
+  const lbl = (arr, name) => arr.map((id, i) => ({ id, label: name + ' ' + (i + 1) }));
+  return {
+    voiceOptions: { female: lbl(VOICE_GROUPS.female, 'หญิง'), male: lbl(VOICE_GROUPS.male, 'ชาย') },
+    styleOptions: Object.entries(STYLES).map(([id, s]) => ({ id, label: s.label, conflicts: s.conflicts, slow: !!s.slow })),
+  };
+}
+// บันทึกลักษณะเสียงที่ผู้ใช้เลือก (เสียง + สไตล์ที่ติ๊ก)
+async function savePrefs(userId, rawVoice, rawStyles) {
+  const voice = ALL_VOICES.includes(rawVoice) ? rawVoice : null;
+  const styles = cleanStyles(rawStyles);
+  await query('UPDATE users SET tts_voice = $2, tts_styles = $3 WHERE id = $1', [userId, voice, styles]);
+  return { voice, styles };
 }
 // สถานะของผู้ใช้คนหนึ่ง (หน้าจอใช้ตัดสินว่าจะโชว์ตัวเลือกเสียงพรีเมียมไหม + แสดงโควตาที่เหลือ)
 async function status(userId) {
   const st = await loadStatus(userId);
   delete st.costThbPerMinute;
-  return st;
+  delete st.style;
+  return { ...st, ...optionsForUi() };
 }
 
 // บันทึกการใช้ + หักโควตาฟรี/เครดิต แบบ atomic (ล็อกแถวผู้ใช้ด้วย UPDATE) — ถูกต้องแม้ขอเสียงหลายท่อนพร้อมกัน
@@ -169,11 +210,11 @@ async function synthesizeForUser(userId, rawText) {
   const estCredits = round2((estPaid / 60) * st.creditsPerMinute);
   if (estCredits > st.balance) throw new TtsError('no_credit', `โควตาเสียงฟรีเดือนนี้หมดแล้ว และเครดิตไม่พอ (ต้องใช้ราว ${estCredits} เครดิต)`, 402);
 
-  const { wav, seconds } = await synthImpl(text, st.voice);
+  const { wav, seconds } = await synthImpl(text, st.voice, st.style);
 
   const settled = settle(userId, text, seconds, st);
   settled.catch((err) => console.error('tts settle error:', err.message));   // บันทึกพังไม่กระทบเสียงที่ส่งแล้ว (แต่ log ไว้ให้ตรวจ)
   return { wav, seconds: round2(seconds), freeSecondsLeft: Math.max(0, round2(st.freeSecondsLeft - seconds)), settled };
 }
 
-module.exports = { status, synthesizeForUser, setSynthForTests, monthSpentThb, monthNow, wavInfo, pcmToWav, TtsError, VOICES, MAX_CHARS };
+module.exports = { savePrefs, cleanStyles, STYLES, ALL_VOICES, status, synthesizeForUser, setSynthForTests, monthSpentThb, monthNow, wavInfo, pcmToWav, TtsError, VOICES, MAX_CHARS };

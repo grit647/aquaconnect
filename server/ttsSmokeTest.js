@@ -13,9 +13,9 @@ const check = (label, ok, extra) => { if (!ok) failures++; console.log(`${ok ? '
 const PHONES = ['0999900061', '0999900062'];
 const KEYS = ['tts_free_seconds_per_month', 'tts_credits_per_minute', 'tts_cost_thb_per_minute', 'tts_monthly_budget_thb', 'tts_voice_index'];
 
-let synthCalls = 0; let lastVoice = ''; let fakeSeconds = 2;
-tts.setSynthForTests(async (text, voice) => {
-  synthCalls++; lastVoice = voice;
+let synthCalls = 0; let lastVoice = ''; let lastStyle = null; let fakeSeconds = 2;
+tts.setSynthForTests(async (text, voice, style) => {
+  synthCalls++; lastVoice = voice; lastStyle = style;
   const pcm = Buffer.alloc(Math.round(24000 * 2 * fakeSeconds));   // เสียงเงียบ 24kHz 16-bit mono ยาว fakeSeconds วินาที
   return { wav: tts.pcmToWav(pcm, 24000), seconds: fakeSeconds };
 });
@@ -135,6 +135,19 @@ async function cleanup() {
   await waitRows(1);
   check('แอดมินเปลี่ยนเสียง (เลข 3 = Leda) → ใช้เสียงใหม่', lastVoice === 'Leda', lastVoice);
   await setSetting('tts_voice_index', 0);
+
+  // ---------- ลักษณะเสียงที่ผู้ใช้เลือกเอง: เสียง (หญิง/ชาย) + สไตล์ที่ติ๊ก ----------
+  const st2 = await call('GET', '/api/chat/tts/status', null, A.cookie);
+  check('สถานะมีตัวเลือกให้วาดช่องติ๊ก (เสียงหญิง 4 / ชาย 2, สไตล์ 5) และค่าเริ่มต้น = ไม่ได้เลือก', st2.json.voiceOptions.female.length === 4 && st2.json.voiceOptions.male.length === 2 && st2.json.styleOptions.length === 5 && st2.json.prefs.voice === null && st2.json.prefs.styles.length === 0, JSON.stringify(st2.json.prefs));
+  check('ยังไม่ล็อกอินบันทึกลักษณะเสียงไม่ได้', (await call('PUT', '/api/chat/tts/prefs', { voice: 'Puck', styles: [] })).status === 401);
+  const sv = await call('PUT', '/api/chat/tts/prefs', { voice: 'Puck', styles: ['calm', 'brisk', 'cheerful', 'ใส่คำสั่งแปลกๆ ให้โมเดลอ่าน', 'calm'] }, A.cookie);
+  check('บันทึกลักษณะเสียง: ตัดสไตล์ที่ไม่อยู่ในรายการ/ซ้ำ/ขัดกัน (ช้ากับเร็วขัดกัน อันแรกชนะ) → เหลือ ช้า + สดใส', sv.status === 200 && sv.json.prefs.voice === 'Puck' && JSON.stringify(sv.json.prefs.styles) === JSON.stringify(['calm', 'cheerful']), JSON.stringify(sv.json));
+  lastStyle = null; await call('POST', '/api/chat/tts', { text: 'ทดสอบสไตล์เสียง' }, A.cookie);
+  check('ตอนสร้างเสียงใช้เสียงที่เลือก (Puck) และส่งสไตล์ที่ติ๊กเป็นคำบรรยายให้โมเดล (ไม่ใช่ข้อความที่ผู้ใช้พิมพ์เอง)', lastVoice === 'Puck' && /speaking slowly/.test(lastStyle) && /cheerful/.test(lastStyle) && !/แปลก/.test(lastStyle), JSON.stringify({ lastVoice, lastStyle }));
+  await call('PUT', '/api/chat/tts/prefs', { voice: 'EvilVoice', styles: [] }, A.cookie);
+  lastStyle = 'x'; await call('POST', '/api/chat/tts', { text: 'ทดสอบเสียงมาตรฐาน' }, A.cookie);
+  check('ชื่อเสียงที่ไม่อยู่ในรายการ → ถูกทิ้ง ใช้เสียงเริ่มต้นของแอดมิน (Kore) และไม่ติ๊กสไตล์ = มาตรฐาน (ไม่ส่งสไตล์)', lastVoice === 'Kore' && lastStyle === '', JSON.stringify({ lastVoice, lastStyle }));
+  await waitRows(2);
 
   // ---------- งบรวมของแพลตฟอร์ม ----------
   const spent = await tts.monthSpentThb();

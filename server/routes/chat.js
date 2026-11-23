@@ -150,6 +150,9 @@ function ttsLimited(userId) {
 router.get('/tts/status', async (req, res) => {
   try { res.json(await tts.status(req.user.id)); } catch (err) { console.error('tts status error:', err.message); res.json({ allowed: false }); }
 });
+router.put('/tts/prefs', async (req, res) => {
+  try { res.json({ ok: true, prefs: await tts.savePrefs(req.user.id, req.body && req.body.voice, req.body && req.body.styles) }); } catch (err) { console.error('tts prefs error:', err.message); res.status(500).json({ error: 'บันทึกไม่สำเร็จ ลองใหม่อีกครั้ง' }); }
+});
 router.post('/tts', async (req, res) => {
   try {
     if (ttsLimited(req.user.id)) return res.status(429).json({ error: 'ขอเสียงถี่เกินไป รอสักครู่', code: 'rate' });

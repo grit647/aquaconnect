@@ -1311,7 +1311,50 @@
     const optPrem = document.createElement('button'); optPrem.type = 'button'; optPrem.className = 'topt';
     const info = document.createElement('div'); info.className = 'tvi';
     const test = document.createElement('button'); test.type = 'button'; test.className = 'ttest'; test.textContent = '▶ ลองฟังเสียงพรีเมียม';
-    box.append(hd, optBrowser, optPrem, info, test); pop.appendChild(box);
+    // ลักษณะเสียงพรีเมียม: เลือกเสียง (หญิง/ชาย) + สไตล์การพูดแบบติ๊ก — แสดงเมื่อใช้เสียงพรีเมียมได้ บันทึกอัตโนมัติ
+    const look = document.createElement('div'); look.className = 'tlook';
+    const lh = document.createElement('div'); lh.className = 'tvh2'; lh.textContent = 'ลักษณะเสียงพรีเมียม';
+    const voiceBox = document.createElement('div'); voiceBox.className = 'tchips';
+    const styleHead = document.createElement('div'); styleHead.className = 'tvh2'; styleHead.textContent = 'สไตล์การพูด (ติ๊กได้) — ไม่ติ๊กเลย = มาตรฐาน';
+    const styleBox = document.createElement('div'); styleBox.className = 'tstyles';
+    const slowNote = document.createElement('div'); slowNote.className = 'tvi';
+    look.append(lh, voiceBox, styleHead, styleBox, slowNote);
+    box.append(hd, optBrowser, optPrem, info, look, test); pop.appendChild(box);
+    let saveTimer = null;
+    const saveLook = () => {
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => { api('PUT', '/api/chat/tts/prefs', { voice: premiumInfo.prefs.voice, styles: premiumInfo.prefs.styles }).catch(() => { /* ไม่บันทึกก็ยังใช้ในเครื่องนี้ได้ */ }); }, 400);
+    };
+    const paintLook = () => {
+      const p = premiumInfo;
+      look.hidden = !(p && p.available && premiumChoice === 'premium');
+      if (look.hidden) return;
+      const cur = p.prefs.voice || p.voice;
+      voiceBox.textContent = '';
+      [['หญิง', p.voiceOptions.female], ['ชาย', p.voiceOptions.male]].forEach(([g, list]) => {
+        const row = document.createElement('div'); row.className = 'tgrow';
+        const gl = document.createElement('span'); gl.className = 'tg'; gl.textContent = g; row.appendChild(gl);
+        list.forEach((v) => {
+          const b = document.createElement('button'); b.type = 'button'; b.className = 'tchip' + (cur === v.id ? ' on' : ''); b.textContent = (cur === v.id ? '☑ ' : '☐ ') + v.label;
+          b.addEventListener('click', () => { p.prefs.voice = v.id; p.voice = v.id; paintLook(); saveLook(); });
+          row.appendChild(b);
+        });
+        voiceBox.appendChild(row);
+      });
+      styleBox.textContent = '';
+      const on = new Set(p.prefs.styles);
+      p.styleOptions.forEach((s) => {
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'tchip' + (on.has(s.id) ? ' on' : ''); b.textContent = (on.has(s.id) ? '☑ ' : '☐ ') + s.label;
+        b.addEventListener('click', () => {
+          const next = new Set(p.prefs.styles);
+          if (next.has(s.id)) next.delete(s.id); else { s.conflicts.forEach((c) => next.delete(c)); next.add(s.id); }   // ติ๊กคู่ที่ขัดกัน → ยกเลิกอันเดิมให้
+          p.prefs.styles = p.styleOptions.map((x) => x.id).filter((id) => next.has(id));
+          paintLook(); saveLook();
+        });
+        styleBox.appendChild(b);
+      });
+      slowNote.textContent = p.prefs.styles.includes('calm') ? '⏱️ สไตล์พูดช้าทำให้เสียงยาวขึ้น ใช้โควตาฟรีเร็วขึ้น' : '';
+    };
     const mins = (s) => (Math.round((s / 60) * 10) / 10);
     const paint = () => {
       const p = premiumInfo;
@@ -1322,6 +1365,7 @@
       optPrem.classList.toggle('on', premiumChoice === 'premium' && can);
       optPrem.disabled = !can;
       test.hidden = !can;
+      paintLook();
       if (!p) info.textContent = 'กำลังตรวจสอบสิทธิ์...';
       else if (!p.allowed) info.textContent = '🔒 เสียงพรีเมียมยังไม่เปิดให้บัญชีนี้ — ขอแอดมินเปิดสิทธิ์ให้ได้ (ตอนนี้ใช้เสียงเบราว์เซอร์)';
       else if (!p.budgetOk) info.textContent = 'งบเสียงพรีเมียมของระบบเดือนนี้เต็มแล้ว ใช้เสียงเบราว์เซอร์ไปก่อน (รีเซ็ตต้นเดือน)';
