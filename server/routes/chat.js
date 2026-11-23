@@ -12,6 +12,7 @@ const attachments = require('../attachments');
 const { nowText } = require('../calendar');
 const { pendingCount } = sharing;
 
+const suggest = require('../suggest');
 const router = express.Router();
 router.use(requireAuth);
 
@@ -135,6 +136,18 @@ router.get('/categories', async (req, res) => {
   }
 });
 
+// คำแนะนำข้อความถัดไปตอนเปิดแอป/มีของค้าง — แบบกติกาตายตัว ไม่เรียก AI (ฟรี) ถ้าไม่มีอะไรก็คืน null
+router.get('/suggestion', async (req, res) => {
+  try {
+    const s = await suggest.ruleBased(req.user.id);
+    if (!s) return res.json({ suggestion: null });
+    res.json({ suggestion: { id: await suggest.logShown(req.user.id, s.kind, s.text), text: s.text, kind: s.kind } });
+  } catch (err) {
+    console.error('GET suggestion error:', err.message);
+    res.json({ suggestion: null });
+  }
+});
+
 // ---------- สิ่งที่เลขาสรุปว่าเจ้าของสอน (รอเจ้าของยืนยัน) ----------
 router.get('/proposals', async (req, res) => {
   try { res.json({ proposals: await listPendingProposals(req.user.id) }); } catch (err) { console.error('proposals error:', err.message); res.status(500).json({ error: 'โหลดข้อเสนอไม่สำเร็จ' }); }
@@ -249,6 +262,8 @@ router.post('/conversations/:id/messages', async (req, res) => {
       return res.status(429).json({ error: 'วันนี้ใช้ครบโควตาข้อความแล้ว พรุ่งนี้ค่อยคุยกันใหม่นะครับ' });
     }
 
+    // คำแนะนำรอบก่อน: ผู้ใช้กดใช้ = รับ / พิมพ์เองแทน = ข้าม (เก็บไว้ให้เลขาเรียนรู้ว่าแบบไหนตรงใจ)
+    suggest.resolveFeedback(req.user.id, req.body && req.body.suggestionId).catch(() => { /* ไม่กระทบการคุย */ });
     // โหมด "ใช้ข้อมูลของคนอื่น" (กดจากปุ่มเชื่อมต่อข้อมูล): ส่งคำถามตรงไปให้เลขาของเจ้าของข้อมูลตอบ แล้วคิดค่าบริการตามที่เจ้าของตั้งไว้
     // ทำที่เซิร์ฟเวอร์ตรงๆ ไม่ผ่านการตัดสินใจของโมเดล เพื่อให้การหักเงินแน่นอนและตรวจสอบได้
     const askRequestId = typeof req.body?.askRequestId === 'string' ? req.body.askRequestId : '';
@@ -333,7 +348,8 @@ router.post('/conversations/:id/messages', async (req, res) => {
       const gctx = groupContextId ? await require('../groups').contextForSecretary(req.user.id, groupContextId).catch(() => null) : null;
       let tools = buildTools(req.user.id, conv.id, { focusCategory });
       if (ext.hasExternal || gctx) tools = Object.fromEntries(Object.entries(tools).filter(([k]) => TOOLS_OK_WITH_EXTERNAL.has(k)));
-      result = await ai.runAgent({ systemPrompt: systemPrompt + (ext.hasExternal ? EXTERNAL_NOTE : '') + (gctx ? GROUP_NOTE(gctx.name, gctx.text) : ''), history, tools });
+      const suggestNote = await suggest.buildContext(req.user.id).catch((e) => { console.error('suggest context error:', e.message); return ''; });
+      result = await ai.runAgent({ systemPrompt: systemPrompt + (ext.hasExternal ? EXTERNAL_NOTE : '') + (gctx ? GROUP_NOTE(gctx.name, gctx.text) : '') + suggestNote, history, tools });
     } catch (err) {
       console.error('AI error:', err.message);
       return res.status(502).json({ error: 'เลขาตอบไม่ได้ในตอนนี้ ลองส่งใหม่อีกครั้งนะครับ' });
@@ -341,7 +357,12 @@ router.post('/conversations/:id/messages', async (req, res) => {
 
     // โมเดลอาจเลียนแบบป้าย "[ข้อมูลจาก Google …]" ที่เราแปะในประวัติให้มันเห็น — ตัดป้ายนั้นออกก่อนบันทึก/แสดง (ผู้ใช้ไม่ควรเห็นป้ายภายใน)
     result.text = result.text.replace(/^\s*\[ข้อมูลจาก Google[^\]]*\]\s*/, '');
-    result.text = result.text.split('**').join('');   // ห้ามใช้ markdown (ตัวหนา **) — ในแอป/เสียงอ่านเป็นข้อความธรรมดา
+    result.text = result.text.split('**').join('');
+    // แกะบรรทัด <<ข้อความถัดไป: ...>> ออกจากคำตอบ (ไม่เก็บลงประวัติ ไม่ให้เสียงอ่าน) ไปเป็นคำแนะนำสีเทาในช่องพิมพ์
+    const sx = suggest.extractSuggestion(result.text);
+    result.text = sx.text;
+    let nextSuggestion = null;
+    if (sx.suggestion) { try { nextSuggestion = { id: await suggest.logShown(req.user.id, 'ai', sx.suggestion), text: sx.suggestion, kind: 'ai' }; } catch (e) { console.error('suggestion log error:', e.message); } }   // ห้ามใช้ markdown (ตัวหนา **) — ในแอป/เสียงอ่านเป็นข้อความธรรมดา
     // บันทึกข้อความผู้ใช้ + คำตอบเลขา พร้อมกันเป็นก้อนเดียว (ถ้า AI พัง จะไม่มีข้อความค้างครึ่งๆ กลางๆ ให้ส่งซ้ำซ้อน)
     await withTransaction(async (c) => {
       await c.query('INSERT INTO messages (conversation_id, user_id, role, content, source) VALUES ($1, $2, $3, $4, $5)', [conv.id, req.user.id, 'user', storedContent, source]);
@@ -365,7 +386,7 @@ router.post('/conversations/:id/messages', async (req, res) => {
       if (e.name === 'set_secretary_name' && e.result && e.result.ok) profile.secretaryName = e.result.secretaryName;
       if (e.name === 'set_user_call_name' && e.result && e.result.ok) profile.callName = e.result.callName;
     }
-    res.json({ reply: result.text, savedMemories, createdEvents, profile: Object.keys(profile).length ? profile : undefined, proposals: decided ? await listPendingProposals(req.user.id) : pendingProposals });
+    res.json({ reply: result.text, suggestion: nextSuggestion, savedMemories, createdEvents, profile: Object.keys(profile).length ? profile : undefined, proposals: decided ? await listPendingProposals(req.user.id) : pendingProposals });
   } catch (err) {
     console.error('POST message error:', err);
     res.status(500).json({ error: 'เกิดข้อผิดพลาดฝั่งเซิร์ฟเวอร์ ลองใหม่อีกครั้ง' });

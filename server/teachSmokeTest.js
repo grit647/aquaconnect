@@ -152,6 +152,7 @@ async function call(method, path, body, cookie) {
   check('ค้นคู่มือ: "เติมเครดิตยังไง" เจอหัวข้อเครดิต', gTitles('เติมเครดิตยังไง').includes('เครดิต'), gTitles('เติมเครดิตยังไง'));
   check('ค้นคู่มือ: "ขอเข้ากลุ่ม" เจอหัวข้อกลุ่ม', gTitles('ขอเข้ากลุ่ม').includes('กลุ่มแชท'), gTitles('ขอเข้ากลุ่ม'));
   check('ค้นคู่มือ: คำที่ไม่มีเลย → ว่าง (เลขาจะได้บอกว่ายังไม่มีข้อมูล)', gTitles('zzzqqq') === '');
+  check('ค้นคู่มือ: "ข้อความสีเทาในช่องพิมพ์คืออะไร" เจอหัวข้อคำแนะนำจากเลขา', gTitles('ข้อความสีเทาในช่องพิมพ์คืออะไร').includes('คำแนะนำจากเลขา'), gTitles('ข้อความสีเทาในช่องพิมพ์คืออะไร'));
   const tools = require('./secretary').buildTools(uidB, null, {});
   const gr = await tools.platform_guide.run({ topic: 'ตั้งปฏิทิน' });
   check('เครื่องมือ platform_guide ใช้ได้ คืนหัวข้อที่เกี่ยวข้อง + รายการหัวข้อทั้งหมด', gr.found === true && gr.sections[0].title.includes('ปฏิทิน') && gr.otherTopics.length === guideLib.SECTIONS.length);

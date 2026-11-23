@@ -402,10 +402,11 @@
         im.onerror = () => { im.remove(); c.textContent = String(g.name).trim().charAt(0) || '?'; };
         c.appendChild(im);
       } else c.textContent = String(g.name).trim().charAt(0) || '?';
-      if (g.pendingRequests) { const dot = document.createElement('span'); dot.className = 'dot'; dot.textContent = g.pendingRequests; c.appendChild(dot); }
+      const attn = (g.pendingRequests || 0) + (g.unread || 0);
+      if (attn) { const dot = document.createElement('span'); dot.className = 'dot'; dot.textContent = attn; c.appendChild(dot); }
       const col = document.createElement('div'); col.style.cssText = 'flex:1;min-width:0';
       const nm = document.createElement('div'); nm.className = 'nm'; nm.textContent = g.name;
-      const sub = document.createElement('div'); sub.className = 'sub'; sub.textContent = '👥 ' + g.members + ' คน' + (g.pendingRequests ? ' · 🔔 ' + g.pendingRequests + ' คำขอรออนุญาต' : '');
+      const sub = document.createElement('div'); sub.className = 'sub'; sub.textContent = '👥 ' + g.members + ' คน' + (g.unread ? ' · 💬 ' + g.unread + ' ข้อความใหม่' : '') + (g.pendingRequests ? ' · 🔔 ' + g.pendingRequests + ' คำขอรออนุญาต' : '');
       col.append(nm, sub); b.append(c, col);
       b.addEventListener('click', () => { closeGroupPopup(); grpOpenView(() => grpChat(g.id, g.name)); });
       return b;
@@ -428,14 +429,14 @@
     const all = document.createElement('button'); all.type = 'button'; all.className = 'allbtn'; all.textContent = '📋 ดูกลุ่มทั้งหมด (' + data.groups.length + ' กลุ่ม)';
     all.addEventListener('click', () => { closeGroupPopup(); grpOpenView(grpList); });
     card.appendChild(all);
-    setGroupsBadge(mineCreated.reduce((n, g) => n + (g.pendingRequests || 0), 0) + invites.length);
+    setGroupsBadge(data.groups.reduce((n, g) => n + ((g.isOwner ? g.pendingRequests : 0) || 0) + (g.unread || 0), 0) + invites.length);
   }
   function setGroupsBadge(n) { const b = gEl('groupsBadge'); if (!b) return; b.hidden = !n; b.textContent = n || ''; }
   async function refreshGroupsBadge() {
     try {
       const d = await api('GET', '/api/groups');
       let inv = 0; try { inv = (await api('GET', '/api/groups/invites')).invites.length; } catch (e) { /* ข้าม */ }
-      setGroupsBadge(d.groups.filter((g) => g.isOwner).reduce((n, g) => n + (g.pendingRequests || 0), 0) + inv);
+      setGroupsBadge(d.groups.reduce((n, g) => n + ((g.isOwner ? g.pendingRequests : 0) || 0) + (g.unread || 0), 0) + inv);
     } catch (e) { /* ไม่มีป้ายก็ข้าม */ }
   }
   gEl('groupsBtn').addEventListener('click', openGroupPopup);
@@ -970,7 +971,8 @@
       const { conversations } = await api('GET', '/api/chat/conversations');
       if (conversations.length) await openConversation(conversations[0].id);
       else await newConversation();
-      refreshGroupsBadge();   // ป้ายแจ้งจำนวนคำขอเข้าร่วมกลุ่มที่รอผู้สร้างอนุญาต
+      refreshGroupsBadge();   // ป้ายแจ้งจำนวนคำขอเข้าร่วมกลุ่มที่รอผู้สร้างอนุญาต + ข้อความกลุ่มที่ยังไม่อ่าน
+      refreshRuleSuggestion();   // ของค้างตอนเปิดแอป → ข้อความสีเทาในช่องพิมพ์
       checkOrganize();   // กลับเข้าแอป: มีข้อเสนอรอยืนยัน/บทสนทนาที่ยังไม่ได้สรุปแยกหมวดไหม (ถามครั้งเดียว)
     } catch (err) {
       addBubble('error', err.message);
@@ -1012,6 +1014,7 @@
     const tray = $('attachTray');
     tray.textContent = '';
     tray.hidden = !pendingFiles.length;
+    if (typeof renderSuggestion === "function") renderSuggestion();
     pendingFiles.forEach((f, i) => {
       const chip = document.createElement('div'); chip.className = 'chip-att';
       const t = document.createElement('span'); t.textContent = (f.mime.startsWith('image/') ? '🖼️ ' : f.mime === 'application/pdf' ? '📕 ' : '📄 ') + f.name;
@@ -1074,7 +1077,35 @@
   });
 
   // ---------- ส่งข้อความ ----------
-  async function send(text, source) {
+  // ---------- คำแนะนำข้อความถัดไปจากเลขา (ตัวหนังสือสีเทาในช่องพิมพ์ + ปุ่มส่งเปลี่ยนสี) ----------
+  // ช่องว่าง + มีคำแนะนำ: ปุ่มส่งเป็นสีส้ม กดแล้วส่งข้อความสีเทา (หรือกด Tab เพื่อเติมลงช่องไปแก้ต่อ)
+  // พิมพ์ข้อความเองแล้ว: ข้อความสีเทาหาย ปุ่มส่งกลับเป็นสีปกติ
+  const DEFAULT_PLACEHOLDER = 'พิมพ์ข้อความ...';
+  let suggestion = null;   // { id, text, kind }
+  function renderSuggestion() {
+    const usable = !!suggestion && !!suggestion.text;
+    inputEl.placeholder = usable ? suggestion.text : DEFAULT_PLACEHOLDER;
+    const showing = usable && !inputEl.value.trim() && !pendingFiles.length;
+    sendBtn.classList.toggle('suggest', showing);
+    sendBtn.title = showing ? 'ส่งข้อความที่เลขาแนะนำ' : '';
+    sendBtn.setAttribute('aria-label', showing ? 'ส่งข้อความที่เลขาแนะนำ' : 'ส่ง');
+  }
+  function setSuggestion(s) { suggestion = s && s.text ? s : null; renderSuggestion(); }
+  inputEl.addEventListener('input', renderSuggestion);
+  inputEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Tab' && !e.shiftKey && suggestion && !inputEl.value) { e.preventDefault(); inputEl.value = suggestion.text; renderSuggestion(); }   // เติมลงช่องไปแก้ต่อได้
+  });
+  // ของค้างตอนเปิดแอป/กลับมาที่แอป (คำขอรออนุมัติ ข้อความกลุ่มที่ยังไม่อ่าน ฯลฯ) — ระบบเลือกเอง ไม่เรียก AI
+  async function refreshRuleSuggestion() {
+    if (!me || appEl.hidden || sending || document.hidden) return;
+    if (suggestion && suggestion.kind === 'ai') return;   // ไม่ทับคำแนะนำที่เลขาเพิ่งให้มากับคำตอบ
+    if (inputEl.value.trim()) return;
+    try { const r = await api('GET', '/api/chat/suggestion'); setSuggestion(r.suggestion); } catch (e) { /* ไม่มีก็ข้าม */ }
+  }
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { refreshRuleSuggestion(); refreshGroupsBadge(); } });
+  setInterval(() => { if (me && !appEl.hidden && !document.hidden) { refreshRuleSuggestion(); refreshGroupsBadge(); } }, 60000);
+
+  async function send(text, source, suggestionId) {
     text = (text || '').trim();
     if ((!text && !pendingFiles.length) || sending || !conversationId) return false;
     if (connected && pendingFiles.length) { addBubble('error', 'โหมดใช้ข้อมูลของคนอื่นแนบไฟล์ไม่ได้ — กด "จบการใช้ข้อมูล" ก่อน หรือเอาไฟล์ออกค่ะ'); return false; }
@@ -1083,6 +1114,8 @@
     sending = true;
     sendBtn.disabled = true;
     inputEl.value = '';
+    const prevSuggestion = suggestion;
+    setSuggestion(null);   // ข้อความสีเทาหายระหว่างเลขากำลังคิด
     cancelSpeech();
     addBubble('user', text + (files.length ? '\n📎 ' + files.map((f) => f.name).join(', ') : ''));
     const typing = document.createElement('div');
@@ -1094,7 +1127,7 @@
     setBotState('thinking');
     let replyText = null;
     try {
-      const { reply, savedMemories, createdEvents, profile } = await api('POST', '/api/chat/conversations/' + conversationId + '/messages', { content: text, source: source || 'text', askRequestId: connected ? connected.requestId : undefined, attachments: files.length ? files : undefined, focusCategory: focusCategory || undefined });
+      const { reply, suggestion: nextSuggestion, savedMemories, createdEvents, profile } = await api('POST', '/api/chat/conversations/' + conversationId + '/messages', { content: text, source: source || 'text', askRequestId: connected ? connected.requestId : undefined, attachments: files.length ? files : undefined, focusCategory: focusCategory || undefined, suggestionId: suggestionId || undefined });
       typing.remove();
       addBubble('assistant', reply);
       (savedMemories || []).forEach((m) => addSavedChip(m.category));
@@ -1104,6 +1137,7 @@
       updateTopic();
       if (profile) { if (profile.secretaryName) me.secretaryName = profile.secretaryName; if (profile.callName !== undefined) me.callName = profile.callName; renderAiBadge(); }   // ผู้ใช้เพิ่งตั้งชื่อเลขา/ชื่อที่ให้เรียก
       replyText = reply;
+      if (!connected) setSuggestion(nextSuggestion);   // คำแนะนำข้อความถัดไปมากับคำตอบ (โหมดใช้ข้อมูลคนอื่นไม่มี)
       if (voiceMode) vCaption(null, reply);
       if (files.length) { pendingFiles = []; renderTray(); }
     } catch (err) {
@@ -1112,9 +1146,11 @@
       if (voiceMode) vCaption(null, err.message);
       if (connected && /หมดเวลา|ถอนสิทธิ์|ปิดรับ|ปิดการอนุญาต|ไม่ได้รับอนุมัติ/.test(err.message)) endConnected(true);
       if (source !== 'voice') inputEl.value = text;
+      setSuggestion(prevSuggestion);
     } finally {
       sending = false;
       sendBtn.disabled = false;
+      renderSuggestion();
     }
     if (replyText && (ttsOn || realtime)) {
       speak(replyText, afterSpeech);
@@ -1131,7 +1167,12 @@
     if (realtime && me && !appEl.hidden) startListening();
   }
 
-  $('inputBar').addEventListener('submit', (e) => { e.preventDefault(); send(inputEl.value, 'text'); });
+  $('inputBar').addEventListener('submit', (e) => {
+    e.preventDefault();
+    // ช่องว่างแต่มีข้อความสีเทา = ส่งคำแนะนำของเลขา (บันทึกว่าผู้ใช้กดรับ)
+    if (!inputEl.value.trim() && suggestion && !pendingFiles.length) { send(suggestion.text, 'text', suggestion.id); return; }
+    send(inputEl.value, 'text');
+  });
 
   // ---------- เสียงพูดของเลขา (TTS) ----------
   let ttsOn = false;

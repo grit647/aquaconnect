@@ -455,3 +455,8 @@ body {
 
 /* ป้าย "อนุญาตใช้ข้อมูล": ตัวหนังสือสีขาวทั้งสองสถานะ (สถานะเปิด/ปิดดูจากขอบ: เขียวเรืองแสง = เปิด, ขอบเทา = ปิด) */
 #connToggle, #connToggle.on, #connToggle.off { color: #fff; }
+
+/* คำแนะนำข้อความถัดไปจากเลขา: ช่องว่างแล้วมีข้อความสีเทา → ปุ่มส่งเป็นสีส้ม (กดส่งข้อความสีเทา) / พิมพ์เองแล้วกลับเป็นสีปกติ */
+#msgInput::placeholder { color: #9aa6d6; opacity: 0.85; }
+#sendBtn.suggest { background: linear-gradient(135deg, #f59e0b, #fb923c); color: #1a0f00; box-shadow: 0 0 14px rgba(245, 158, 11, 0.55); }
+#msgInput { text-overflow: ellipsis; }

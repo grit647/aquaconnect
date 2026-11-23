@@ -48,7 +48,9 @@ async function listGroups(userId) {
             (SELECT count(*)::int FROM chat_group_members m WHERE m.group_id = g.id) AS members,
             (SELECT role FROM chat_group_members m WHERE m.group_id = g.id AND m.user_id = $1) AS my_role,
             EXISTS (SELECT 1 FROM chat_group_requests q WHERE q.group_id = g.id AND q.user_id = $1 AND q.status = 'pending') AS pending,
-            (SELECT count(*)::int FROM chat_group_requests q WHERE q.group_id = g.id AND q.status = 'pending' AND g.owner_id = $1) AS pending_requests
+            (SELECT count(*)::int FROM chat_group_requests q WHERE q.group_id = g.id AND q.status = 'pending' AND g.owner_id = $1) AS pending_requests,
+            (SELECT count(*)::int FROM chat_group_messages x JOIN chat_group_members mem ON mem.group_id = x.group_id AND mem.user_id = $1
+              WHERE x.group_id = g.id AND x.id > COALESCE(mem.last_read_id, 0) AND x.created_at >= mem.joined_at AND x.user_id <> $1 AND NOT x.is_system) AS unread
        FROM chat_groups g JOIN users u ON u.id = g.owner_id
       ORDER BY (g.owner_id = $1) DESC, g.created_at DESC LIMIT 200`,
     [userId]
@@ -56,7 +58,7 @@ async function listGroups(userId) {
   const mine = r.rows.filter((g) => g.owner_id === userId).length;
   const joined = r.rows.filter((g) => g.my_role === 'member').length;
   return {
-    groups: r.rows.map((g) => ({ id: g.id, name: g.name, description: g.description, ownerName: g.owner_name, ownerPicture: picOf(g.owner_picture), members: g.members, myRole: g.my_role || null, pending: g.pending, pendingRequests: g.pending_requests, isOwner: g.owner_id === userId })),
+    groups: r.rows.map((g) => ({ id: g.id, name: g.name, description: g.description, ownerName: g.owner_name, ownerPicture: picOf(g.owner_picture), members: g.members, unread: g.unread || 0, myRole: g.my_role || null, pending: g.pending, pendingRequests: g.pending_requests, isOwner: g.owner_id === userId })),
     createdByMe: mine, maxCreate: MAX_GROUPS_PER_USER, joinedByMe: joined, maxJoin: MAX_JOINED_PER_USER,
   };
 }
@@ -172,6 +174,8 @@ async function listMessages(userId, groupId, afterId) {
     ? `SELECT ${cols} FROM chat_group_messages m JOIN users u ON u.id = m.user_id WHERE m.group_id = $1 AND m.id > $2 ORDER BY m.id ASC LIMIT 100`
     : `SELECT * FROM (SELECT ${cols} FROM chat_group_messages m JOIN users u ON u.id = m.user_id WHERE m.group_id = $1 AND $2::bigint IS NOT NULL ORDER BY m.id DESC LIMIT 50) t ORDER BY id ASC`;
   const r = await query(sql, [groupId, Number.isFinite(after) && after > 0 ? after : 0]);
+  // เปิดดูห้องอยู่ = อ่านถึงข้อความล่าสุดของห้องแล้ว (ใช้นับข้อความที่ยังไม่อ่านบนป้ายกลุ่ม)
+  query('UPDATE chat_group_members SET last_read_id = GREATEST(COALESCE(last_read_id, 0), COALESCE((SELECT max(id) FROM chat_group_messages WHERE group_id = $1), 0)) WHERE group_id = $1 AND user_id = $2', [groupId, userId]).catch(() => {});
   return r.rows.map((m) => {
     if (m.is_system) return { id: Number(m.id), isSystem: true, isAi: false, name: '', content: m.content, createdAt: m.created_at, mine: false };
     if (m.is_ai) return { id: Number(m.id), userId: m.user_id, isAi: true, name: m.secretary_name, ownerName: m.owner_name, picture: m.ai_avatar_at ? `/api/groups/${groupId}/ai-avatar/${m.user_id}?v=${new Date(m.ai_avatar_at).getTime()}` : null, content: m.content, createdAt: m.created_at, mine: false, myAi: m.user_id === userId };
