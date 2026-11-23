@@ -1138,6 +1138,15 @@
     tray.textContent = '';
     tray.hidden = !pendingFiles.length;
     if (typeof renderSuggestion === "function") renderSuggestion();
+    const va = $('vAttach'); va.textContent = ''; va.hidden = !pendingFiles.length;
+    pendingFiles.forEach((f, i) => {
+      const chip = document.createElement('div'); chip.className = 'chip-att';
+      const t = document.createElement('span'); t.textContent = (f.mime.startsWith('image/') ? '🖼️ ' : f.mime === 'application/pdf' ? '📕 ' : '📄 ') + f.name;
+      const x = document.createElement('button'); x.type = 'button'; x.textContent = '✕'; x.setAttribute('aria-label', 'เอาออก');
+      x.addEventListener('click', () => { pendingFiles.splice(i, 1); renderTray(); });
+      chip.append(t, x); va.appendChild(chip);
+    });
+    if (pendingFiles.length) { const h = document.createElement('div'); h.className = 'v-attach-hint'; h.textContent = 'แนบแล้ว — พูดถามเลขาได้เลย'; va.appendChild(h); }
     pendingFiles.forEach((f, i) => {
       const chip = document.createElement('div'); chip.className = 'chip-att';
       const t = document.createElement('span'); t.textContent = (f.mime.startsWith('image/') ? '🖼️ ' : f.mime === 'application/pdf' ? '📕 ' : '📄 ') + f.name;
@@ -1234,11 +1243,13 @@
         stopCam();
         if (!blob) { addBubble('error', 'ถ่ายรูปไม่สำเร็จ ลองใหม่อีกครั้งค่ะ'); return; }
         await addFiles([new File([blob], 'ภาพจากกล้อง.jpg', { type: 'image/jpeg' })]);
-        inputEl.placeholder = 'พิมพ์ถามเลขาเกี่ยวกับรูปนี้ หรือกดส่งเลย...'; inputEl.focus();
+        inputEl.placeholder = 'พิมพ์ถามเลขาเกี่ยวกับรูปนี้ หรือกดส่งเลย...'; if (!voiceMode) inputEl.focus();   // โหมดเสียงไม่โฟกัสช่องพิมพ์ (กันคีย์บอร์ดเด้ง)
       }, 'image/jpeg', 0.88);
     });
   }
   $('camBtn').addEventListener('click', openCamera);
+  $('vCam').addEventListener('click', openCamera);          // ปุ่มกล้องในหน้าสนทนาเสียง (ถ่ายแล้วพูดถามได้เลย)
+  $('vPlus').addEventListener('click', () => $('plusBtn').click());   // ปุ่ม + ในหน้าสนทนาเสียง (แนบรูป/ไฟล์/ลิงก์)
 
   // ---------- ส่งข้อความ ----------
   // ---------- คำแนะนำข้อความถัดไปจากเลขา (ตัวหนังสือสีเทาในช่องพิมพ์ + ปุ่มส่งเปลี่ยนสี) ----------
@@ -1296,6 +1307,13 @@
       const replyBubble = addBubble('assistant', reply);
       if (photos && photos.length) appendPhotoStrip(replyBubble, photos);   // รูปที่เลขาดึงจากอัลบั้มมาให้ดู
       if (generated && generated.length) appendGeneratedImages(replyBubble, generated);   // ภาพที่เลขาเพิ่งวาดให้
+      if (voiceMode && ((generated && generated.length) || (photos && photos.length))) {   // หน้าสนทนาเสียง: แสดงภาพที่เลขาวาด/ดึงจากอัลบั้มไว้ตรงนี้ด้วย ไม่ต้องย้อนไปดูหน้าแชทหลัก
+        const box = $('vGen'); box.textContent = '';
+        if (generated && generated.length) appendGeneratedImages(box, generated);
+        if (photos && photos.length) appendPhotoStrip(box, photos);
+        $('vCaption').classList.add('has-img');
+        box.querySelectorAll('img').forEach((im) => im.addEventListener('load', () => box.scrollIntoView({ block: 'nearest' })));
+      }
       (savedMemories || []).forEach((m) => addSavedChip(m.category));
       (createdEvents || []).forEach(addEventChip);
       // (ข้อเสนอให้จำ/สรุปแยกหมวด จะถามตอนกลับเข้าแอป ไม่โผล่กลางบทสนทนา — ไม่ให้ดูซ้ำซาก)
@@ -1603,7 +1621,7 @@
   const IDLE_LIMIT = 6;      // ไม่มีใครพูดติดกัน 6 รอบ (~1 นาที) → หยุดฟังชั่วคราว แตะไมค์เพื่อคุยต่อ (ประหยัดแบตและค่าถอดเสียง)
 
   function vCaption(user, reply) {
-    if (user !== null) $('vUser').textContent = user;
+    if (user !== null) { $('vUser').textContent = user; $('vGen').textContent = ''; $('vCaption').classList.remove('has-img'); }   // ข้อความผู้ใช้ใหม่ = ล้างภาพของรอบก่อน
     if (reply !== null) $('vReply').textContent = String(reply).replace(/[*_`#]/g, '');
   }
 
