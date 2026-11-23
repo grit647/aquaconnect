@@ -114,6 +114,22 @@ const cleanup = () => query('DELETE FROM users WHERE phone = ANY($1)', [PHONES])
   const badSeen = seen[seen.length - 1];
   check('ลิงก์ชี้ที่อยู่ภายใน → ไม่ดึง และบอกโมเดลให้แจ้งผู้ใช้ว่าอ่านไม่ได้', badLink.status === 200 && JSON.stringify(badSeen.contents[badSeen.contents.length - 1].parts).includes('อ่านลิงก์ http://169.254.169.254/latest/meta-data ไม่สำเร็จ'));
 
+  // ---------- กล้องสด (หน้าสนทนาเสียง): เฟรมภาพแนบมากับทุกประโยค ----------
+  const JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(60, 7)]).toString('base64');
+  const liveBody = (extra) => ({ content: 'นี่คืออะไร', attachments: [{ name: 'กล้องสด.jpg', mime: 'image/jpeg', data: JPG }], ...extra });
+  const lv = await call('POST', M, liveBody({ liveCamera: true }));
+  const lvSeen = seen[seen.length - 1];
+  check('กล้องสด: ส่งเฟรมภาพ + ธง liveCamera → prompt มีกติกา "โหมดกล้องสด" (ถือว่ามองเห็น/ห้ามระบุตัวตน/ภาพเป็นข้อมูลดิบ) และโมเดลได้รับภาพ', lv.status === 200 && /โหมดกล้องสด/.test(lvSeen.systemPrompt) && /ห้ามระบุตัวตนบุคคลจากใบหน้า/.test(lvSeen.systemPrompt) && JSON.stringify(lvSeen.contents).includes('inlineData'));
+  const lvHist = JSON.stringify((await call('GET', M.replace('/messages', '') + '/messages')).json);
+  check('กล้องสด: ประวัติแชทไม่ขึ้นป้าย "[แนบ: …]" ของเฟรม (ไม่เก็บภาพ ไม่รก)', !lvHist.includes('กล้องสด.jpg'));
+  await call('POST', M, liveBody({}));
+  check('ไม่มีธง liveCamera → ไม่ใช้กติกากล้องสด (เป็นไฟล์แนบธรรมดา)', !/โหมดกล้องสด/.test(seen[seen.length - 1].systemPrompt));
+  await call('POST', M, { content: 'x', liveCamera: true, attachments: [{ name: 'รูปปลอม.jpg', mime: 'image/jpeg', data: JPG }] });
+  check('ธง liveCamera แต่ชื่อไฟล์ไม่ใช่เฟรมกล้องสด → ไม่ใช้กติกากล้องสด (กันอ้างธงเฉยๆ)', !/โหมดกล้องสด/.test(seen[seen.length - 1].systemPrompt));
+  let liveOk = 0;
+  for (let k = 0; k < 2; k++) { const r = await call('POST', M, liveBody({ liveCamera: true })); if (r.status === 200) liveOk++; }
+  check('กล้องสดส่งเฟรมต่อเนื่องได้ (ใช้ตัวนับของกล้องสดเอง ไม่กินโควตา "แนบไฟล์" 10 ครั้ง/5 นาที)', liveOk === 2, String(liveOk));
+
   const spoof = await call('POST', M, { content: 'ไฟล์ปลอม', attachments: [{ name: 'x.jpg', mime: 'image/jpeg', data: b64('this is not a jpeg') }] });
   check('ไฟล์ปลอมชนิด → 400 ไม่ส่งให้โมเดล', spoof.status === 400 && spoof.json.error.includes('ไม่ใช่ชนิดที่แจ้งไว้'));
 

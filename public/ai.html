@@ -102,9 +102,10 @@
   <div id="pipGuide" hidden><div class="pg-card"><div class="pg-t">ย่อหน้าต่างเรียบร้อย ✅</div><div class="pg-b">แตะปุ่ม <b>Home</b> (วงกลมกลางจอ) 1 ครั้ง<br>เพื่อกลับหน้าจอหลัก — เลขาจะลอยอยู่ ยังคุยต่อได้เลย</div><button id="pgOk" type="button">รับทราบ</button><label class="pg-n"><input type="checkbox" id="pgNever"> ไม่ต้องแสดงอีก</label></div></div>
   <div id="vState">กำลังเตรียมไมค์...</div>
   <div id="vTopic"></div>
+  <div id="vLiveBox" hidden><video id="vLive" autoplay muted playsinline></video><span class="live-dot">🔴 กล้องสด</span><button id="vLiveFlip" type="button" aria-label="สลับกล้องหน้า/หลัง">🔄</button></div>
   <button id="vAi" type="button" hidden aria-label="ตั้งค่าเสียงเลขา (เสียงพรีเมียม / เสียงธรรมดา)"><span id="vAiPic" class="vai-pic"></span><span id="vAiName"></span><span class="vai-gear">⚙️</span></button>
   <button id="vMic" type="button" aria-label="หยุดฟังชั่วคราว / คุยต่อ"><span class="vring"></span><span class="vicon">🎙️</span></button>
-  <div id="vTools"><button id="vPlus" type="button" class="round-btn" aria-label="แนบรูป ไฟล์ หรือลิงก์ให้เลขาอ่าน">＋</button><button id="vCam" type="button" class="round-btn" aria-label="เปิดกล้อง ถ่ายรูปถามเลขา">📸</button></div>
+  <div id="vTools"><button id="vPlus" type="button" class="round-btn" aria-label="แนบรูป ไฟล์ หรือลิงก์ให้เลขาอ่าน">＋</button><button id="vCam" type="button" class="round-btn" aria-label="เปิดกล้อง ถ่ายรูปถามเลขา">📸</button><button id="vLiveBtn" type="button" class="round-btn" aria-label="เปิด/ปิดกล้องสด ให้เลขาเห็นระหว่างคุย" title="กล้องสด: เปิดกล้องค้างไว้ ให้เลขาเห็นสิ่งที่อยู่หน้ากล้องทุกครั้งที่คุณพูด">🎥</button></div>
   <button id="vSts" type="button" hidden aria-label="ออกจากโหมด STS">🎧 STS เปิดอยู่ — กดอีกครั้งเพื่อออก</button>
   <div id="vStsQ" hidden></div>
   <div id="vAttach" hidden></div>

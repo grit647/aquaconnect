@@ -1247,6 +1247,37 @@
     });
   });
 
+  // ---------- กล้องสด (ในหน้าสนทนาเสียง): เปิดกล้องค้างไว้ แล้วทุกประโยคที่พูด แนบ "ภาพจากกล้อง ณ ตอนนั้น" ไปให้เลขาดูด้วย ----------
+  // ใช้ระบบเสียงเดิมทั้งหมด (ไม่ใช่สตรีมวิดีโอเรียลไทม์) ภาพเฟรมเดียวต่อประโยค ไม่เก็บภาพ ปิดตอนหยุดไมค์/ออกจากโหมดเสียง
+  const live = { on: false, wanted: false, stream: null, facing: 'environment' };
+  const LIVE_NAME = 'กล้องสด.jpg';
+  async function startLive() {
+    if (live.on || !voiceMode) return;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { addBubble('hint', 'เบราว์เซอร์นี้เปิดกล้องสดไม่ได้ค่ะ'); live.wanted = false; return; }
+    try {
+      live.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: live.facing }, width: { ideal: 1280 } }, audio: false });
+    } catch (e) { live.wanted = false; vCaption(null, 'เปิดกล้องไม่ได้ (ยังไม่ได้อนุญาตกล้อง?)'); return; }
+    live.on = true; live.wanted = true;
+    const v = $('vLive'); v.srcObject = live.stream; v.play().catch(() => { /* ไม่เป็นไร */ });
+    $('vLiveBox').hidden = false; $('voiceScreen').dataset.live = '1'; $('vLiveBtn').classList.add('on');
+  }
+  function stopLive(keepWanted) {
+    if (live.stream) { try { live.stream.getTracks().forEach((t) => t.stop()); } catch (e) { /* ignore */ } live.stream = null; }
+    live.on = false; if (!keepWanted) live.wanted = false;
+    const v = $('vLive'); if (v) v.srcObject = null;
+    $('vLiveBox').hidden = true; delete $('voiceScreen').dataset.live; $('vLiveBtn').classList.remove('on');
+  }
+  // เฟรมปัจจุบันจากกล้องสด (ย่อด้านยาวไม่เกิน 960 พิกเซล) → base64 JPEG หรือ null ถ้ากล้องยังไม่พร้อม
+  function liveFrame() {
+    const v = $('vLive'); if (!live.on || !v || !v.videoWidth) return null;
+    const k = Math.min(1, 960 / Math.max(v.videoWidth, v.videoHeight));
+    const cv = document.createElement('canvas'); cv.width = Math.round(v.videoWidth * k); cv.height = Math.round(v.videoHeight * k);
+    cv.getContext('2d').drawImage(v, 0, 0, cv.width, cv.height);
+    return cv.toDataURL('image/jpeg', 0.72).split(',')[1] || null;
+  }
+  $('vLiveBtn').addEventListener('click', () => { if (live.on) stopLive(false); else startLive(); });
+  $('vLiveFlip').addEventListener('click', async () => { live.facing = live.facing === 'environment' ? 'user' : 'environment'; stopLive(true); await startLive(); });
+
   // ---------- กล้อง "ถ่ายแล้วถาม": เปิดกล้องในหน้าแอป ถ่ายรูป → แนบเป็นไฟล์แนบ → พิมพ์/พูดถามเลขาต่อ (รูปไม่ถูกเก็บถ้าไม่บันทึกลงอัลบั้มเอง) ----------
   // กล้องหลังเป็นค่าเริ่มต้น (ถ่ายของรอบตัว) สลับหน้า/หลังได้ • เปิดกล้องไม่ได้ (ไม่อนุญาต/ไม่มีกล้อง/เบราว์เซอร์ในไลน์) → ถอยไปใช้ช่องเลือกรูป/ถ่ายรูปของเครื่อง
   let camStream = null;
@@ -1336,7 +1367,8 @@
     const prevSuggestion = suggestion;
     setSuggestion(null);   // ข้อความสีเทาหายระหว่างเลขากำลังคิด
     cancelSpeech();
-    addBubble('user', text + (files.length ? '\n📎 ' + files.map((f) => f.name).join(', ') : ''));
+    const shownFiles = files.filter((f) => !f.__live);   // เฟรมกล้องสดไม่แสดงเป็นไฟล์แนบในแชท
+    addBubble('user', text + (shownFiles.length ? '\n📎 ' + shownFiles.map((f) => f.name).join(', ') : ''));
     const typing = document.createElement('div');
     typing.className = 'typing';
     typing.textContent = me.secretaryName + ' กำลังพิมพ์...';
@@ -1346,7 +1378,7 @@
     setBotState('thinking');
     let replyText = null;
     try {
-      const { reply, photos, generated, suggestion: nextSuggestion, savedMemories, createdEvents, profile } = await api('POST', '/api/chat/conversations/' + conversationId + '/messages', { content: text, source: source || 'text', askRequestId: connected ? connected.requestId : undefined, attachments: files.length ? files : undefined, premiumVoice: (premiumActive() && (ttsOn || realtime)) ? true : undefined, focusCategory: focusCategory || undefined, suggestionId: suggestionId || undefined });
+      const { reply, photos, generated, suggestion: nextSuggestion, savedMemories, createdEvents, profile } = await api('POST', '/api/chat/conversations/' + conversationId + '/messages', { content: text, source: source || 'text', askRequestId: connected ? connected.requestId : undefined, attachments: files.length ? files : undefined, premiumVoice: (premiumActive() && (ttsOn || realtime)) ? true : undefined, liveCamera: files.some((f) => f.__live) ? true : undefined, focusCategory: focusCategory || undefined, suggestionId: suggestionId || undefined });
       typing.remove();
       const replyBubble = addBubble('assistant', reply);
       if (photos && photos.length) appendPhotoStrip(replyBubble, photos);   // รูปที่เลขาดึงจากอัลบั้มมาให้ดู
@@ -1367,7 +1399,7 @@
       replyText = reply;
       if (!connected) setSuggestion(nextSuggestion);   // คำแนะนำข้อความถัดไปมากับคำตอบ (โหมดใช้ข้อมูลคนอื่นไม่มี)
       if (voiceMode) vCaption(null, reply);
-      if (files.length) { pendingFiles = []; renderTray(); }
+      if (files.length) { pendingFiles = pendingFiles.filter((p) => !files.includes(p)); renderTray(); }
     } catch (err) {
       typing.remove();
       addBubble('error', err.message);
@@ -1719,6 +1751,7 @@
   }
 
   function pauseVoice(msg) {
+    if (live.on) stopLive(true);   // พักไมค์ = ปิดกล้องชั่วคราว (เปิดต่อเองตอนกลับมาคุย)
     voicePaused = true; realtime = false;
     stopRecording(true); cancelSpeech();
     $('voiceScreen').className = 'paused state-idle';
@@ -1728,6 +1761,7 @@
 
   function resumeVoice() {
     voicePaused = false; realtime = true; idleCycles = 0;
+    if (live.wanted && !live.on) startLive();
     $('voiceScreen').className = 'state-idle';
     if (ttsSupported || premiumActive()) unlockSpeech();
     lockScreen();
@@ -1737,6 +1771,7 @@
 
   function exitVoiceMode() {
     if (sts.on) stsCleanup();
+    stopLive(false);
     voiceMode = false; voicePaused = false; realtime = false;
     cancelSpeech(); stopRecording(true); unlockScreen();
     if (voiceStream) { try { voiceStream.getTracks().forEach((t) => t.stop()); } catch (e) { /* ignore */ } voiceStream = null; }
@@ -2067,7 +2102,9 @@
       }
       unclearStreak = 0;
       if (sts.on) { await stsPost(text); return; }   // โหมด STS: ส่งเข้าห้องแชทกลุ่มตรงๆ ไม่ผ่านเลขา
-      await send(text, 'voice');
+      pendingFiles = pendingFiles.filter((f) => !f.__live);
+      if (live.on && !connected) { const d = liveFrame(); if (d) pendingFiles.push({ name: LIVE_NAME, mime: 'image/jpeg', data: d, __live: true }); }   // กล้องสด: ภาพ ณ ตอนที่พูดจบ
+      try { await send(text, 'voice'); } finally { pendingFiles = pendingFiles.filter((f) => !f.__live); renderTray(); }
     } catch (err) {
       setBotState('idle');
       addBubble('error', err.message);
