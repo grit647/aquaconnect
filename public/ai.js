@@ -1257,14 +1257,23 @@
   function stopPremium() { try { premAudio.pause(); premAudio.removeAttribute('src'); premAudio.load(); } catch (e) { /* ignore */ } }
   // เล่นเสียงพรีเมียมทีละท่อน (ท่อนถัดไปขอล่วงหน้าระหว่างที่ท่อนนี้เล่น) — คืนจริงเมื่อเล่นจบ, โยน error ถ้าท่อนแรกใช้ไม่ได้
   function speakPremium(text, done) {
-    const raw = chunkText(cleanForSpeech(text));
-    const chunks = [];   // รวมท่อนสั้นๆ ให้ยาวไม่เกิน ~450 ตัวอักษร ลดจำนวนครั้งที่เรียก
-    raw.forEach((c) => { if (chunks.length && (chunks[chunks.length - 1] + ' ' + c).length <= 450) chunks[chunks.length - 1] += ' ' + c; else chunks.push(c); });
+    // แบ่งท่อนแบบ "ท่อนแรกสั้นมาก ท่อนถัดไปค่อยๆ ยาวขึ้น" (≈40, 80, 170, 350 ตัวอักษร): เสียงเริ่มดังเร็ว (สร้างเสียงใช้เวลาประมาณเท่าความยาวเสียง)
+    // แล้วขอทุกท่อนพร้อมกันตั้งแต่แรก ท่อนถัดไปจึงเสร็จทันตอนท่อนก่อนหน้าเล่นจบ (ไม่เว้นช่วงเงียบกลางประโยค)
+    const words = chunkText(cleanForSpeech(text)).join(' ').split(/\s+/).filter(Boolean);
+    const LIMITS = [40, 80, 170, 350];
+    const chunks = [];
+    let cur = '';
+    words.forEach((w) => {
+      const lim = LIMITS[Math.min(chunks.length, LIMITS.length - 1)];
+      if (cur && (cur + ' ' + w).length > lim) { chunks.push(cur); cur = w; } else cur = cur ? cur + ' ' + w : w;
+    });
+    if (cur) chunks.push(cur);
     if (!chunks.length) { done && done(); return; }
     const myToken = ++speechToken;
-    setBotState('speaking');
+    // ระหว่างรอเสียงท่อนแรก ให้ยังเป็นสถานะ "กำลังคิด" (เสียงติ๊กๆ ไม่หยุด) จนกว่าเสียงจะเริ่มดังจริงค่อยเป็น "กำลังพูด"
+    setBotState('thinking');
     let i = 0;
-    let pending = fetchPremiumAudio(chunks[0]);
+    const fetches = chunks.map((c) => { const p = fetchPremiumAudio(c); p.catch(() => { /* จัดการตอนถึงท่อนนั้น */ }); return p; });
     const fallback = (err) => {
       if (myToken !== speechToken) return;
       const first = i <= 1;
@@ -1276,9 +1285,7 @@
     const playNext = async () => {
       if (myToken !== speechToken) return;
       if (i >= chunks.length) { done && done(); return; }
-      const mine = pending; i++;
-      pending = i < chunks.length ? fetchPremiumAudio(chunks[i]) : null;
-      if (pending) pending.catch(() => { /* จัดการตอนถึงท่อนนั้น */ });
+      const mine = fetches[i]; i++;
       let blob;
       try { blob = await mine; } catch (err) { fallback(err); return; }
       if (myToken !== speechToken) return;
@@ -1286,7 +1293,7 @@
       premAudio.onended = () => { URL.revokeObjectURL(url); playNext(); };
       premAudio.onerror = () => { URL.revokeObjectURL(url); fallback(new Error('เล่นเสียงไม่ได้')); };
       premAudio.src = url;
-      try { await premAudio.play(); } catch (err) { URL.revokeObjectURL(url); fallback(new Error('เบราว์เซอร์ไม่ยอมเล่นเสียง (แตะหน้าจอแล้วลองใหม่)')); }
+      try { await premAudio.play(); setBotState('speaking'); } catch (err) { URL.revokeObjectURL(url); fallback(new Error('เบราว์เซอร์ไม่ยอมเล่นเสียง (แตะหน้าจอแล้วลองใหม่)')); }
     };
     playNext();
   }

@@ -29,6 +29,16 @@ async function call(method, path, body, cookie) {
   if (type.includes('json')) { try { json = await r.json(); } catch { /* ไม่มี body */ } } else buf = Buffer.from(await r.arrayBuffer());
   return { status: r.status, json, buf, type, headers: r.headers, cookie: (r.headers.get('set-cookie') || '').split(';')[0] };
 }
+// การบันทึกใช้/หักเครดิตทำตามหลังส่งเสียงกลับ (เพื่อให้เสียงดังเร็วขึ้น) — รอให้เสร็จก่อนตรวจฐานข้อมูล
+let expectRows = 0; let uidForWait = null;
+const waitRows = async (n) => {
+  expectRows += n;
+  for (let i = 0; i < 80; i++) {
+    const c = (await query('SELECT count(*)::int n FROM tts_usage WHERE user_id = $1', [uidForWait])).rows[0].n;
+    if (c >= expectRows) return;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+};
 const setSetting = (k, v) => query("INSERT INTO app_settings (key, value) VALUES ($1, $2::jsonb) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value", [k, JSON.stringify(v)]);
 
 async function cleanup() {
@@ -53,6 +63,7 @@ async function cleanup() {
   check('สมัครผู้ใช้ทดสอบ 2 คน', A.status === 200 && Adm.status === 200);
   await query('UPDATE users SET is_admin = true WHERE phone = $1', [PHONES[1]]);
   const uidA = (await query('SELECT id FROM users WHERE phone = $1', [PHONES[0]])).rows[0].id;
+  uidForWait = uidA;
 
   // ---------- ต้องมีสิทธิ์ ----------
   check('ยังไม่ล็อกอิน ขอเสียงไม่ได้', (await call('POST', '/api/chat/tts', { text: 'สวัสดี' })).status === 401);
@@ -71,7 +82,8 @@ async function cleanup() {
   check('มีสิทธิ์แล้ว: เหลือโควตาฟรีเต็ม 300 วินาที เสียงเริ่มต้น Kore', st1.json.allowed && st1.json.available && st1.json.freeSecondsLeft === 300 && st1.json.voice === 'Kore', JSON.stringify(st1.json));
   fakeSeconds = 2;
   const ok1 = await call('POST', '/api/chat/tts', { text: 'สวัสดีค่ะ น้องครีมพร้อมช่วยแล้ว' }, A.cookie);
-  check('ขอเสียงสำเร็จ: ได้ไฟล์ WAV จริง (หัว RIFF) พร้อมบอกวินาที/โควตาที่เหลือ', ok1.status === 200 && ok1.type.includes('audio/wav') && ok1.buf.toString('ascii', 0, 4) === 'RIFF' && ok1.headers.get('x-tts-seconds') === '2' && ok1.headers.get('x-tts-free-left') === '298' && ok1.headers.get('x-tts-credits') === '0' && lastVoice === 'Kore');
+  check('ขอเสียงสำเร็จ: ได้ไฟล์ WAV จริง (หัว RIFF) พร้อมบอกวินาที/โควตาที่เหลือ', ok1.status === 200 && ok1.type.includes('audio/wav') && ok1.buf.toString('ascii', 0, 4) === 'RIFF' && ok1.headers.get('x-tts-seconds') === '2' && ok1.headers.get('x-tts-free-left') === '298' && lastVoice === 'Kore');
+  await waitRows(1);
   const row = (await query('SELECT tts_seconds_used FROM users WHERE id = $1', [uidA])).rows[0];
   const usage = (await query('SELECT chars, seconds, free_seconds, credits_charged, cost_thb FROM tts_usage WHERE user_id = $1', [uidA])).rows;
   check('ใช้โควตาฟรีก่อน ไม่หักเครดิต + บันทึกการใช้ (ไม่เก็บตัวข้อความ)', Number(row.tts_seconds_used) === 2 && usage.length === 1 && Number(usage[0].free_seconds) === 2 && Number(usage[0].credits_charged) === 0 && Math.abs(Number(usage[0].cost_thb) - (2 / 60) * 0.5) < 0.001 && !JSON.stringify(usage).includes('สวัสดี'), JSON.stringify(usage));
@@ -87,7 +99,9 @@ async function cleanup() {
   await query("INSERT INTO credit_balances (user_id, balance) VALUES ($1, 5) ON CONFLICT (user_id) DO UPDATE SET balance = 5", [uidA]);
   const pay = await call('POST', '/api/chat/tts', { text: 'ข้อความยี่สิบตัวอักษร' }, A.cookie);
   // เสียง 2 วินาที: ฟรี 1 + จ่าย 1 วินาที = 1/60 นาที × 2 เครดิต = 0.03 เครดิต
-  check('เกินโควตาฟรี: ใช้ฟรีที่เหลือ 1 วิ ส่วนที่เกินหักเครดิต 0.03', pay.status === 200 && pay.headers.get('x-tts-free-left') === '0' && pay.headers.get('x-tts-credits') === '0.03', JSON.stringify([pay.status, pay.headers.get('x-tts-credits')]));
+  await waitRows(1);
+  const payRow = (await query('SELECT free_seconds, credits_charged FROM tts_usage WHERE user_id = $1 ORDER BY id DESC LIMIT 1', [uidA])).rows[0];
+  check('เกินโควตาฟรี: ใช้ฟรีที่เหลือ 1 วิ ส่วนที่เกินหักเครดิต 0.03', pay.status === 200 && pay.headers.get('x-tts-free-left') === '0' && Number(payRow.free_seconds) === 1 && Number(payRow.credits_charged) === 0.03, JSON.stringify([pay.status, payRow]));
   const led = (await query("SELECT amount, type, ref_type, balance_after FROM credit_ledger WHERE user_id = $1 ORDER BY id DESC LIMIT 1", [uidA])).rows[0];
   check('สมุดบัญชีเครดิตมีรายการ spend ref=tts และยอดคงเหลือถูก (4.97)', led && led.type === 'spend' && led.ref_type === 'tts' && Number(led.amount) === -0.03 && Number(led.balance_after) === 4.97, JSON.stringify(led));
 
@@ -96,12 +110,29 @@ async function cleanup() {
   const stM = await call('GET', '/api/chat/tts/status', null, A.cookie);
   check('ขึ้นเดือนใหม่ → โควตาฟรีรีเซ็ตเต็ม 300 วินาที', stM.json.freeSecondsLeft === 300, String(stM.json.freeSecondsLeft));
   await call('POST', '/api/chat/tts', { text: 'สวัสดี' }, A.cookie);
+  await waitRows(1);
   const r2 = (await query('SELECT tts_seconds_used, tts_seconds_month FROM users WHERE id = $1', [uidA])).rows[0];
   check('ใช้ในเดือนใหม่ → เริ่มนับจากศูนย์ (ไม่บวกทับของเดือนเก่า)', Number(r2.tts_seconds_used) === 2 && r2.tts_seconds_month === tts.monthNow(), JSON.stringify(r2));
+
+  // ---------- ขอหลายท่อนพร้อมกัน (หน้าจอขอทุกท่อนขนาน) ต้องไม่หักโควตาฟรีซ้ำซ้อน/ขาดหาย ----------
+  await query('UPDATE users SET tts_seconds_used = 290, tts_seconds_month = $2 WHERE id = $1', [uidA, tts.monthNow()]);
+  await query('UPDATE credit_balances SET balance = 5 WHERE user_id = $1', [uidA]);
+  const beforeLedger = (await query("SELECT COALESCE(sum(-amount), 0) AS c FROM credit_ledger WHERE user_id = $1 AND ref_type = 'tts'", [uidA])).rows[0].c;
+  fakeSeconds = 6;
+  const par = await Promise.all([1, 2, 3].map((n) => call('POST', '/api/chat/tts', { text: 'ท่อนที่ ' + n + ' ข้อความทดสอบความขนาน' }, A.cookie)));
+  await waitRows(3);
+  const afterU = (await query('SELECT tts_seconds_used FROM users WHERE id = $1', [uidA])).rows[0];
+  const afterLedger = (await query("SELECT COALESCE(sum(-amount), 0) AS c FROM credit_ledger WHERE user_id = $1 AND ref_type = 'tts'", [uidA])).rows[0].c;
+  const chargedPar = Math.round((Number(afterLedger) - Number(beforeLedger)) * 100) / 100;
+  // ใช้ไปรวม 18 วินาที: โควตาฟรีเหลือ 10 วินาที → จ่ายเครดิตสำหรับ 8 วินาที = 8/60 นาที × 2 = 0.27 เครดิต
+  check('ขอ 3 ท่อนพร้อมกัน (6 วินาทีต่อท่อน): ทั้งหมดสำเร็จ นับเวลารวม 18 วินาที ใช้ฟรีแค่ 10 ที่เหลือ ส่วนเกินหักเครดิตถูกต้อง (≈0.27)', par.every((x) => x.status === 200) && Number(afterU.tts_seconds_used) === 308 && Math.abs(chargedPar - 0.27) <= 0.02, JSON.stringify({ status: par.map((x) => x.status), used: afterU.tts_seconds_used, charged: chargedPar }));
+  fakeSeconds = 2;
+  await query('UPDATE users SET tts_seconds_used = 0, tts_seconds_month = $2 WHERE id = $1', [uidA, tts.monthNow()]);
 
   // ---------- เลือกเสียงโดยแอดมิน ----------
   await setSetting('tts_voice_index', 3);
   await call('POST', '/api/chat/tts', { text: 'ทดสอบเสียง' }, A.cookie);
+  await waitRows(1);
   check('แอดมินเปลี่ยนเสียง (เลข 3 = Leda) → ใช้เสียงใหม่', lastVoice === 'Leda', lastVoice);
   await setSetting('tts_voice_index', 0);
 

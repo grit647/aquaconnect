@@ -154,7 +154,7 @@ router.post('/tts', async (req, res) => {
   try {
     if (ttsLimited(req.user.id)) return res.status(429).json({ error: 'ขอเสียงถี่เกินไป รอสักครู่', code: 'rate' });
     const r = await tts.synthesizeForUser(req.user.id, req.body && req.body.text);
-    res.set({ 'Content-Type': 'audio/wav', 'Cache-Control': 'no-store', 'X-TTS-Seconds': String(r.seconds), 'X-TTS-Free-Left': String(r.freeSecondsLeft), 'X-TTS-Credits': String(r.creditsCharged) });
+    res.set({ 'Content-Type': 'audio/wav', 'Cache-Control': 'no-store', 'X-TTS-Seconds': String(r.seconds), 'X-TTS-Free-Left': String(r.freeSecondsLeft) });
     res.send(r.wav);
   } catch (err) {
     if (err instanceof tts.TtsError) return res.status(err.status).json({ error: err.message, code: err.code });
