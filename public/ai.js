@@ -899,12 +899,17 @@
     div.className = 'bubble ' + role;
     // ป้ายรูปจากอัลบั้ม (เก็บไว้ท้ายข้อความของเลขาในประวัติ) → ตัดออกจากข้อความ แล้วโชว์เป็นรูปใต้ข้อความ
     const ids = [];
+    const genIds = [];
     if (role === 'assistant' && typeof text === 'string' && text.includes('⟦photo:')) {
       text = text.replace(/\s*⟦photo:([0-9a-f-]{36})⟧/gi, (m, id) => { ids.push(id); return ''; });
+    }
+    if (role === 'assistant' && typeof text === 'string' && text.includes('⟦gen:')) {
+      text = text.replace(/\s*⟦gen:([0-9a-f-]{36})⟧/gi, (m, id) => { genIds.push(id); return ''; });
     }
     div.textContent = text;
     logEl.appendChild(div);
     if (ids.length) appendPhotoStrip(div, ids);
+    if (genIds.length) appendGeneratedImages(div, genIds);
     scrollToBottom();
     return div;
   }
@@ -916,6 +921,27 @@
     const close = () => ov.remove();
     ov.addEventListener('click', close); x.addEventListener('click', close);
     ov.append(img, x); document.body.appendChild(ov);
+  }
+  // ภาพที่เลขาวาดให้ (เจนภาพ): โชว์ภาพใหญ่ในแชท กดดูเต็มจอได้ + ปุ่มบันทึกลงอัลบั้มถาวร (ภาพที่เจนเก็บไว้ในประวัติแชทล่าสุด 60 ภาพ)
+  function appendGeneratedImages(bubble, ids) {
+    ids.forEach((id) => {
+      const wrap = document.createElement('div'); wrap.className = 'gen-img';
+      const im = document.createElement('img'); im.alt = 'ภาพที่เลขาวาดให้'; im.loading = 'lazy'; im.src = '/api/imagegen/' + id + '/image';
+      im.addEventListener('click', () => { const ov = document.createElement('div'); ov.id = 'photoLightbox'; const big = document.createElement('img'); big.alt = ''; big.src = im.src; const x = document.createElement('button'); x.type = 'button'; x.textContent = '✕ ปิด'; const close = () => ov.remove(); ov.addEventListener('click', close); x.addEventListener('click', close); ov.append(big, x); document.body.appendChild(ov); });
+      im.addEventListener('load', scrollToBottom);
+      im.addEventListener('error', () => wrap.remove());   // ภาพเก่าเกิน 60 ภาพถูกลบแล้ว → ซ่อนเงียบๆ
+      const save = document.createElement('button'); save.type = 'button'; save.className = 'gen-save'; save.textContent = '💾 บันทึกลงอัลบั้ม';
+      save.addEventListener('click', async () => {
+        save.disabled = true; save.textContent = 'กำลังบันทึก...';
+        try {
+          const blob = await (await fetch(im.src, { credentials: 'same-origin' })).blob();
+          const image = await resizeKeep(blob, 1280, 0.85); const thumb = await resizeKeep(blob, 320, 0.7);
+          await api('POST', '/api/album', { image, thumb });
+          save.textContent = '✓ บันทึกลงอัลบั้มแล้ว';
+        } catch (err) { save.disabled = false; save.textContent = '💾 บันทึกลงอัลบั้ม'; addBubble('error', err.message); }
+      });
+      wrap.append(im, save); bubble.appendChild(wrap);
+    });
   }
   function appendPhotoStrip(bubble, ids) {
     const strip = document.createElement('div'); strip.className = 'photos';
@@ -1173,6 +1199,47 @@
     });
   });
 
+  // ---------- กล้อง "ถ่ายแล้วถาม": เปิดกล้องในหน้าแอป ถ่ายรูป → แนบเป็นไฟล์แนบ → พิมพ์/พูดถามเลขาต่อ (รูปไม่ถูกเก็บถ้าไม่บันทึกลงอัลบั้มเอง) ----------
+  // กล้องหลังเป็นค่าเริ่มต้น (ถ่ายของรอบตัว) สลับหน้า/หลังได้ • เปิดกล้องไม่ได้ (ไม่อนุญาต/ไม่มีกล้อง/เบราว์เซอร์ในไลน์) → ถอยไปใช้ช่องเลือกรูป/ถ่ายรูปของเครื่อง
+  let camStream = null;
+  function stopCam() { if (camStream) { camStream.getTracks().forEach((t) => t.stop()); camStream = null; } const ov = document.getElementById('camOverlay'); if (ov) ov.remove(); }
+  function camFallback() { pickFiles('image/*', false); }
+  async function openCamera() {
+    if (connected) { addBubble('error', 'โหมดใช้ข้อมูลของคนอื่นแนบรูปไม่ได้ — กด "จบการใช้ข้อมูล" ก่อนค่ะ'); return; }
+    if (pendingFiles.length >= MAX_FILES) { addBubble('error', 'แนบได้สูงสุด ' + MAX_FILES + ' ไฟล์ต่อข้อความค่ะ'); return; }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { camFallback(); return; }
+    stopCam();
+    let facing = 'environment';
+    const ov = document.createElement('div'); ov.id = 'camOverlay';
+    const video = document.createElement('video'); video.autoplay = true; video.muted = true; video.setAttribute('playsinline', '');
+    const bar = document.createElement('div'); bar.className = 'cam-bar';
+    const cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = '✕ ปิด';
+    const snap = document.createElement('button'); snap.type = 'button'; snap.className = 'cam-snap'; snap.setAttribute('aria-label', 'ถ่ายรูป'); snap.textContent = '●';
+    const flip = document.createElement('button'); flip.type = 'button'; flip.textContent = '🔄 สลับกล้อง';
+    const hint = document.createElement('div'); hint.className = 'cam-hint'; hint.textContent = 'ส่องไปที่สิ่งที่อยากถาม แล้วกดปุ่มกลมเพื่อถ่าย';
+    bar.append(cancel, snap, flip); ov.append(hint, video, bar); document.body.appendChild(ov);
+    const start = async () => {
+      if (camStream) camStream.getTracks().forEach((t) => t.stop());
+      camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: facing }, width: { ideal: 1600 } }, audio: false });
+      video.srcObject = camStream;
+    };
+    try { await start(); } catch (err) { stopCam(); addBubble('hint', 'เปิดกล้องในแอปไม่ได้ (อาจยังไม่ได้อนุญาตกล้อง) — ใช้ช่องถ่ายรูปของเครื่องแทนนะคะ'); camFallback(); return; }
+    cancel.addEventListener('click', stopCam);
+    flip.addEventListener('click', async () => { facing = facing === 'environment' ? 'user' : 'environment'; try { await start(); } catch (e) { hint.textContent = 'สลับกล้องไม่ได้'; } });
+    snap.addEventListener('click', () => {
+      if (!video.videoWidth) return;
+      const cv = document.createElement('canvas'); cv.width = video.videoWidth; cv.height = video.videoHeight;
+      cv.getContext('2d').drawImage(video, 0, 0, cv.width, cv.height);
+      cv.toBlob(async (blob) => {
+        stopCam();
+        if (!blob) { addBubble('error', 'ถ่ายรูปไม่สำเร็จ ลองใหม่อีกครั้งค่ะ'); return; }
+        await addFiles([new File([blob], 'ภาพจากกล้อง.jpg', { type: 'image/jpeg' })]);
+        inputEl.placeholder = 'พิมพ์ถามเลขาเกี่ยวกับรูปนี้ หรือกดส่งเลย...'; inputEl.focus();
+      }, 'image/jpeg', 0.88);
+    });
+  }
+  $('camBtn').addEventListener('click', openCamera);
+
   // ---------- ส่งข้อความ ----------
   // ---------- คำแนะนำข้อความถัดไปจากเลขา (ตัวหนังสือสีเทาในช่องพิมพ์ + ปุ่มส่งเปลี่ยนสี) ----------
   // ช่องว่าง + มีคำแนะนำ: ปุ่มส่งเป็นสีส้ม กดแล้วส่งข้อความสีเทา (หรือกด Tab เพื่อเติมลงช่องไปแก้ต่อ)
@@ -1224,10 +1291,11 @@
     setBotState('thinking');
     let replyText = null;
     try {
-      const { reply, photos, suggestion: nextSuggestion, savedMemories, createdEvents, profile } = await api('POST', '/api/chat/conversations/' + conversationId + '/messages', { content: text, source: source || 'text', askRequestId: connected ? connected.requestId : undefined, attachments: files.length ? files : undefined, focusCategory: focusCategory || undefined, suggestionId: suggestionId || undefined });
+      const { reply, photos, generated, suggestion: nextSuggestion, savedMemories, createdEvents, profile } = await api('POST', '/api/chat/conversations/' + conversationId + '/messages', { content: text, source: source || 'text', askRequestId: connected ? connected.requestId : undefined, attachments: files.length ? files : undefined, focusCategory: focusCategory || undefined, suggestionId: suggestionId || undefined });
       typing.remove();
       const replyBubble = addBubble('assistant', reply);
       if (photos && photos.length) appendPhotoStrip(replyBubble, photos);   // รูปที่เลขาดึงจากอัลบั้มมาให้ดู
+      if (generated && generated.length) appendGeneratedImages(replyBubble, generated);   // ภาพที่เลขาเพิ่งวาดให้
       (savedMemories || []).forEach((m) => addSavedChip(m.category));
       (createdEvents || []).forEach(addEventChip);
       // (ข้อเสนอให้จำ/สรุปแยกหมวด จะถามตอนกลับเข้าแอป ไม่โผล่กลางบทสนทนา — ไม่ให้ดูซ้ำซาก)

@@ -40,6 +40,7 @@ app.use('/api/calendar', calendarRouter);
 app.use('/api/me', require('./routes/me'));
 app.use('/api/groups', require('./routes/groups'));
 app.use('/api/album', require('./routes/album'));
+app.use('/api/imagegen', require('./routes/imagegen'));
 app.use('/api/admin', adminRouter);
 app.use('/api/meetings', require('./routes/meetings'));
 

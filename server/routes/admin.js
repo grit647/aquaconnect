@@ -30,6 +30,10 @@ const SETTINGS = {
   tts_credits_per_minute: { label: 'เสียงพรีเมียม: เกินโควตาฟรีแล้วหักกี่เครดิตต่อนาทีเสียง', min: 0, max: 100 },
   tts_cost_thb_per_minute: { label: 'เสียงพรีเมียม: ต้นทุนจริงของเราต่อนาทีเสียง (บาท) ใช้คิดงบรวม — ตอนนี้ราว 0.5 ปรับเป็นราว 1 ตั้งแต่ 1 ม.ค. 2570', min: 0, max: 100 },
   tts_monthly_budget_thb: { label: 'เสียงพรีเมียม: งบรวมของแพลตฟอร์มต่อเดือน (บาท) ครบแล้วปิดทั้งระบบ (0 = ปิดเสียงพรีเมียมทั้งหมด)', min: 0, max: 100000 },
+  imagegen_free_per_month: { label: 'เจนภาพ: โควตาฟรีต่อคนต่อเดือน (จำนวนภาพ) เกินแล้วหักเครดิต', min: 0, max: 1000 },
+  imagegen_credits_per_image: { label: 'เจนภาพ: เกินโควตาฟรีแล้วหักกี่เครดิตต่อภาพ', min: 0, max: 1000 },
+  imagegen_cost_thb_per_image: { label: 'เจนภาพ: ต้นทุนจริงของเราต่อภาพ (บาท) ใช้คิดงบรวม — ประมาณการ ตรวจจากบิล Google Cloud แล้วปรับ', min: 0, max: 1000 },
+  imagegen_monthly_budget_thb: { label: 'เจนภาพ: งบรวมของแพลตฟอร์มต่อเดือน (บาท) ครบแล้วปิดทั้งระบบ (0 = ปิดเจนภาพทั้งหมด)', min: 0, max: 100000 },
   tts_voice_index: { label: 'เสียงพรีเมียม: เลือกเสียง (0 Kore, 1 Aoede, 2 Zephyr, 3 Leda, 4 Puck, 5 Charon)', min: 0, max: 5 },
   album_max_photos: { label: 'อัลบั้มรูป: เก็บรูปได้สูงสุดกี่รูปต่อคน', min: 1, max: 1000 },
   album_max_mb: { label: 'อัลบั้มรูป: ขนาดรวมของรูปต่อคน (MB)', min: 1, max: 1000 },
@@ -61,7 +65,7 @@ router.get('/overview', async (req, res) => {
 router.get('/users', async (req, res) => {
   try {
     const r = await query(
-      `SELECT u.id, u.name, u.phone, u.is_admin, u.status, (u.line_user_id IS NOT NULL) AS line_linked, u.google_search_enabled, (CASE WHEN u.google_search_month = $1 THEN u.google_search_count ELSE 0 END) AS google_search_count, u.tts_enabled, (CASE WHEN u.tts_seconds_month = $2 THEN u.tts_seconds_used ELSE 0 END) AS tts_seconds,
+      `SELECT u.id, u.name, u.phone, u.is_admin, u.status, (u.line_user_id IS NOT NULL) AS line_linked, u.google_search_enabled, (CASE WHEN u.google_search_month = $1 THEN u.google_search_count ELSE 0 END) AS google_search_count, u.imagegen_enabled, (SELECT count(*)::int FROM imagegen_usage g WHERE g.user_id = u.id AND g.month = $2) AS imagegen_month, (SELECT count(*)::int FROM imagegen_usage g WHERE g.user_id = u.id) AS imagegen_total, u.tts_enabled, (CASE WHEN u.tts_seconds_month = $2 THEN u.tts_seconds_used ELSE 0 END) AS tts_seconds,
               (SELECT COALESCE(sum(t.seconds), 0) FROM tts_usage t WHERE t.user_id = u.id) AS tts_seconds_total,
               (SELECT COALESCE(sum(t.credits_charged), 0) FROM tts_usage t WHERE t.user_id = u.id) AS tts_credits_total, u.line_picture_url AS picture, u.created_at,
               (SELECT count(*)::int FROM messages m WHERE m.user_id = u.id AND m.role = 'user') AS messages,
@@ -103,6 +107,34 @@ router.patch('/users/:id/tts', async (req, res) => {
     res.json({ ok: true, user: r.rows[0] });
   } catch (err) {
     console.error('admin tts flag error:', err);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดฝั่งเซิร์ฟเวอร์' });
+  }
+});
+router.patch('/users/:id/imagegen', async (req, res) => {
+  try {
+    if (!UUID_RE.test(req.params.id)) return res.status(404).json({ error: 'ไม่พบผู้ใช้' });
+    const enabled = !!(req.body && req.body.enabled === true);
+    const r = await query('UPDATE users SET imagegen_enabled = $2 WHERE id = $1 RETURNING id, imagegen_enabled', [req.params.id, enabled]);
+    if (!r.rows[0]) return res.status(404).json({ error: 'ไม่พบผู้ใช้' });
+    res.json({ ok: true, user: r.rows[0] });
+  } catch (err) {
+    console.error('admin imagegen flag error:', err);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดฝั่งเซิร์ฟเวอร์' });
+  }
+});
+router.get('/imagegen-usage', async (req, res) => {
+  try {
+    const ig = require('../imagegen');
+    const [spent, budget, enabledUsers, credits, all] = await Promise.all([
+      ig.monthSpentThb(),
+      query("SELECT value FROM app_settings WHERE key = 'imagegen_monthly_budget_thb'"),
+      query('SELECT count(*)::int AS n FROM users WHERE imagegen_enabled'),
+      query('SELECT COALESCE(sum(credits_charged), 0) AS c FROM imagegen_usage WHERE month = $1', [ig.monthNow()]),
+      query('SELECT count(*)::int AS n, COALESCE(sum(cost_thb), 0) AS thb, COALESCE(sum(credits_charged), 0) AS c FROM imagegen_usage'),
+    ]);
+    res.json({ month: ig.monthNow(), images: spent.images, spentThb: Math.round(spent.thb * 100) / 100, budgetThb: Number(budget.rows[0] && budget.rows[0].value) || 0, creditsCharged: Number(credits.rows[0].c), enabledUsers: enabledUsers.rows[0].n, allTime: { images: all.rows[0].n, thb: Math.round(Number(all.rows[0].thb) * 100) / 100, credits: Number(all.rows[0].c) } });
+  } catch (err) {
+    console.error('admin imagegen usage error:', err);
     res.status(500).json({ error: 'เกิดข้อผิดพลาดฝั่งเซิร์ฟเวอร์' });
   }
 });
