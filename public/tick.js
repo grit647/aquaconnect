@@ -48,10 +48,15 @@
     });
     var row = document.createElement('div'); row.className = 'tb';
     function mk(t, fn) { var b = document.createElement('button'); b.type = 'button'; b.textContent = t; b.addEventListener('click', fn); return b; }
-    row.append(mk('ลองฟังติ๊ก', function () { click(); setTimeout(click, 300); setTimeout(click, 600); }), mk('ลองฟังตี๊ด', doneBeep), mk('ปิด', close));
-    pop.append(title, note, rng, lab);
+    row.append(mk('ลองฟังติ๊ก', function () { click(); setTimeout(click, 300); setTimeout(click, 600); }), mk('ลองฟังตี๊ด', doneBeep));
+    var rowLabel = document.createElement('div'); rowLabel.className = 'trl'; rowLabel.textContent = 'ทดลองฟังเสียงบอกสถานะ (ไม่ใช่ปุ่มออก):';
+    var exitBtn = mk('✕ ออกจากหน้านี้', close); exitBtn.className = 'texit';
+    var head = document.createElement('div'); head.className = 'thead';
+    var xb = document.createElement('button'); xb.type = 'button'; xb.className = 'tx'; xb.title = 'ปิดหน้านี้'; xb.setAttribute('aria-label', 'ปิดหน้านี้'); xb.textContent = '✕'; xb.addEventListener('click', close);
+    head.append(title, xb);
+    pop.append(head, note, rng, lab);
     if (typeof window.aqVoiceUi === 'function') { try { window.aqVoiceUi(pop); } catch (e) { /* ส่วนเสียงเลขาพังก็ไม่กระทบเสียงบอกสถานะ */ } }
-    pop.append(row);
+    pop.append(rowLabel, row, exitBtn);
     overlay.appendChild(pop);
     overlay.addEventListener('click', function (e) { if (e.target === overlay) close(); });
     document.body.appendChild(overlay);
