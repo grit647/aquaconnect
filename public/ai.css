@@ -108,7 +108,7 @@ body {
 }
 .typing { align-self: flex-start; color: var(--muted); font-size: 14px; padding: 4px 8px; }
 
-#micModeBar { display: flex; gap: 6px; padding: 6px 8px; justify-content: center; flex-wrap: nowrap; }
+#micModeBar { display: flex; gap: 6px; padding: 6px 8px; justify-content: center; flex-wrap: wrap; }
 #micModeBar button {
   border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 999px;
   padding: 6px 10px; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap; min-width: 0;
