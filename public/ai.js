@@ -1491,6 +1491,9 @@
   }
 
   // ส่วน "เสียงที่เลขาใช้อ่านคำตอบ" ในป๊อปอัป ตั้งค่าเสียง (tick.js เรียกตอนเปิด)
+  // ความดังเสียงเลขาแบบเสียงเบราว์เซอร์/เสียงเครื่อง (เสียงพรีเมียมดังอยู่แล้ว ไม่ปรับ) — จำค่าในเครื่อง 0-100% (ค่าเริ่มต้น 100%)
+  let speakVol = 1;
+  try { const sv = localStorage.getItem('aq_speak_vol'); if (sv !== null && !isNaN(parseFloat(sv))) speakVol = Math.min(1, Math.max(0.05, parseFloat(sv))); } catch (e) { /* ignore */ }
   window.aqVoiceUi = (pop) => {
     const box = document.createElement('div'); box.className = 'tvoice';
     const hd = document.createElement('div'); hd.className = 'tvh'; hd.textContent = '🗣️ เสียงที่เลขาใช้อ่านคำตอบ';
@@ -1507,6 +1510,28 @@
     const slowNote = document.createElement('div'); slowNote.className = 'tvi';
     look.append(lh, voiceBox, styleHead, styleBox, slowNote);
     box.append(hd, optBrowser, optPrem, info, look, test); pop.appendChild(box);
+    // ปรับความดังเสียงเลขา (เสียงเบราว์เซอร์/เสียงเครื่อง)
+    const vbox = document.createElement('div'); vbox.className = 'tvoice';
+    const vhd = document.createElement('div'); vhd.className = 'tvh'; vhd.textContent = '🔈 ความดังเสียงเลขา (เสียงเบราว์เซอร์)';
+    const vnote = document.createElement('div'); vnote.className = 'tvi'; vnote.textContent = 'ใช้กับเสียงเลขาแบบเสียงเครื่อง (ฟรี) เท่านั้น — เสียงพรีเมียมดังพออยู่แล้ว ไม่ต้องปรับ';
+    const vrng = document.createElement('input'); vrng.type = 'range'; vrng.min = '5'; vrng.max = '100'; vrng.value = String(Math.round(speakVol * 100));
+    const vlab = document.createElement('div'); vlab.className = 'tv';
+    const paintVol = () => { vlab.textContent = 'ความดัง ' + Math.round(speakVol * 100) + '%'; };
+    paintVol();
+    vrng.addEventListener('input', () => {
+      speakVol = parseInt(vrng.value, 10) / 100; paintVol();
+      try { localStorage.setItem('aq_speak_vol', String(speakVol)); } catch (e) { /* ignore */ }
+    });
+    const vtest = document.createElement('button'); vtest.type = 'button'; vtest.className = 'ttest'; vtest.textContent = '▶ ลองฟังเสียงเลขา (เสียงเบราว์เซอร์)';
+    vtest.addEventListener('click', () => {
+      if (!ttsSupported) { vnote.textContent = 'เครื่องนี้ไม่มีเสียงพูดภาษาไทยในเบราว์เซอร์ค่ะ'; return; }
+      try {
+        window.speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance('สวัสดีค่ะ น้อง' + ((me && me.secretaryName) || 'เลขา').replace(/^น้อง/, '') + 'พร้อมช่วยคุณแล้วนะคะ');
+        u.lang = 'th-TH'; u.volume = speakVol; window.speechSynthesis.speak(u);
+      } catch (e) { /* ignore */ }
+    });
+    vbox.append(vhd, vnote, vrng, vlab, vtest); pop.appendChild(vbox);
     let saveTimer = null;
     const saveLook = () => {
       clearTimeout(saveTimer);
@@ -1593,6 +1618,7 @@
       const u = new SpeechSynthesisUtterance(chunks[i++]);
       u.lang = 'th-TH';
       u.rate = 1.0;
+      u.volume = speakVol;
       u.onend = next;
       u.onerror = next;
       window.speechSynthesis.speak(u);
