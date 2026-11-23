@@ -53,6 +53,9 @@ router.get('/:id/ai-avatar/:uid', async (req, res) => {
 router.post('/:id/ai-session', async (req, res) => {
   try { res.json({ ok: true, session: await groups.startAiSession(req.user.id, req.params.id, req.body && req.body.topic) }); } catch (err) { fail(res, err); }
 });
+router.post('/:id/ai-session/respond', async (req, res) => {
+  try { res.json({ ok: true, ...(await groups.respondAiConsent(req.user.id, req.params.id, !!(req.body && req.body.accept === true))) }); } catch (err) { fail(res, err); }
+});
 router.delete('/:id/ai-session', async (req, res) => {
   try { res.json({ ok: true, ...(await groups.stopAiSession(req.user.id, req.params.id)) }); } catch (err) { fail(res, err); }
 });

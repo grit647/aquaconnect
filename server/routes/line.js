@@ -33,7 +33,7 @@ async function handleEvent(ev) {
   // ปุ่ม "อนุญาต/ไม่อนุญาต" ในข้อความแจ้งคำขอเข้าใช้ข้อมูล — ตัวตนมาจากบัญชีไลน์ที่กดจริง (ผูกกับผู้ใช้ไว้แล้ว) ไม่ใช่จากข้อมูลในปุ่ม
   if (ev.type === 'postback' && ev.postback && ev.postback.data) {
     const d = new URLSearchParams(ev.postback.data);
-    if (d.get('act') !== 'access' && d.get('act') !== 'remind' && d.get('act') !== 'google' && d.get('act') !== 'group' && d.get('act') !== 'ginvite') return;
+    if (d.get('act') !== 'access' && d.get('act') !== 'remind' && d.get('act') !== 'google' && d.get('act') !== 'group' && d.get('act') !== 'ginvite' && d.get('act') !== 'gaisess') return;
     const lineUserId = ev.source && ev.source.userId;
     const u = lineUserId ? await query("SELECT id FROM users WHERE line_user_id = $1 AND status = 'active'", [lineUserId]) : { rows: [] };
     if (!u.rows[0]) return line.replyText(ev.replyToken, 'ยังไม่พบบัญชีที่ผูกกับไลน์นี้ค่ะ เปิดแอปผ่านปุ่ม "คุยกับเลขา" ก่อนนะคะ');
@@ -44,6 +44,16 @@ async function handleEvent(ev) {
         const accept = d.get('d') === 'accept';
         const r = await require('../groups').respondInvite(u.rows[0].id, d.get('id'), accept);
         return line.replyText(ev.replyToken, accept ? 'เข้ากลุ่ม "' + r.groupName + '" แล้วค่ะ เปิดแอปแล้วเข้าแชทกลุ่มได้เลย' : 'ปฏิเสธคำเชิญแล้วค่ะ');
+      } catch (err) {
+        return line.replyText(ev.replyToken, 'ทำรายการไม่ได้: ' + err.message);
+      }
+    }
+    // ปุ่ม "ให้เลขาร่วม/ไม่ร่วม" ช่วงให้เลขาคุยกันเอง — เฉพาะเจ้าของเลขาที่ถูกขอ (ตรวจจากบัญชีไลน์ที่กดจริง)
+    if (d.get('act') === 'gaisess') {
+      try {
+        const accept = d.get('d') === 'accept';
+        await require('../groupAi').respondConsent(u.rows[0].id, d.get('id'), accept);
+        return line.replyText(ev.replyToken, accept ? 'ให้เลขาของคุณร่วมช่วงคุยกันเองแล้วค่ะ' : 'รับทราบค่ะ เลขาของคุณจะไม่ร่วมช่วงนี้');
       } catch (err) {
         return line.replyText(ev.replyToken, 'ทำรายการไม่ได้: ' + err.message);
       }

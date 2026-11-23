@@ -49,6 +49,7 @@ async function listGroups(userId) {
             (SELECT role FROM chat_group_members m WHERE m.group_id = g.id AND m.user_id = $1) AS my_role,
             EXISTS (SELECT 1 FROM chat_group_requests q WHERE q.group_id = g.id AND q.user_id = $1 AND q.status = 'pending') AS pending,
             (SELECT count(*)::int FROM chat_group_requests q WHERE q.group_id = g.id AND q.status = 'pending' AND g.owner_id = $1) AS pending_requests,
+            EXISTS (SELECT 1 FROM chat_group_ai_session_consent c JOIN chat_group_ai_sessions s ON s.id = c.session_id WHERE s.group_id = g.id AND s.ended_at IS NULL AND c.user_id = $1 AND c.status = 'pending') AS ai_consent_pending,
             (SELECT count(*)::int FROM chat_group_messages x JOIN chat_group_members mem ON mem.group_id = x.group_id AND mem.user_id = $1
               WHERE x.group_id = g.id AND x.id > COALESCE(mem.last_read_id, 0) AND x.created_at >= mem.joined_at AND x.user_id <> $1 AND NOT x.is_system) AS unread
        FROM chat_groups g JOIN users u ON u.id = g.owner_id
@@ -58,7 +59,7 @@ async function listGroups(userId) {
   const mine = r.rows.filter((g) => g.owner_id === userId).length;
   const joined = r.rows.filter((g) => g.my_role === 'member').length;
   return {
-    groups: r.rows.map((g) => ({ id: g.id, name: g.name, description: g.description, ownerName: g.owner_name, ownerPicture: picOf(g.owner_picture), members: g.members, unread: g.unread || 0, myRole: g.my_role || null, pending: g.pending, pendingRequests: g.pending_requests, isOwner: g.owner_id === userId })),
+    groups: r.rows.map((g) => ({ id: g.id, name: g.name, description: g.description, ownerName: g.owner_name, ownerPicture: picOf(g.owner_picture), members: g.members, unread: g.unread || 0, aiConsentPending: !!g.ai_consent_pending, myRole: g.my_role || null, pending: g.pending, pendingRequests: g.pending_requests, isOwner: g.owner_id === userId })),
     createdByMe: mine, maxCreate: MAX_GROUPS_PER_USER, joinedByMe: joined, maxJoin: MAX_JOINED_PER_USER,
   };
 }
@@ -209,7 +210,14 @@ async function stopAiSession(userId, groupId) {
 }
 async function aiSessionInfo(userId, groupId) {
   if (!(await memberRole(userId, groupId))) throw new Error('คุณไม่ได้เป็นสมาชิกกลุ่มนี้');
-  return groupAi.activeSession(groupId);
+  return groupAi.activeSession(groupId, userId);
+}
+// เจ้าของเลขากดยอมรับ/ไม่ร่วม ช่วงให้เลขาคุยกันเองที่กำลังทำงานในกลุ่มนี้
+async function respondAiConsent(userId, groupId, accept) {
+  if (!(await memberRole(userId, groupId))) throw new Error('คุณไม่ได้เป็นสมาชิกกลุ่มนี้');
+  const sid = await groupAi.activeSessionId(groupId);
+  if (!sid) throw new Error('ตอนนี้ไม่มีช่วงให้เลขาคุยกันเอง');
+  return groupAi.respondConsent(userId, sid, !!accept);
 }
 
 // สมาชิกออกจากกลุ่ม (ผู้สร้างออกไม่ได้ ต้องลบกลุ่ม)
@@ -374,4 +382,4 @@ async function respondInvite(userId, inviteId, accept) {
   return { accepted: !!accept, groupId: out.group_id, groupName: out.name };
 }
 
-module.exports = { startAiSession, stopAiSession, aiSessionInfo, aiAvatarForGroup, contextForSecretary, setAiSettings, summarizeToMemory, listInviteCandidates, inviteUser, myInvites, respondInvite, createGroup, listGroups, requestJoin, decideJoin, getGroup, postMessage, listMessages, leaveGroup, deleteGroup, MAX_GROUPS_PER_USER, MAX_JOINED_PER_USER, MAX_MESSAGE_CHARS };
+module.exports = { respondAiConsent, startAiSession, stopAiSession, aiSessionInfo, aiAvatarForGroup, contextForSecretary, setAiSettings, summarizeToMemory, listInviteCandidates, inviteUser, myInvites, respondInvite, createGroup, listGroups, requestJoin, decideJoin, getGroup, postMessage, listMessages, leaveGroup, deleteGroup, MAX_GROUPS_PER_USER, MAX_JOINED_PER_USER, MAX_MESSAGE_CHARS };

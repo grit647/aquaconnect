@@ -128,6 +128,40 @@ async function participants(groupId) {
   return r.rows;
 }
 
+// ผู้ร่วม "ช่วงคุยกันเอง" ช่วงหนึ่ง = ติ๊กร่วมคุยอยู่ และ "กดยอมรับ" ของช่วงนั้นแล้ว (ผู้เริ่มยอมรับอัตโนมัติ)
+async function sessionParts(groupId, sessionId) {
+  const r = await query(
+    `SELECT mem.user_id, mem.ai_topic, u.secretary_name, u.secretary_persona, ${DISPLAY} AS owner_name
+       FROM chat_group_members mem JOIN users u ON u.id = mem.user_id
+       JOIN chat_group_ai_session_consent c ON c.user_id = mem.user_id AND c.session_id = $2 AND c.status = 'accepted'
+      WHERE mem.group_id = $1 AND mem.ai_join AND u.status = 'active' ORDER BY mem.joined_at ASC`, [groupId, sessionId]);
+  return r.rows;
+}
+async function consentCounts(sessionId, userId) {
+  const r = await query(
+    `SELECT count(*) FILTER (WHERE status = 'accepted')::int AS accepted, count(*) FILTER (WHERE status = 'pending')::int AS pending,
+            max(CASE WHEN user_id = $2 THEN status END) AS mine FROM chat_group_ai_session_consent WHERE session_id = $1`, [sessionId, userId || null]);
+  return r.rows[0];
+}
+// แจ้งเจ้าของเลขาที่ยังไม่ได้ตอบ ทางไลน์ (ปุ่มยอมรับ/ไม่ร่วม) — ไม่ได้เข้าแอปก็ยังรู้ แต่เลขาจะไม่พูดจนกว่าจะกด
+async function notifyConsent(groupId, sessionId, starterName, minutes, seconds) {
+  try {
+    const line = require('./line');
+    if (!line.isConfigured()) return;
+    const g = await query('SELECT name FROM chat_groups WHERE id = $1', [groupId]);
+    const r = await query(
+      `SELECT u.line_user_id FROM chat_group_ai_session_consent c JOIN users u ON u.id = c.user_id
+        WHERE c.session_id = $1 AND c.status = 'pending' AND u.line_user_id IS NOT NULL`, [sessionId]);
+    const text = `${starterName} ขอให้เลขาคุยกันเอง ${minutes} นาที ในกลุ่ม "${g.rows[0] ? g.rows[0].name : ''}" — ให้เลขาของคุณร่วมไหม? (ถ้าไม่กดภายใน ${seconds} วินาที เลขาของคุณจะไม่ร่วม)`;
+    for (const x of r.rows) {
+      await line.pushButtons(x.line_user_id, text, text, [
+        { label: 'ให้เลขาร่วม', data: `act=gaisess&d=accept&id=${sessionId}` },
+        { label: 'ไม่ร่วม', data: `act=gaisess&d=decline&id=${sessionId}` },
+      ]).catch((e) => console.error('consent line notify failed:', e.message));
+    }
+  } catch (err) { console.error('consent notify error:', err.message); }
+}
+
 async function capsOk(userId, groupId, withCooldown, hourly) {
   const perHour = await getNum('group_ai_per_hour', 12);
   const perDay = await getNum('group_ai_per_day', 60);
@@ -192,8 +226,16 @@ async function startSession(userId, groupId, rawTopic) {
     if (err.code === '23505') throw new Error('กำลังมีช่วงให้เลขาคุยกันเองอยู่แล้ว รอให้จบก่อน');
     throw err;
   }
+  // ผู้เริ่มยอมรับอัตโนมัติ; เลขาของสมาชิกคนอื่นที่ติ๊กร่วมคุย = รอเจ้าของกดยอมรับ (ไม่ถูกดึงเข้าช่วงเอง)
+  await query(
+    `INSERT INTO chat_group_ai_session_consent (session_id, user_id, status, responded_at)
+       SELECT $1, mem.user_id, CASE WHEN mem.user_id = $3 THEN 'accepted' ELSE 'pending' END, CASE WHEN mem.user_id = $3 THEN now() END
+         FROM chat_group_members mem JOIN users u ON u.id = mem.user_id WHERE mem.group_id = $2 AND mem.ai_join AND u.status = 'active'`, [s.id, groupId, userId]);
+  const consentSeconds = Math.max(15, await getNum('group_ai_consent_seconds', 90));
   const starter = parts.find((p) => p.user_id === userId);
   await addSystemMessage(groupId, userId, `🤖 เริ่มช่วงให้เลขาคุยกันเอง ${minutes} นาที โดย ${starter.owner_name}${issues.length ? ' • ประเด็น: ' + issues.map((x, i) => (i + 1) + ') ' + x).join(' ') : ' (เลขาจะตั้งประเด็นเอง)'} — ครบเวลาแล้วเลขาจะหยุดและจดบันทึกว่าได้รู้จักใครบ้าง`);
+  await addSystemMessage(groupId, userId, `⏳ รอสมาชิกที่เปิดให้เลขาร่วมคุยกดยอมรับ (ในแอปหรือไลน์) ภายใน ${consentSeconds} วินาที — เลขาของคนที่ไม่กดยอมรับจะไม่พูดในช่วงนี้`);
+  notifyConsent(groupId, s.id, starter.owner_name, minutes, consentSeconds);   // ไม่รอผลการส่งไลน์
   scheduleTurn(groupId, s.id, 1500);
   return { id: s.id, endsAt: s.ends_at, minutes, topic };
 }
@@ -209,8 +251,15 @@ async function runSessionTurn(groupId, sessionId) {
   if (new Date(s.ends_at).getTime() <= Date.now()) { await endSession(sessionId, 'timeout'); return; }
   const maxMsgs = sessionMaxOverride != null ? sessionMaxOverride : await getNum('group_ai_session_max_messages', 30);
   if (s.messages >= maxMsgs) { await endSession(sessionId, 'limit'); return; }
-  const parts = await participants(groupId);
-  if (parts.length < 2) { await endSession(sessionId, 'no_participants'); return; }
+  const parts = await sessionParts(groupId, sessionId);
+  if (parts.length < 2) {
+    // ยังมีเลขาที่ยอมรับไม่ถึง 2 ตัว: ถ้ายังมีคนยังไม่ตอบและยังอยู่ในกรอบเวลา → รอ; ไม่งั้นยกเลิกช่วง (ไม่มีใครถูกดึงมาพูดโดยไม่ยอมรับ)
+    const cc = await consentCounts(sessionId, null);
+    const windowMs = Math.max(15, await getNum('group_ai_consent_seconds', 90)) * 1000;
+    if (cc.pending === 0 || Date.now() - new Date(s.started_at).getTime() > windowMs) { await endSession(sessionId, 'no_consent'); return; }
+    scheduleTurn(groupId, sessionId, 4000);
+    return;
+  }
 
   // เลือกคนพูดถัดไป: ไม่ใช่ตัวที่เพิ่งพูด และเป็นตัวที่ไม่ได้พูดนานที่สุด
   const last = await query("SELECT user_id, is_ai FROM chat_group_messages WHERE group_id = $1 AND NOT is_system ORDER BY id DESC LIMIT 1", [groupId]);
@@ -291,7 +340,7 @@ async function endSession(sessionId, reason) {
     `UPDATE chat_group_ai_sessions SET ended_at = now(), ended_reason = $2 WHERE id = $1 AND ended_at IS NULL RETURNING id, group_id, started_by, started_at, messages`, [sessionId, reason]);
   const s = r.rows[0];
   if (!s) return false;
-  const why = { timeout: 'ครบเวลาแล้ว', manual: 'ถูกกดหยุด', limit: 'ครบจำนวนข้อความของช่วงนี้แล้ว', no_participants: 'เหลือเลขาไม่พอ' }[reason] || 'จบแล้ว';
+  const why = { timeout: 'ครบเวลาแล้ว', manual: 'ถูกกดหยุด', limit: 'ครบจำนวนข้อความของช่วงนี้แล้ว', no_consent: 'ไม่มีเลขาตัวอื่นกดยอมรับร่วม', no_participants: 'เหลือเลขาไม่พอ' }[reason] || 'จบแล้ว';
   await addSystemMessage(s.group_id, s.started_by, `⏱️ จบช่วงให้เลขาคุยกันเอง (${why}) เลขาแต่ละตัวกำลังจดว่าได้รู้จักใครบ้าง`);
   enqueue(s.group_id, () => recordRelationships(s.group_id, s));
   return true;
@@ -303,14 +352,36 @@ async function endDueSessions(groupId) {
   for (const x of r.rows) await endSession(x.id, 'timeout');
 }
 
-async function activeSession(groupId) {
+async function activeSession(groupId, userId) {
   await endDueSessions(groupId);
   const r = await query(
     `SELECT s.id, s.topic, s.ends_at, s.messages, s.started_by, ${DISPLAY} AS starter_name FROM chat_group_ai_sessions s JOIN users u ON u.id = s.started_by
       WHERE s.group_id = $1 AND s.ended_at IS NULL`, [groupId]);
   const s = r.rows[0];
   if (!s) return null;
-  return { id: s.id, topic: s.topic || '', endsAt: s.ends_at, secondsLeft: Math.max(0, Math.round((new Date(s.ends_at).getTime() - Date.now()) / 1000)), messages: s.messages, startedBy: s.started_by, starterName: s.starter_name };
+  const cc = await consentCounts(s.id, userId);
+  return { acceptedCount: cc.accepted, pendingCount: cc.pending, myConsent: cc.mine || null, id: s.id, topic: s.topic || '', endsAt: s.ends_at, secondsLeft: Math.max(0, Math.round((new Date(s.ends_at).getTime() - Date.now()) / 1000)), messages: s.messages, startedBy: s.started_by, starterName: s.starter_name };
+}
+
+// เจ้าของเลขากดยอมรับ/ไม่ร่วม ช่วงที่กำลังทำงานอยู่ (เฉพาะคนที่ถูกขอไว้ตอนเริ่มช่วง และเป็นสมาชิกกลุ่ม)
+async function respondConsent(userId, sessionId, accept) {
+  const r = await query(
+    `SELECT c.status, s.group_id, s.started_by, ${DISPLAY} AS owner_name FROM chat_group_ai_session_consent c
+       JOIN chat_group_ai_sessions s ON s.id = c.session_id AND s.ended_at IS NULL
+       JOIN chat_group_members mem ON mem.group_id = s.group_id AND mem.user_id = c.user_id
+       JOIN users u ON u.id = c.user_id
+      WHERE c.session_id = $1 AND c.user_id = $2`, [sessionId, userId]);
+  const row = r.rows[0];
+  if (!row) throw new Error('ไม่มีคำขอให้เลขาของคุณร่วมช่วงนี้ (ช่วงอาจจบไปแล้ว)');
+  if (row.status !== 'pending') return { status: row.status, already: true };
+  const status = accept ? 'accepted' : 'declined';
+  await query('UPDATE chat_group_ai_session_consent SET status = $3, responded_at = now() WHERE session_id = $1 AND user_id = $2', [sessionId, userId, status]);
+  await addSystemMessage(row.group_id, userId, accept ? `✅ เลขาของ ${row.owner_name} ร่วมช่วงคุยกันเองแล้ว` : `🚫 เลขาของ ${row.owner_name} ไม่ร่วมช่วงนี้`);
+  return { status, groupId: row.group_id };
+}
+async function activeSessionId(groupId) {
+  const r = await query('SELECT id FROM chat_group_ai_sessions WHERE group_id = $1 AND ended_at IS NULL', [groupId]);
+  return r.rows[0] ? r.rows[0].id : null;
 }
 
 async function stopSession(groupId) {
@@ -336,7 +407,7 @@ function parsePeople(text) {
 }
 
 async function recordRelationships(groupId, session) {
-  const parts = await participants(groupId);
+  const parts = session && session.id ? await sessionParts(groupId, session.id) : await participants(groupId);   // เฉพาะเลขาที่ยอมรับร่วมช่วงนั้น
   if (parts.length === 0) return;
   const g = await query('SELECT name FROM chat_groups WHERE id = $1', [groupId]);
   const gname = g.rows[0] ? g.rows[0].name : '';
@@ -366,4 +437,4 @@ async function recordRelationships(groupId, session) {
   }
 }
 
-module.exports = { getPaceMs, parseIssues, schedule, flushAll, startSession, stopSession, activeSession, endDueSessions, endSession, recordRelationships, setTypingDelayForTests, setPaceForTests, SENDER, DISPLAY };
+module.exports = { respondConsent, activeSessionId, sessionParts, getPaceMs, parseIssues, schedule, flushAll, startSession, stopSession, activeSession, endDueSessions, endSession, recordRelationships, setTypingDelayForTests, setPaceForTests, SENDER, DISPLAY };

@@ -266,6 +266,7 @@ const lastReply = () => { const r = sent.filter((s) => s.path === '/message/repl
     && (await call('POST', `/api/groups/${gid}/ai-session`, {}, C.cookie)).status === 400);
   await setAi(A.cookie, true, '');
   const st1 = await call('POST', `/api/groups/${gid}/ai-session`, { topic: 'ทำความรู้จักกัน' }, A.cookie);
+  await call('POST', `/api/groups/${gid}/ai-session/respond`, { accept: true }, B.cookie);   // เจ้าของเลขา B กดยอมรับ (เลขาถึงจะร่วมช่วง)
   check('เริ่มช่วงให้เลขาคุยกันเอง → ได้ช่วง 5 นาที + ข้อความระบบประกาศในห้อง', st1.status === 200 && st1.json.session.minutes === 5 && st1.json.session.topic === 'ทำความรู้จักกัน');
   check('ช่วงที่กำลังทำงานอยู่ เริ่มซ้อนไม่ได้', (await call('POST', `/api/groups/${gid}/ai-session`, {}, B.cookie)).status === 400);
   const sessMsgs = await call('GET', `/api/groups/${gid}/messages`, null, B.cookie);
@@ -292,6 +293,7 @@ const lastReply = () => { const r = sent.filter((s) => s.path === '/message/repl
   const runSession = async (topic) => {
     const base = groupAiPrompts.length; const a0 = agendaCalls;
     const r = await call('POST', `/api/groups/${gid}/ai-session`, { topic }, A.cookie);
+    await call('POST', `/api/groups/${gid}/ai-session/respond`, { accept: true }, B.cookie);
     await waitFor(async () => (await query("SELECT 1 FROM chat_group_ai_sessions WHERE group_id = $1 AND ended_at IS NOT NULL", [gid])).rows.length === 1, 12000);
     await gai.flushAll(gid);
     const row = (await query('SELECT agenda, ended_reason FROM chat_group_ai_sessions WHERE group_id = $1', [gid])).rows[0];
@@ -323,6 +325,38 @@ const lastReply = () => { const r = sent.filter((s) => s.path === '/message/repl
   await humanSay(A.cookie, 'น้องบี จำได้ไหมว่าเมื่อกี้คุยอะไรกัน');
   const kp = groupAiPrompts.filter((x) => x.includes('คุณคือ "น้องบี"')).pop() || '';   // prompt ของเลขาของ B (ตัวที่ถูกเรียกชื่อ) — เลขาของ A ก็อาจถูกถามด้วยในรอบเดียวกัน
   check('เลขาจำคนที่เคยรู้จักในกลุ่มนี้ได้ (อยู่ใน prompt) แต่ไม่ดึงความรู้จักจากกลุ่มอื่นมาปน', kp.includes('ผู้ชมทดสอบ') && kp.includes('สนใจเรื่องกุ้ง') && !kp.includes('ความลับของอีกกลุ่ม'), JSON.stringify({ hasKnownBlock: kp.includes('สิ่งที่คุณรู้จักคนในกลุ่มนี้'), notes: (await query("SELECT count(*)::int n FROM memories WHERE owner_id = $1 AND content LIKE '[รู้จักกัน]%' AND source_group_id = $2", [uidB, gid])).rows[0].n, promptsTail: groupAiPrompts.length }));
+
+  // ---------- ต้องกดยอมรับ: เลขาของสมาชิกคนอื่นไม่ถูกดึงเข้าช่วงเอง ----------
+  gai.setPaceForTests(0, 4);
+  await query('DELETE FROM chat_group_ai_sessions WHERE group_id = $1', [gid]);
+  await setAi(A.cookie, true, ''); await setAi(B.cookie, true, '');
+  const aiCount = async () => (await query('SELECT count(*)::int n FROM chat_group_messages WHERE group_id = $1 AND is_ai', [gid])).rows[0].n;
+  const respondUrl = `/api/groups/${gid}/ai-session/respond`;
+  const ai0 = await aiCount();
+  const cs = await call('POST', `/api/groups/${gid}/ai-session`, { topic: 'ต้องยอมรับ' }, A.cookie);
+  const sA = (await call('GET', `/api/groups/${gid}/messages`, null, A.cookie)).json.session;
+  const sB = (await call('GET', `/api/groups/${gid}/messages`, null, B.cookie)).json.session;
+  const listBc = (await call('GET', '/api/groups', null, B.cookie)).json.groups.find((x) => x.id === gid);
+  const listAc = (await call('GET', '/api/groups', null, A.cookie)).json.groups.find((x) => x.id === gid);
+  check('เริ่มช่วง → ผู้เริ่มยอมรับอัตโนมัติ / B (ติ๊กร่วมคุยไว้) สถานะ "รอยอมรับ" + มีป้ายที่การ์ดกลุ่มของ B เท่านั้น', cs.status === 200 && sA.myConsent === 'accepted' && sB.myConsent === 'pending' && sB.pendingCount === 1 && listBc.aiConsentPending === true && listAc.aiConsentPending === false, JSON.stringify({ sA: sA && sA.myConsent, sB: sB && sB.myConsent }));
+  check('มีข้อความระบบแจ้งในห้องว่ารอสมาชิกกดยอมรับ', (await call('GET', `/api/groups/${gid}/messages`, null, A.cookie)).json.messages.some((m) => m.isSystem && /กดยอมรับ/.test(m.content)));
+  await sleep(4000);   // ผ่านตาแรกของช่วงไปแล้ว
+  check('B ยังไม่กดยอมรับ → เลขาของ B ไม่ถูกดึงมาพูดเอง (ไม่มีข้อความเลขาเลย) และช่วงยังรออยู่', (await aiCount()) === ai0 && (await query('SELECT 1 FROM chat_group_ai_sessions WHERE group_id = $1 AND ended_at IS NULL', [gid])).rows.length === 1, String((await aiCount()) - ai0));
+  const rC = await call('POST', respondUrl, { accept: true }, C.cookie);
+  const rA2 = await call('POST', respondUrl, { accept: true }, A.cookie);
+  check('คนนอกกลุ่มกดยอมรับไม่ได้ / ผู้เริ่ม (ยอมรับไว้แล้ว) กดซ้ำไม่เปลี่ยนอะไร', rC.status >= 400 && rA2.json.already === true);
+  const dec = await call('POST', respondUrl, { accept: false }, B.cookie);
+  const ended2 = await waitFor(async () => (await query("SELECT 1 FROM chat_group_ai_sessions WHERE group_id = $1 AND ended_reason = 'no_consent'", [gid])).rows.length === 1, 12000);
+  await gai.flushAll(gid);
+  const msgs2 = (await call('GET', `/api/groups/${gid}/messages`, null, A.cookie)).json.messages;
+  check('B กด "ไม่ร่วม" → ช่วงถูกยกเลิก (ไม่มีเลขาตัวอื่นร่วม) มีข้อความระบบแจ้ง และเลขาของ B ไม่พูดเลย', dec.status === 200 && ended2 && (await aiCount()) === ai0 && msgs2.some((m) => m.isSystem && /ไม่ร่วม/.test(m.content)) && msgs2.some((m) => m.isSystem && /ไม่มีเลขาตัวอื่นกดยอมรับ/.test(m.content)));
+  // ไม่กดอะไรเลยจนหมดเวลา → ยกเลิกช่วง
+  await query('DELETE FROM chat_group_ai_sessions WHERE group_id = $1', [gid]);
+  await call('POST', `/api/groups/${gid}/ai-session`, { topic: 'ไม่มีใครกด' }, A.cookie);
+  await query("UPDATE chat_group_ai_sessions SET started_at = now() - interval '5 minutes', ends_at = now() + interval '1 minute' WHERE group_id = $1 AND ended_at IS NULL", [gid]);
+  const ended3 = await waitFor(async () => (await query("SELECT 1 FROM chat_group_ai_sessions WHERE group_id = $1 AND ended_reason = 'no_consent'", [gid])).rows.length === 1, 12000);
+  check('ไม่มีใครกดยอมรับจนเกินกรอบเวลา → ยกเลิกช่วงเอง เลขาของ B ไม่พูด', ended3 && (await aiCount()) === ai0);
+  await query('DELETE FROM chat_group_ai_sessions WHERE group_id = $1', [gid]);
 
   // หยุดเอง / ครบเวลา / เพดานครั้งต่อวัน
   gai.setPaceForTests(60000, 30);

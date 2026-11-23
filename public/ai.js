@@ -327,15 +327,30 @@
   function grpUpdateSession(sess) {
     const bar = gEl('grpSession');
     if (grp.sessTimer) { clearInterval(grp.sessTimer); grp.sessTimer = null; }
-    if (!sess) { bar.hidden = true; return; }
+    const cons = gEl('grpConsent');
+    if (!sess) { bar.hidden = true; cons.hidden = true; return; }
+    // เจ้าของเลขาที่ถูกขอ (ติ๊กร่วมคุยไว้) ต้องกดยอมรับเอง เลขาถึงจะร่วมช่วงนี้ — ไม่กด = ไม่ร่วม
+    if (sess.myConsent === 'pending') {
+      cons.hidden = false;
+      gEl('grpConsentText').textContent = '🤖 ' + (sess.starterName || 'สมาชิก') + ' เริ่มช่วงให้เลขาคุยกันเอง — ให้เลขาของคุณร่วมไหม? (เลขาจะไม่พูดถ้าคุณไม่กดยอมรับ)';
+    } else cons.hidden = true;
     const endAt = Date.now() + sess.secondsLeft * 1000;
     const paint = () => {
       const left = Math.max(0, Math.round((endAt - Date.now()) / 1000));
-      gEl('grpSessText').textContent = '🤖 เลขาคุยกันเองอยู่ · เหลือ ' + String(Math.floor(left / 60)).padStart(2, '0') + ':' + String(left % 60).padStart(2, '0') + (sess.topic ? ' · หัวข้อ: ' + sess.topic : '');
+      gEl('grpSessText').textContent = '🤖 เลขาคุยกันเองอยู่ · เหลือ ' + String(Math.floor(left / 60)).padStart(2, '0') + ':' + String(left % 60).padStart(2, '0') + (sess.topic ? ' · หัวข้อ: ' + sess.topic : '') + (sess.pendingCount ? ' · รอยอมรับ ' + sess.pendingCount + ' คน' : '');
     };
     paint(); bar.hidden = false;
     grp.sessTimer = setInterval(paint, 1000);
   }
+  const grpConsentSend = async (accept) => {
+    if (!grp.groupId) return;
+    gEl('grpConsentYes').disabled = true; gEl('grpConsentNo').disabled = true;
+    try { await api('POST', '/api/groups/' + grp.groupId + '/ai-session/respond', { accept }); gEl('grpConsent').hidden = true; }
+    catch (err) { alert(err.message); gEl('grpConsent').hidden = true; }
+    gEl('grpConsentYes').disabled = false; gEl('grpConsentNo').disabled = false;
+  };
+  gEl('grpConsentYes').addEventListener('click', () => grpConsentSend(true));
+  gEl('grpConsentNo').addEventListener('click', () => grpConsentSend(false));
   gEl('grpSessStop').addEventListener('click', async () => {
     if (!grp.groupId) return;
     try { await api('DELETE', '/api/groups/' + grp.groupId + '/ai-session'); } catch (err) { alert(err.message); }
@@ -403,11 +418,11 @@
         im.onerror = () => { im.remove(); c.textContent = String(g.name).trim().charAt(0) || '?'; };
         c.appendChild(im);
       } else c.textContent = String(g.name).trim().charAt(0) || '?';
-      const attn = (g.pendingRequests || 0) + (g.unread || 0);
+      const attn = (g.pendingRequests || 0) + (g.unread || 0) + (g.aiConsentPending ? 1 : 0);
       if (attn) { const dot = document.createElement('span'); dot.className = 'dot'; dot.textContent = attn; c.appendChild(dot); }
       const col = document.createElement('div'); col.style.cssText = 'flex:1;min-width:0';
       const nm = document.createElement('div'); nm.className = 'nm'; nm.textContent = g.name;
-      const sub = document.createElement('div'); sub.className = 'sub'; sub.textContent = '👥 ' + g.members + ' คน' + (g.unread ? ' · 💬 ' + g.unread + ' ข้อความใหม่' : '') + (g.pendingRequests ? ' · 🔔 ' + g.pendingRequests + ' คำขอรออนุญาต' : '');
+      const sub = document.createElement('div'); sub.className = 'sub'; sub.textContent = '👥 ' + g.members + ' คน' + (g.unread ? ' · 💬 ' + g.unread + ' ข้อความใหม่' : '') + (g.pendingRequests ? ' · 🔔 ' + g.pendingRequests + ' คำขอรออนุญาต' : '') + (g.aiConsentPending ? ' · 🤖 รอคุณยอมรับให้เลขาร่วมคุย' : '');
       col.append(nm, sub); b.append(c, col);
       b.addEventListener('click', () => { closeGroupPopup(); grpOpenView(() => grpChat(g.id, g.name)); });
       return b;
@@ -430,14 +445,14 @@
     const all = document.createElement('button'); all.type = 'button'; all.className = 'allbtn'; all.textContent = '📋 ดูกลุ่มทั้งหมด (' + data.groups.length + ' กลุ่ม)';
     all.addEventListener('click', () => { closeGroupPopup(); grpOpenView(grpList); });
     card.appendChild(all);
-    setGroupsBadge(data.groups.reduce((n, g) => n + ((g.isOwner ? g.pendingRequests : 0) || 0) + (g.unread || 0), 0) + invites.length);
+    setGroupsBadge(data.groups.reduce((n, g) => n + ((g.isOwner ? g.pendingRequests : 0) || 0) + (g.unread || 0) + (g.aiConsentPending ? 1 : 0), 0) + invites.length);
   }
   function setGroupsBadge(n) { const b = gEl('groupsBadge'); if (!b) return; b.hidden = !n; b.textContent = n || ''; }
   async function refreshGroupsBadge() {
     try {
       const d = await api('GET', '/api/groups');
       let inv = 0; try { inv = (await api('GET', '/api/groups/invites')).invites.length; } catch (e) { /* ข้าม */ }
-      setGroupsBadge(d.groups.reduce((n, g) => n + ((g.isOwner ? g.pendingRequests : 0) || 0) + (g.unread || 0), 0) + inv);
+      setGroupsBadge(d.groups.reduce((n, g) => n + ((g.isOwner ? g.pendingRequests : 0) || 0) + (g.unread || 0) + (g.aiConsentPending ? 1 : 0), 0) + inv);
     } catch (e) { /* ไม่มีป้ายก็ข้าม */ }
   }
   gEl('groupsBtn').addEventListener('click', openGroupPopup);
