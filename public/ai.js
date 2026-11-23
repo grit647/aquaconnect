@@ -1528,6 +1528,9 @@
     }
   }
 
+  // รายการเมนูเดิม 4 ข้อ (เริ่มหัวข้อใหม่ / หัวข้อที่เคยคุย / ให้เลขาทบทวน / คุยด้วยเสียงต่อเนื่อง) — ซ่อนตามคำขอคุณต้น เพราะมีทางอื่นแล้ว
+  // (ปุ่ม "เลือกหัวข้อการสนทนา" หน้าหลัก, เลขาทบทวนเองทุก 5 ข้อความ, ปุ่มไมค์ 🎤 เข้าโหมดเสียงต่อเนื่อง) — โค้ดยังอยู่ เปิดกลับได้โดยเปลี่ยนเป็น true
+  const SHOW_LEGACY_MENU = false;
   $('menuBtn').addEventListener('click', () => {
     const body = openSheet('เมนู');
     if (me) {
@@ -1537,11 +1540,11 @@
       const nm = document.createElement('b'); nm.textContent = me.callName || me.name; const sm = document.createElement('small'); sm.textContent = 'เลขา: ' + me.secretaryName;
       who.append(nm, sm); head.append(av, who); body.appendChild(head);
     }
-    sheetButton(body, '➕ เริ่มหัวข้อใหม่', async () => { try { await newConversation(); } catch (err) { addBubble('error', err.message); } });
-    sheetButton(body, '🗂️ หัวข้อที่เคยคุย', showTopics);
-    sheetButton(body, '💡 ให้เลขาทบทวนสิ่งที่ฉันสอน', async () => { closeSheet(); try { const r = await api('POST', '/api/chat/reflect', {}); showProposals(r.proposals); if (!r.proposals.length) addBubble('assistant', 'ตอนนี้ยังไม่มีอะไรใหม่ที่เลขาอยากจดไว้ค่ะ คุยกันอีกสักพักแล้วลองใหม่นะคะ'); } catch (err) { addBubble('error', err.message); } });
+    if (SHOW_LEGACY_MENU) sheetButton(body, '➕ เริ่มหัวข้อใหม่', async () => { try { await newConversation(); } catch (err) { addBubble('error', err.message); } });
+    if (SHOW_LEGACY_MENU) sheetButton(body, '🗂️ หัวข้อที่เคยคุย', showTopics);
+    if (SHOW_LEGACY_MENU) sheetButton(body, '💡 ให้เลขาทบทวนสิ่งที่ฉันสอน', async () => { closeSheet(); try { const r = await api('POST', '/api/chat/reflect', {}); showProposals(r.proposals); if (!r.proposals.length) addBubble('assistant', 'ตอนนี้ยังไม่มีอะไรใหม่ที่เลขาอยากจดไว้ค่ะ คุยกันอีกสักพักแล้วลองใหม่นะคะ'); } catch (err) { addBubble('error', err.message); } });
     sheetButton(body, '📅 ปฏิทิน & เตือน' + (dueCount ? ' (' + dueCount + ')' : ''), () => { closeSheet(); openCal(); });
-    sheetButton(body, '🎙️ คุยด้วยเสียงต่อเนื่อง (ใช้กับหูฟังบลูทูธ)', () => { closeSheet(); enterVoiceMode(false); });
+    if (SHOW_LEGACY_MENU) sheetButton(body, '🎙️ คุยด้วยเสียงต่อเนื่อง (ใช้กับหูฟังบลูทูธ)', () => { closeSheet(); enterVoiceMode(false); });
     if (!isStandalone()) sheetButton(body, '📲 ติดตั้งไอคอนบนหน้าจอหลัก', installApp);
     sheetButton(body, '💰 เครดิต / เติมเงิน', showCredits);
     sheetButton(body, '⚙️ ตั้งค่าข้อมูล (ฟรี / คิดค่าบริการ)', showDataSettings);
