@@ -139,7 +139,7 @@ const lastReply = () => { const r = sent.filter((s) => s.path === '/message/repl
   await call('POST', `/api/chat/conversations/${convU.id}/messages`, { content: 'ค้นเลย', focusCategory: 'กุ้ง' }, U.cookie);
   await say(U.cookie, convU, 'ค้นเลย');
   check('เลือกหมวดไว้ → ส่งหัวข้อไปกำกับการค้น / ไม่เลือก → ค้นอิสระ (ไม่มีหัวข้อกำกับ)', topicsSeen.length === 2 && topicsSeen[0] === 'กุ้ง' && topicsSeen[1] === '', JSON.stringify(topicsSeen));
-  check('prompt: ผลค้นยาว → สรุปเป็นข้อ 1-5 ไม่เกิน 5 ข้อก่อน แล้วค่อยสนทนาลงลึก', lastPrompt.includes('ไม่เกิน 5 ข้อ ก่อน') && lastPrompt.includes('ขยายความข้อไหนต่อ'));
+  check('prompt: ผลค้นยาว → สรุปเป็น 2-3 ข้อก่อน แล้วค่อยสนทนาลงลึก', lastPrompt.includes('ไม่เกิน 3 ข้อ) ก่อน') && lastPrompt.includes('ขยายความข้อไหนต่อ'));
   check('prompt: ผู้ใช้สั่งค้นเอง = ยืนยันในตัว ไม่ต้องถามซ้ำ + มีกฎค้นเฉพาะหัวข้อที่เลือก', lastPrompt.includes('ถือว่าเป็นการยืนยันในตัวแล้ว') && lastPrompt.includes('ค้นเฉพาะข้อมูลที่เกี่ยวข้องกับหัวข้อนั้นเท่านั้น'));
   // ป้ายภายในที่โมเดลเลียนแบบ ต้องถูกตัดก่อนแสดงผู้ใช้ — จำลองโดยดูผ่านคำตอบจริงจากเซิร์ฟเวอร์ไม่ได้ จึงทดสอบ regex เดียวกัน
   check('ตัดป้ายภายใน "[ข้อมูลจาก Google …]" ออกจากต้นคำตอบ', '[ข้อมูลจาก Google — ข้อมูลภายนอก ห้ามบันทึกลงความจำ] ราคากุ้ง 160'.replace(/^\s*\[ข้อมูลจาก Google[^\]]*\]\s*/, '') === 'ราคากุ้ง 160');

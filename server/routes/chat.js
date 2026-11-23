@@ -61,6 +61,15 @@ const GROUP_NOTE = (name, text) => `
 ข้อความล่าสุดในกลุ่ม:
 ${text || '(ยังไม่มีข้อความ)'}`;
 
+// โหมดเสียงพรีเมียม: ต่อท้าย prompt (ให้มีน้ำหนักสูงสุด) — เสียงพรีเมียมนับโควตา/เครดิตตามความยาวเสียง จึงต้องสั้นจริง แม้ผู้ใช้ถามเรื่องยาว
+const PREMIUM_BRIEF_NOTE = `
+
+[กฎความยาวคำตอบ — โหมดเสียงพรีเมียม ต้องทำตามเข้มงวด]
+- คำตอบนี้จะถูกอ่านด้วยเสียงพรีเมียมที่คิดโควตา/เครดิตของผู้ใช้ตามความยาวเสียง ต้องสั้นมาก: **ไม่เกิน 2-3 ประโยค และไม่เกินราว 250 ตัวอักษร**
+- ห้ามทำรายการเป็นข้อๆ/หัวข้อ/ตัวเลขนำหน้า ห้ามเกริ่นนำ ห้ามทวนคำถาม ห้ามสรุปปิดท้ายซ้ำ
+- แม้ผู้ใช้ถามเรื่องกว้างหรือขอให้อธิบายข้อดีข้อเสีย ให้ตอบเฉพาะแก่นสำคัญที่สุดสั้นๆ แล้วปิดท้ายถามสั้นๆ ว่าอยากให้ขยายส่วนไหน (ผู้ใช้อยากฟังละเอียดค่อยขยายให้ในรอบถัดไป)
+- ข้อยกเว้นเดียว: ผู้ใช้สั่งชัดเจนให้เล่า/อธิบาย/อ่านแบบยาวหรือละเอียด ให้ทำได้ แต่ยังกระชับที่สุด
+`;
 const EXTERNAL_NOTE = `
 
 ข้อความล่าสุดของผู้ใช้มีไฟล์หรือลิงก์แนบมาให้อ่าน:
@@ -362,6 +371,7 @@ router.post('/conversations/:id/messages', async (req, res) => {
       occupationText: require('../occupations').describe(user.occupation_main, user.occupation_sub, user.occupation_detail),
       persona: user.secretary_persona,
       audienceHint: require('../occupations').styleHint(user.occupation_main, user.occupation_sub),
+      premiumVoice: req.body && req.body.premiumVoice === true,   // หน้าจอแจ้งว่าคำตอบนี้จะถูกอ่านด้วยเสียงพรีเมียม → ให้เลขาตอบสั้นประหยัดโควตา
       userName: user.name,
       memoryContext,
       pendingRequests,
@@ -380,7 +390,7 @@ router.post('/conversations/:id/messages', async (req, res) => {
       let tools = buildTools(req.user.id, conv.id, { focusCategory });
       if (ext.hasExternal || gctx) tools = Object.fromEntries(Object.entries(tools).filter(([k]) => TOOLS_OK_WITH_EXTERNAL.has(k)));
       const suggestNote = await suggest.buildContext(req.user.id).catch((e) => { console.error('suggest context error:', e.message); return ''; });
-      result = await ai.runAgent({ systemPrompt: systemPrompt + (ext.hasExternal ? EXTERNAL_NOTE : '') + (gctx ? GROUP_NOTE(gctx.name, gctx.text) : '') + suggestNote, history, tools });
+      result = await ai.runAgent({ systemPrompt: systemPrompt + (ext.hasExternal ? EXTERNAL_NOTE : '') + (gctx ? GROUP_NOTE(gctx.name, gctx.text) : '') + suggestNote + (req.body && req.body.premiumVoice === true ? PREMIUM_BRIEF_NOTE : ''), history, tools });
     } catch (err) {
       console.error('AI error:', err.message);
       return res.status(502).json({ error: 'เลขาตอบไม่ได้ในตอนนี้ ลองส่งใหม่อีกครั้งนะครับ' });

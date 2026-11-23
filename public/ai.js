@@ -1304,7 +1304,7 @@
     setBotState('thinking');
     let replyText = null;
     try {
-      const { reply, photos, generated, suggestion: nextSuggestion, savedMemories, createdEvents, profile } = await api('POST', '/api/chat/conversations/' + conversationId + '/messages', { content: text, source: source || 'text', askRequestId: connected ? connected.requestId : undefined, attachments: files.length ? files : undefined, focusCategory: focusCategory || undefined, suggestionId: suggestionId || undefined });
+      const { reply, photos, generated, suggestion: nextSuggestion, savedMemories, createdEvents, profile } = await api('POST', '/api/chat/conversations/' + conversationId + '/messages', { content: text, source: source || 'text', askRequestId: connected ? connected.requestId : undefined, attachments: files.length ? files : undefined, premiumVoice: (premiumActive() && (ttsOn || realtime)) ? true : undefined, focusCategory: focusCategory || undefined, suggestionId: suggestionId || undefined });
       typing.remove();
       const replyBubble = addBubble('assistant', reply);
       if (photos && photos.length) appendPhotoStrip(replyBubble, photos);   // รูปที่เลขาดึงจากอัลบั้มมาให้ดู

@@ -70,6 +70,8 @@ async function call(method, path, body, cookie) {
   check('โปรไฟล์ประถม → prompt มีแนวคุยกับเด็ก (คำง่าย ประโยคสั้น ชี้แนะวิธีคิด) / เกษตรกร → แนวติดดิน', /เด็กนักเรียนระดับประถม/.test(pKid) && /ชี้แนะวิธีคิด/.test(pKid) && /เกษตรกร/.test(pFarm) && !/เด็กนักเรียนระดับประถม/.test(pFarm));
   check('ไม่มีสถานะ → สื่อสารปกติ ห้ามเดาอายุ/อาชีพ + มีวิธีบอกให้ไปอัปเดตโปรไฟล์', /ยังไม่ได้ตั้งสถานะ/.test(pNone) && /ห้ามเดาอายุ/.test(pNone) && /อัปเดตโปรไฟล์/.test(pNone) && !/แนวการสื่อสารที่เหมาะกับเขา/.test(pNone));
   check('ทุกหมวดหลักมีแนวการสื่อสาร และ main ว่าง = ไม่มี', Object.keys(occs.OCCUPATIONS).every((m) => occs.styleHint(m, '').length > 20) && occs.styleHint('', '') === '');
+  const pPrem = sec.buildSystemPrompt({ secretaryName: 'ก', userName: 'ต', premiumVoice: true });
+  check('โหมดเสียงพรีเมียม → prompt สั่งตอบสั้นประหยัดโควตา (1-3 ประโยค ไม่ลิสต์ยาว) / โหมดปกติ → ไม่จำกัดความยาว', /ประหยัดโควตา/.test(pPrem) && /1-3 ประโยค/.test(pPrem) && !/ไม่ต้องจำกัดความยาว/.test(pPrem) && /ไม่ต้องจำกัดความยาว/.test(pNone) && !/ประหยัดโควตา/.test(pNone));
   await query('UPDATE users SET occupation_main = NULL, occupation_sub = NULL WHERE id = $1', [uidA]);
   check('ยังไม่ล็อกอินเรียกคำแนะนำไม่ได้', (await call('GET', '/api/chat/suggestion')).status === 401);
 
