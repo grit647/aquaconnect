@@ -155,11 +155,25 @@ function optionsForUi() {
     styleOptions: Object.entries(STYLES).map(([id, s]) => ({ id, label: s.label, conflicts: s.conflicts, slow: !!s.slow })),
   };
 }
+// ชื่อหมวดในแมมแพคที่เก็บสไตล์การพูดออกเสียง + สิ่งที่ผู้ใช้สอนเลขาเรื่องการพูด (เลขาอ่านทุกครั้งที่ตอบ และเขียนคำตอบให้เข้ากับน้ำเสียงนั้น)
+const SPEECH_CATEGORY = 'การฝึกพูดและสไตล์การพูดออกเสียง';
+const SPEECH_TAG = '[สไตล์การพูดออกเสียง]';
+const voiceLabel = (v) => { const f = VOICE_GROUPS.female.indexOf(v); if (f >= 0) return 'เสียงหญิง ' + (f + 1); const m = VOICE_GROUPS.male.indexOf(v); return m >= 0 ? 'เสียงชาย ' + (m + 1) : ''; };
+async function syncSpeechMemory(userId, voice, styles) {
+  const memory = require('./memory');
+  if (!voice && !styles.length) return memory.upsertTagged(userId, SPEECH_CATEGORY, SPEECH_TAG, null);   // กลับเป็นมาตรฐาน → ลบบรรทัดที่ระบบเขียนไว้ (ไม่แตะสิ่งที่ผู้ใช้สอนเอง)
+  const parts = [];
+  if (voice) parts.push('เสียงพรีเมียมที่ผู้ใช้เลือก: ' + voiceLabel(voice));
+  parts.push('สไตล์การพูด: ' + (styles.length ? styles.map((k) => STYLES[k].label).join(', ') : 'มาตรฐาน'));
+  parts.push('ให้เลขาเขียนและตอบด้วยน้ำเสียง/จังหวะที่เข้ากับสไตล์นี้ทั้งตอนใช้เสียงพรีเมียมและเสียงเบราว์เซอร์');
+  return memory.upsertTagged(userId, SPEECH_CATEGORY, SPEECH_TAG, parts.join(' • '));
+}
 // บันทึกลักษณะเสียงที่ผู้ใช้เลือก (เสียง + สไตล์ที่ติ๊ก)
 async function savePrefs(userId, rawVoice, rawStyles) {
   const voice = ALL_VOICES.includes(rawVoice) ? rawVoice : null;
   const styles = cleanStyles(rawStyles);
   await query('UPDATE users SET tts_voice = $2, tts_styles = $3 WHERE id = $1', [userId, voice, styles]);
+  await syncSpeechMemory(userId, voice, styles).catch((err) => console.error('speech memory sync error:', err.message));   // จดลงแมมแพคด้วย (พังก็ไม่กระทบการบันทึกค่าเสียง)
   return { voice, styles };
 }
 // สถานะของผู้ใช้คนหนึ่ง (หน้าจอใช้ตัดสินว่าจะโชว์ตัวเลือกเสียงพรีเมียมไหม + แสดงโควตาที่เหลือ)
@@ -217,4 +231,4 @@ async function synthesizeForUser(userId, rawText) {
   return { wav, seconds: round2(seconds), freeSecondsLeft: Math.max(0, round2(st.freeSecondsLeft - seconds)), settled };
 }
 
-module.exports = { savePrefs, cleanStyles, STYLES, ALL_VOICES, status, synthesizeForUser, setSynthForTests, monthSpentThb, monthNow, wavInfo, pcmToWav, TtsError, VOICES, MAX_CHARS };
+module.exports = { SPEECH_CATEGORY, savePrefs, cleanStyles, STYLES, ALL_VOICES, status, synthesizeForUser, setSynthForTests, monthSpentThb, monthNow, wavInfo, pcmToWav, TtsError, VOICES, MAX_CHARS };

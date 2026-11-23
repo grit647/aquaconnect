@@ -26,6 +26,15 @@
       .replace(/\s+/g, ' ').trim();
   }
 
+  // เสียงชาย (เสียงพรีเมียมที่ผู้ใช้เลือกเป็นเสียงผู้ชาย): เลขาเขียนด้วยคำลงท้ายผู้หญิง แต่ตอน "อ่านออกเสียง" ให้เปลี่ยนเป็นผู้ชาย เพื่อให้เสียงกับคำพูดตรงกัน
+  // (ข้อความบนจอและที่บันทึกไว้ไม่เปลี่ยน) — ระวังคำที่มี "คะ" อยู่ข้างในอย่าง "คะแนน": เปลี่ยนเฉพาะ "คะ" ที่ไม่มีพยัญชนะ/สระหน้าตามหลัง
+  function forMaleVoice(text) {
+    return String(text == null ? '' : text)
+      .replace(/ค่ะ/g, 'ครับ')
+      .replace(/คะ(?![\u0E01-\u0E2E\u0E40-\u0E44])/g, 'ครับ')
+      .replace(/ดิฉัน/g, 'ผม');
+  }
+
   // แบ่งเป็นท่อนสั้นๆ ให้ตัวอ่านออกเสียงเล่นต่อเนื่อง (จบประโยคที่ . ! ? หรือขึ้นบรรทัดใหม่) — ต้องเรียกกับข้อความที่ผ่าน forSpeech แล้ว
   function chunkText(t) {
     const parts = String(t).split(/(?<=[.!?。！？\n])\s*|\s{2,}/).filter(Boolean);
@@ -38,7 +47,7 @@
     return out;
   }
 
-  const api = { forSpeech, chunkText };
+  const api = { forSpeech, chunkText, forMaleVoice };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.aqSpeech = api;
 })(typeof window !== 'undefined' ? window : this);

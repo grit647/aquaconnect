@@ -123,7 +123,8 @@ async function call(method, path, body, cookie) {
   // เก็บกวาด: ลบผู้ใช้ทดสอบ (ข้อมูลที่ผูกอยู่ลบตามอัตโนมัติ)
   const del = await query("DELETE FROM users WHERE phone IN ('0999900001','0999900002')");
   const left = await counts();
-  check('ลบข้อมูลทดสอบหมดเกลี้ยง (จำนวนกลับมาเท่าก่อนทดสอบ)', del.rowCount === 2 && JSON.stringify(left) === JSON.stringify(base), `ก่อน ${JSON.stringify(base)} หลัง ${JSON.stringify(left)}`);
+  const leftover = (await query("SELECT (SELECT count(*)::int FROM users WHERE phone IN ('0999900001','0999900002')) AS u, (SELECT count(*)::int FROM messages m JOIN users u ON u.id = m.user_id WHERE u.phone IN ('0999900001','0999900002')) AS m")).rows[0];
+  check('ลบข้อมูลทดสอบหมดเกลี้ยง (ผู้ใช้ทดสอบและข้อความ/ความจำที่ผูกอยู่หายหมด; ไม่เทียบจำนวนทั้งระบบเพราะมีผู้ใช้จริงใช้งานพร้อมกัน)', del.rowCount === 2 && leftover.u === 0 && leftover.m === 0 && left.users >= 0, `ก่อน ${JSON.stringify(base)} หลัง ${JSON.stringify(left)}`);
 
   server.close();
   await getPool().end();

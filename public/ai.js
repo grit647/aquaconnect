@@ -1256,7 +1256,9 @@
   }
   function stopPremium() { try { premAudio.pause(); premAudio.removeAttribute('src'); premAudio.load(); } catch (e) { /* ignore */ } }
   // เล่นเสียงพรีเมียมทีละท่อน (ท่อนถัดไปขอล่วงหน้าระหว่างที่ท่อนนี้เล่น) — คืนจริงเมื่อเล่นจบ, โยน error ถ้าท่อนแรกใช้ไม่ได้
+  const premiumIsMale = () => !!premiumInfo && !!premiumInfo.voiceOptions && premiumInfo.voiceOptions.male.some((v) => v.id === premiumInfo.voice);
   function speakPremium(text, done) {
+    if (premiumIsMale()) text = window.aqSpeech.forMaleVoice(text);   // เสียงชาย → ค่ะ/คะ อ่านเป็นครับ (เฉพาะตอนอ่านออกเสียง ข้อความบนจอไม่เปลี่ยน)
     // แบ่งท่อนแบบ "ท่อนแรกสั้นมาก ท่อนถัดไปค่อยๆ ยาวขึ้น" (≈40, 80, 170, 350 ตัวอักษร): เสียงเริ่มดังเร็ว (สร้างเสียงใช้เวลาประมาณเท่าความยาวเสียง)
     // แล้วขอทุกท่อนพร้อมกันตั้งแต่แรก ท่อนถัดไปจึงเสร็จทันตอนท่อนก่อนหน้าเล่นจบ (ไม่เว้นช่วงเงียบกลางประโยค)
     const words = chunkText(cleanForSpeech(text)).join(' ').split(/\s+/).filter(Boolean);
@@ -1383,7 +1385,8 @@
     test.addEventListener('click', async () => {
       unlockSpeech(); test.disabled = true;
       try {
-        const blob = await fetchPremiumAudio('สวัสดีค่ะ น้อง' + ((me && me.secretaryName) || 'เลขา').replace(/^น้อง/, '') + 'พร้อมช่วยคุณแล้วนะคะ');
+        const sample = 'สวัสดีค่ะ น้อง' + ((me && me.secretaryName) || 'เลขา').replace(/^น้อง/, '') + 'พร้อมช่วยคุณแล้วนะคะ';
+        const blob = await fetchPremiumAudio(premiumIsMale() ? window.aqSpeech.forMaleVoice(sample) : sample);
         const url = URL.createObjectURL(blob); premAudio.onended = () => URL.revokeObjectURL(url); premAudio.onerror = null; premAudio.src = url; await premAudio.play();
       } catch (err) { info.textContent = err.message; }
       await loadPremiumInfo(); paint(); test.disabled = false;

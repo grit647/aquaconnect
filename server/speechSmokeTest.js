@@ -1,10 +1,21 @@
 // ทดสอบการเตรียมข้อความให้เลขาเสียงอ่าน (ทศนิยม เดือนย่อ ฯลฯ):  node server/speechSmokeTest.js
 const path = require('path');
-const { forSpeech, chunkText } = require(path.join(__dirname, '..', 'public', 'speech.js'));
+const { forSpeech, chunkText, forMaleVoice } = require(path.join(__dirname, '..', 'public', 'speech.js'));
 
 let failures = 0;
 const check = (label, ok, extra) => { if (!ok) failures++; console.log(`${ok ? '✅' : '❌'} ${label}${extra ? '  → ' + extra : ''}`); };
 const eq = (label, input, expected) => { const got = forSpeech(input); check(label, got === expected, got === expected ? '' : `ได้ "${got}" ต้องการ "${expected}"`); };
+
+// ---- เสียงชาย: คำลงท้ายผู้หญิง → ผู้ชาย (เฉพาะตอนอ่านออกเสียง) ----
+const male = (label, input, expected) => { const got = forMaleVoice(input); check(label, got === expected, got === expected ? '' : `ได้ "${got}" ต้องการ "${expected}"`); };
+male('สวัสดีค่ะ → สวัสดีครับ', 'สวัสดีค่ะ คุณต้น', 'สวัสดีครับ คุณต้น');
+male('นะคะ → นะครับ', 'ได้เลยนะคะ', 'ได้เลยนะครับ');
+male('คำถามลงท้ายคะ → ครับ', 'ใช่ไหมคะ ช่วยอะไรดีคะ', 'ใช่ไหมครับ ช่วยอะไรดีครับ');
+male('"คะแนน" ไม่ถูกแก้ (คะ อยู่กลางคำ)', 'คะแนนสอบ 80 คะแนนค่ะ', 'คะแนนสอบ 80 คะแนนครับ');
+male('"คะนอง/คะเน" ไม่ถูกแก้', 'ประมาณการคะเน', 'ประมาณการคะเน');
+male('ดิฉัน → ผม', 'ดิฉันจะช่วยดูให้ค่ะ', 'ผมจะช่วยดูให้ครับ');
+male('ข้อความที่ไม่มีคำลงท้ายผู้หญิง ไม่เปลี่ยน', 'ราคากุ้งวันนี้ 150 บาท', 'ราคากุ้งวันนี้ 150 บาท');
+male('ค่าว่าง ไม่พัง', '', '');
 
 // ---- ทศนิยม ----
 eq('0.25 → 0 จุด 25', 'ADG 0.25', 'ADG 0 จุด 25');

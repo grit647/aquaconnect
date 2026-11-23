@@ -95,6 +95,24 @@ async function saveMemory(userId, categoryName, content, conversationId, sourceG
   });
 }
 
+// บรรทัดความจำที่ "ระบบดูแลเอง" ตามป้ายนำหน้า (เช่น [สไตล์การพูดออกเสียง]) — มีอยู่แล้วแก้ทับ ไม่มีก็สร้าง (สร้างหมวดเป็นส่วนตัวให้ถ้ายังไม่มี) content = null → ลบบรรทัดนั้น
+async function upsertTagged(userId, categoryName, tag, content) {
+  const name = cleanCategoryName(categoryName);
+  if (isGuideCategory(name)) throw new Error('หมวดคู่มือบันทึกไม่ได้');
+  const cat = await query('SELECT id FROM memory_categories WHERE owner_id = $1 AND lower(name) = lower($2)', [userId, name]);
+  if (!content) {
+    if (cat.rows[0]) await query('DELETE FROM memories WHERE category_id = $1 AND owner_id = $2 AND content LIKE $3', [cat.rows[0].id, userId, tag + '%']);
+    return { removed: true };
+  }
+  const text = (tag + ' ' + String(content).trim()).slice(0, MAX_CONTENT_CHARS);
+  if (cat.rows[0]) {
+    const upd = await query('UPDATE memories SET content = $3, created_at = now() WHERE category_id = $1 AND owner_id = $2 AND content LIKE $4 RETURNING id', [cat.rows[0].id, userId, text, tag + '%']);
+    if (upd.rows[0]) return { updated: true };
+  }
+  await saveMemory(userId, name, text, null);
+  return { created: true };
+}
+
 async function listCategories(userId) {
   const r = await query(
     `SELECT c.name, c.visibility, count(m.id)::int AS memories
@@ -232,6 +250,6 @@ async function decideProposal(userId, proposalId, accept) {
 }
 
 module.exports = {
-  getMemoryContext, saveMemory, listCategories, recallMemories,
+  getMemoryContext, saveMemory, upsertTagged, listCategories, recallMemories,
   GENERAL_CATEGORY, SKILL_CATEGORY, CHAT_CATEGORY, GUIDE_CATEGORY, isGuideCategory, MAIN_CATEGORIES, isPrivateOnly, SELF_NAMES, isSelfCategory, ensureMainCategories, listPendingProposals, createProposals, createKnowledgeProposals, decideProposal, deleteCategory,
 };

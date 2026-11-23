@@ -149,6 +149,23 @@ async function cleanup() {
   check('ชื่อเสียงที่ไม่อยู่ในรายการ → ถูกทิ้ง ใช้เสียงเริ่มต้นของแอดมิน (Kore) และไม่ติ๊กสไตล์ = มาตรฐาน (ไม่ส่งสไตล์)', lastVoice === 'Kore' && lastStyle === '', JSON.stringify({ lastVoice, lastStyle }));
   await waitRows(2);
 
+  // ---------- จดสไตล์ลงแมมแพค: หมวด "การฝึกพูดและสไตล์การพูดออกเสียง" ----------
+  const memLines = async () => (await query("SELECT m.content FROM memories m JOIN memory_categories c ON c.id = m.category_id WHERE m.owner_id = $1 AND c.name = $2", [uidA, tts.SPEECH_CATEGORY])).rows.map((r) => r.content);
+  await call('PUT', '/api/chat/tts/prefs', { voice: 'Puck', styles: ['calm', 'polite'] }, A.cookie);
+  let ml = await memLines();
+  check('ติ๊กลักษณะเสียง → ระบบจดลงหมวด "การฝึกพูดและสไตล์การพูดออกเสียง" 1 บรรทัด (เสียง + สไตล์)', ml.length === 1 && ml[0].startsWith('[สไตล์การพูดออกเสียง]') && ml[0].includes('เสียงชาย 1') && ml[0].includes('ใจเย็น') && ml[0].includes('สุภาพ'), JSON.stringify(ml));
+  await call('PUT', '/api/chat/tts/prefs', { voice: 'Kore', styles: ['brisk'] }, A.cookie);
+  ml = await memLines();
+  check('ติ๊กใหม่ → แก้บรรทัดเดิม ไม่เพิ่มบรรทัดซ้ำ', ml.length === 1 && ml[0].includes('เสียงหญิง 1') && ml[0].includes('กระชับ') && !ml[0].includes('ใจเย็น'), JSON.stringify(ml));
+  const catRow = (await query('SELECT visibility FROM memory_categories WHERE owner_id = $1 AND name = $2', [uidA, tts.SPEECH_CATEGORY])).rows[0];
+  check('หมวดนี้เป็นส่วนตัว (ไม่เปิดให้คนอื่นเห็นเอง)', catRow && catRow.visibility === 'private');
+  await query('INSERT INTO memories (category_id, owner_id, content) SELECT id, owner_id, $3 FROM memory_categories WHERE owner_id = $1 AND name = $2', [uidA, tts.SPEECH_CATEGORY, 'ผู้ใช้สอน: พูดช้าลงตอนบอกตัวเลข']);
+  await call('PUT', '/api/chat/tts/prefs', { voice: null, styles: [] }, A.cookie);
+  ml = await memLines();
+  check('กลับเป็นมาตรฐาน → ลบเฉพาะบรรทัดที่ระบบเขียน ส่วนที่ผู้ใช้สอนเองยังอยู่', ml.length === 1 && ml[0].includes('พูดช้าลงตอนบอกตัวเลข'), JSON.stringify(ml));
+  const promptTxt = require('./secretary').buildSystemPrompt({ secretaryName: 'ทดสอบ', userName: 'ทดสอบ' });
+  check('system prompt สั่งเลขาให้เขียนตามสไตล์ในหมวดนี้ และให้สิ่งที่ผู้ใช้สอนเองชนะ', promptTxt.includes('การฝึกพูดและสไตล์การพูดออกเสียง') && promptTxt.includes('สิ่งที่ผู้ใช้สอนเองชนะ'));
+
   // ---------- งบรวมของแพลตฟอร์ม ----------
   const spent = await tts.monthSpentThb();
   await setSetting('tts_monthly_budget_thb', Math.max(0.0001, spent.thb));   // ใช้ไปเท่างบพอดี = เต็ม
