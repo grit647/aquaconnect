@@ -1223,9 +1223,27 @@
   const premAudio = new Audio();
   async function loadPremiumInfo() {
     try { premiumInfo = await api('GET', '/api/chat/tts/status'); } catch (e) { premiumInfo = null; }
+    renderVoiceMeter();
     return premiumInfo;
   }
   const premiumActive = () => premiumChoice === 'premium' && !!premiumInfo && !!premiumInfo.available && Date.now() > premiumBlockedUntil;
+  // แถบโควตาเสียง AI (มุมขวาล่างของหน้าหลัก ฝั่งตรงข้ามปุ่มสัมมนา/ประชุม) + ป้าย "✨ พรีเมียม" ที่โปรไฟล์เลขาเมื่อกำลังใช้เสียงพรีเมียม
+  function renderVoiceMeter() {
+    const box = $('voiceMeter');
+    const badge = document.querySelector('#aiBadge .aipremium');
+    const p = premiumInfo;
+    if (badge) badge.hidden = !(premiumChoice === 'premium' && p && p.available);
+    if (!box) return;
+    if (!p || !p.allowed) { box.hidden = true; box.textContent = ''; return; }   // ยังไม่มีสิทธิ์ → ไม่โชว์แถบ
+    const total = Number(p.freeSecondsTotal) || 0;
+    const left = Math.max(0, Number(p.freeSecondsLeft) || 0);
+    const m = (s) => Math.round((s / 60) * 10) / 10;
+    const ratio = total > 0 ? (total - left) / total : 1;
+    const text = !p.budgetOk ? 'งบเต็ม' : left <= 0 ? 'ใช้เครดิต' : m(left) + ' / ' + m(total) + ' นาที';
+    box.textContent = '';
+    box.appendChild(meterRow('✨ โควต้าเสียง AI', text, !p.budgetOk ? 1 : ratio, () => { if (window.aqTick) window.aqTick.open(); }, premiumChoice !== 'premium'));
+    box.hidden = false;
+  }
   async function fetchPremiumAudio(text) {
     const r = await fetch('/api/chat/tts', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
     if (!r.ok) {
@@ -1233,7 +1251,7 @@
       const err = new Error(j.error || 'เสียงพรีเมียมใช้ไม่ได้'); err.code = j.code || 'upstream'; throw err;
     }
     const left = r.headers.get('x-tts-free-left');
-    if (premiumInfo && left !== null) premiumInfo.freeSecondsLeft = Number(left);
+    if (premiumInfo && left !== null) { premiumInfo.freeSecondsLeft = Number(left); renderVoiceMeter(); }
     return r.blob();
   }
   function stopPremium() { try { premAudio.pause(); premAudio.removeAttribute('src'); premAudio.load(); } catch (e) { /* ignore */ } }
@@ -1307,6 +1325,7 @@
       try { localStorage.setItem('aq_voice_mode', v); } catch (e) { /* ignore */ }
       premiumBlockedUntil = 0;
       paint();
+      renderVoiceMeter();
     };
     optBrowser.addEventListener('click', () => choose('browser'));
     optPrem.addEventListener('click', () => { if (premiumInfo && premiumInfo.available) { choose('premium'); unlockSpeech(); } });

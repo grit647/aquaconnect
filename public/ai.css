@@ -471,3 +471,13 @@ body {
 #tickPop .ttest { border: 1px solid var(--neon2); background: transparent; color: var(--neon2); border-radius: 999px; padding: 7px; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
 #tickPop .ttest[hidden] { display: none; }
 #tickPop { max-height: 90vh; overflow-y: auto; }
+
+/* แถบโควต้าเสียง AI: มุมขวาล่างของเวที 3D (ฝั่งตรงข้ามปุ่มสัมมนา/ประชุม) หน้าตาเดียวกับแถบ "ข้อมูลส่วนตัว" ในเมนูโปรไฟล์ */
+#voiceMeter { position: absolute; right: 10px; bottom: 10px; z-index: 4; width: 208px; cursor: pointer; }
+#voiceMeter[hidden] { display: none; }
+#voiceMeter .meter { padding: 6px 10px; border-radius: 12px; background: rgba(19, 26, 48, 0.88); }
+#voiceMeter .meter .mt { font-size: 12px; margin-bottom: 5px; white-space: nowrap; }
+#voiceMeter .meter .track { height: 6px; }
+/* ป้ายพรีเมียมที่โปรไฟล์เลขา AI */
+#aiBadge .aipremium { padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 800; color: #1a0f00; background: linear-gradient(135deg, #fbbf24, #f59e0b); box-shadow: 0 0 10px rgba(245, 158, 11, 0.55); white-space: nowrap; }
+#aiBadge .aipremium[hidden] { display: none; }
