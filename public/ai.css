@@ -545,3 +545,13 @@ body {
 #voiceScreen:has(#vCaption.has-img) #vMic { width: 104px; height: 104px; }
 #voiceScreen:has(#vCaption.has-img) #vMic .vicon { font-size: 42px; }
 #vCaption.has-img { max-height: 52vh; }
+
+/* ห้องแชทกลุ่ม: แถวปุ่ม ＋ / กล้อง + ไฟล์ที่แนบ (อยู่เหนือช่องพิมพ์) */
+#grpComposer { flex-wrap: wrap; }
+#grpAttachRow { flex: 0 0 100%; order: -1; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+#grpAttachRow .gatt { width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--line); background: var(--panel2, #1a2340); color: var(--text); font-size: 18px; cursor: pointer; flex-shrink: 0; padding: 0; }
+#grpAttach { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-width: 0; }
+#grpAttach .chip-att { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; border: 1px solid var(--neon2); background: rgba(167, 139, 250, 0.12); border-radius: 999px; padding: 3px 4px 3px 10px; font-size: 12px; }
+#grpAttach .chip-att span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 46vw; }
+#grpAttach .chip-att button { border: none; background: transparent; color: var(--danger); font-size: 14px; cursor: pointer; padding: 0 6px; }
+#grpAttach .g-attach-hint { font-size: 12px; color: var(--ok); }

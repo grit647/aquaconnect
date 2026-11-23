@@ -617,7 +617,8 @@
     });
   }
   // คุยกับเลขาจากห้องแชท: ส่งเข้าบทสนทนาส่วนตัวของเรา พร้อมแนบข้อความล่าสุดของกลุ่มเป็นบริบท (เซิร์ฟเวอร์ตรวจว่าเป็นสมาชิก) — แสดงเป็นบับเบิลเส้นประ (ไม่ใช่ข้อความกลุ่ม)
-  async function grpAskSecretary(text, source) {
+  async function grpAskSecretary(text, source, files) {
+    files = files || [];
     const body = gEl('grpBody');
     const privRow = (mine, label, content, picEl) => {
       const row = document.createElement('div'); row.className = 'gmsg priv' + (mine ? ' mine' : '');
@@ -628,12 +629,13 @@
       bub.append(nm, tx, tg); row.append(picEl, bub); body.appendChild(row); body.scrollTop = body.scrollHeight; return { row, tx };
     };
     const myPic = document.createElement('div'); myPic.className = 'gav'; avatarContent(myPic);
-    privRow(true, 'คุณ → เลขา', text, myPic);
+    privRow(true, 'คุณ → เลขา', text + (files.length ? '\n📎 ' + files.map((f) => f.name).join(', ') : ''), myPic);
     const aiPic = document.createElement('div'); aiPic.className = 'gav'; aiImgInto(aiPic);
     const ans = privRow(false, '🤖 ' + ((me && me.secretaryName) || 'เลขา'), 'กำลังคิด...', aiPic);
     try {
       if (source === 'voice') { try { unlockSpeech(); } catch (e) { /* ignore */ } }
-      const r = await api('POST', '/api/chat/conversations/' + conversationId + '/messages', { content: text, source: source === 'voice' ? 'voice' : 'text', groupContext: grp.groupId });
+      const r = await api('POST', '/api/chat/conversations/' + conversationId + '/messages', { content: text, source: source === 'voice' ? 'voice' : 'text', groupContext: grp.groupId, attachments: files.length ? files : undefined });
+      if (files.length) { pendingFiles = pendingFiles.filter((p) => !files.includes(p)); renderTray(); }   // ส่งสำเร็จแล้วค่อยเอาไฟล์ออกจากถาด
       ans.tx.textContent = r.reply;
       body.scrollTop = body.scrollHeight;
       if (source === 'voice' && (ttsSupported || premiumActive())) speak(r.reply, () => setBotState('idle'));
@@ -701,8 +703,13 @@
   }
   gEl('grpComposer').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const input = gEl('grpInput'); const text = input.value.trim();
-    if (!text || !grp.groupId) return;
+    const input = gEl('grpInput'); let text = input.value.trim();
+    if ((!text && !pendingFiles.length) || !grp.groupId) return;
+    if (pendingFiles.length) {   // มีไฟล์แนบ = ส่งถึงเลขาเท่านั้น (ข้อความกลุ่มเป็นข้อความล้วน) ไม่ถามว่าจะส่งถึงใคร
+      if (!text) text = 'ช่วยอ่านสิ่งที่แนบให้หน่อย';
+      input.value = ''; grp.nextTarget = null;
+      await grpAskSecretary(text, 'text', pendingFiles.slice()); input.focus(); return;
+    }
     let target = grp.nextTarget; grp.nextTarget = null;
     if (!target) target = await grpChooseTarget('send');
     if (!target) return;
@@ -1133,11 +1140,25 @@
   const FILE_TYPES = { pdf: 'application/pdf', txt: 'text/plain', csv: 'text/csv', md: 'text/markdown', json: 'application/json' };
   let pendingFiles = [];   // { name, mime, data(base64) }
 
+  const inGroupChat = () => { const o = document.getElementById('grpOverlay'); return !!o && !o.hidden && !!grp.groupId && !document.getElementById('grpComposer').hidden; };
+  const activeInput = () => (inGroupChat() ? document.getElementById('grpInput') : inputEl);
   function renderTray() {
     const tray = $('attachTray');
     tray.textContent = '';
     tray.hidden = !pendingFiles.length;
     if (typeof renderSuggestion === "function") renderSuggestion();
+    const ga = document.getElementById('grpAttach');
+    if (ga) {
+      ga.textContent = '';
+      pendingFiles.forEach((f, i) => {
+        const chip = document.createElement('div'); chip.className = 'chip-att';
+        const t = document.createElement('span'); t.textContent = (f.mime.startsWith('image/') ? '🖼️ ' : f.mime === 'application/pdf' ? '📕 ' : '📄 ') + f.name;
+        const x = document.createElement('button'); x.type = 'button'; x.textContent = '✕'; x.setAttribute('aria-label', 'เอาออก');
+        x.addEventListener('click', () => { pendingFiles.splice(i, 1); renderTray(); });
+        chip.append(t, x); ga.appendChild(chip);
+      });
+      if (pendingFiles.length) { const h = document.createElement('div'); h.className = 'g-attach-hint'; h.textContent = 'แนบแล้ว — กดส่งจะส่งถึงเลขา (ไม่ส่งเข้ากลุ่ม)'; ga.appendChild(h); }
+    }
     const va = $('vAttach'); va.textContent = ''; va.hidden = !pendingFiles.length;
     pendingFiles.forEach((f, i) => {
       const chip = document.createElement('div'); chip.className = 'chip-att';
@@ -1203,8 +1224,9 @@
     sheetButton(body, '🔗 ใส่ลิงก์ในข้อความ', () => {
       const v = url.value.trim();
       if (!/^https?:\/\/\S+$/i.test(v)) { status.textContent = 'ลิงก์ต้องขึ้นต้นด้วย http:// หรือ https://'; return; }
-      inputEl.value = (inputEl.value ? inputEl.value.trim() + ' ' : '') + v + ' ';
-      closeSheet(); inputEl.focus();
+      const ai2 = activeInput();
+      ai2.value = (ai2.value ? ai2.value.trim() + ' ' : '') + v + ' ';
+      closeSheet(); ai2.focus();
     });
   });
 
@@ -1245,12 +1267,15 @@
         await addFiles([new File([blob], 'ภาพจากกล้อง.jpg', { type: 'image/jpeg' })]);
         if (voiceMode) {   // หน้าสนทนาเสียง: ถ่ายเสร็จส่งเข้าห้องสนทนาให้เลขาดูทันที (ไม่ต้องพิมพ์/พูดซ้ำ) ถ้าอยากถามเฉพาะเรื่อง ค่อยพูดต่อรอบถัดไป
           if (!sending) { stopRecording(true); cancelSpeech(); await send('ช่วยดูรูปนี้ให้หน่อย บอกว่าเห็นอะไร', 'voice'); }
-        } else { inputEl.placeholder = 'พิมพ์ถามเลขาเกี่ยวกับรูปนี้ หรือกดส่งเลย...'; inputEl.focus(); }
+        } else if (inGroupChat()) { document.getElementById('grpInput').focus(); }
+        else { inputEl.placeholder = 'พิมพ์ถามเลขาเกี่ยวกับรูปนี้ หรือกดส่งเลย...'; inputEl.focus(); }
       }, 'image/jpeg', 0.88);
     });
   }
   $('camBtn').addEventListener('click', openCamera);
-  $('vCam').addEventListener('click', openCamera);          // ปุ่มกล้องในหน้าสนทนาเสียง (ถ่ายแล้วพูดถามได้เลย)
+  $('vCam').addEventListener('click', openCamera);
+  $('grpCam').addEventListener('click', openCamera);                       // ปุ่มกล้องในห้องแชทกลุ่ม (ถ่ายแล้วแนบ แล้วกดส่งถึงเลขา)
+  $('grpPlus').addEventListener('click', () => $('plusBtn').click());       // ปุ่ม ＋ ในห้องแชทกลุ่ม (แนบรูป/ไฟล์/ลิงก์ ให้เลขาอ่าน)          // ปุ่มกล้องในหน้าสนทนาเสียง (ถ่ายแล้วพูดถามได้เลย)
   $('vPlus').addEventListener('click', () => $('plusBtn').click());   // ปุ่ม + ในหน้าสนทนาเสียง (แนบรูป/ไฟล์/ลิงก์)
 
   // ---------- ส่งข้อความ ----------
