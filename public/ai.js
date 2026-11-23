@@ -170,7 +170,6 @@
     // แถบการใช้งาน 2 แถว ต่อจากรูปโปรไฟล์ (ข้อมูลส่วนตัว + การค้นหาด้วย Google) — แตะดูรายละเอียดได้
     const meters = document.createElement('div'); meters.className = 'meters'; body.appendChild(meters);
     sheetButton(body, '✏️ อัปเดตโปรไฟล์', showProfileEdit);
-    sheetButton(body, '🎥 สัมมนา / ประชุมออนไลน์', showMeetings);
     api('GET', '/api/me/summary').then((s) => {
       const u = s.usage; const g = s.google;
       // สถานะปัจจุบัน (ถ้าเลือกไว้) แสดงใต้ชื่อ
@@ -440,6 +439,7 @@
     } catch (e) { /* ไม่มีป้ายก็ข้าม */ }
   }
   gEl('groupsBtn').addEventListener('click', openGroupPopup);
+  gEl('meetBtn').addEventListener('click', () => showMeetings());
 
   function grpCreate(left) {
     const body = grpFrame('สร้างกลุ่มใหม่', grpBackToPopup, false);

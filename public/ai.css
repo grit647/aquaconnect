@@ -444,3 +444,7 @@ body {
 #tickPop .tb button { flex: 1; border: 1px solid var(--neon2); background: transparent; color: var(--neon2); border-radius: 999px; padding: 8px 4px; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
 
 #sheetBody button.cat-guide, .pcard.cat-guide { border-color: #38bdf8; background: rgba(56, 189, 248, 0.14); }
+
+/* ปุ่มสัมมนา/ประชุมออนไลน์: ใต้ปุ่มกลุ่ม (กลุ่มอยู่บน แล้วตามด้วยสัมมนา) */
+#meetBtn { left: 10px; right: auto; top: auto; bottom: 126px; font-size: 12px; padding: 5px 11px; }
+#groupsBtn { bottom: 160px; }
