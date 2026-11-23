@@ -57,7 +57,20 @@ async function call(method, path, body, cookie) {
 
   // ---------- กติกาตายตัวตอนเปิดแอป ----------
   const r0 = await call('GET', '/api/chat/suggestion', null, A.cookie);
-  check('ผู้ใช้ใหม่ ยังไม่มีความจำ → แนะนำให้สอนเลขา', r0.status === 200 && r0.json.suggestion && r0.json.suggestion.text.includes('สอนเลขา') && r0.json.suggestion.kind === 'rule', JSON.stringify(r0.json));
+  check('ผู้ใช้ใหม่ ยังไม่ได้ตั้งสถานะในโปรไฟล์ → แนะนำให้อัปเดตโปรไฟล์ (ข้อความสีเทา)', r0.status === 200 && r0.json.suggestion && r0.json.suggestion.text === 'อัปเดตโปรไฟล์ให้เลขารู้จักฉัน' && r0.json.suggestion.kind === 'rule', JSON.stringify(r0.json));
+  // ตั้งสถานะในโปรไฟล์แล้ว → เลิกชวนอัปเดต (ไปแนะนำเรื่องอื่นต่อ: ยังไม่มีความจำ → สอนเลขา)
+  await query("UPDATE users SET occupation_main = 'นักเรียน / นักศึกษา', occupation_sub = 'ประถมศึกษา' WHERE id = $1", [uidA]);
+  const r0b = await call('GET', '/api/chat/suggestion', null, A.cookie);
+  check('ตั้งสถานะในโปรไฟล์แล้ว → ไม่ชวนอัปเดตโปรไฟล์อีก ไปแนะนำให้สอนเลขา', r0b.status === 200 && r0b.json.suggestion && r0b.json.suggestion.text.includes('สอนเลขา') && r0b.json.suggestion.kind === 'rule', JSON.stringify(r0b.json));
+  // แนวการสื่อสารตามสถานะเข้า prompt ของเลขา (ไม่มีสถานะ = สื่อสารปกติ + รู้วิธีบอกให้อัปเดตโปรไฟล์)
+  const sec = require('./secretary'); const occs = require('./occupations');
+  const pKid = sec.buildSystemPrompt({ secretaryName: 'ก', userName: 'ต', occupationText: occs.describe('นักเรียน / นักศึกษา', 'ประถมศึกษา'), audienceHint: occs.styleHint('นักเรียน / นักศึกษา', 'ประถมศึกษา') });
+  const pNone = sec.buildSystemPrompt({ secretaryName: 'ก', userName: 'ต' });
+  const pFarm = sec.buildSystemPrompt({ secretaryName: 'ก', userName: 'ต', occupationText: occs.describe('เกษตรกร / ประมง / ปศุสัตว์', 'ทำประมง'), audienceHint: occs.styleHint('เกษตรกร / ประมง / ปศุสัตว์', 'ทำประมง') });
+  check('โปรไฟล์ประถม → prompt มีแนวคุยกับเด็ก (คำง่าย ประโยคสั้น ชี้แนะวิธีคิด) / เกษตรกร → แนวติดดิน', /เด็กนักเรียนระดับประถม/.test(pKid) && /ชี้แนะวิธีคิด/.test(pKid) && /เกษตรกร/.test(pFarm) && !/เด็กนักเรียนระดับประถม/.test(pFarm));
+  check('ไม่มีสถานะ → สื่อสารปกติ ห้ามเดาอายุ/อาชีพ + มีวิธีบอกให้ไปอัปเดตโปรไฟล์', /ยังไม่ได้ตั้งสถานะ/.test(pNone) && /ห้ามเดาอายุ/.test(pNone) && /อัปเดตโปรไฟล์/.test(pNone) && !/แนวการสื่อสารที่เหมาะกับเขา/.test(pNone));
+  check('ทุกหมวดหลักมีแนวการสื่อสาร และ main ว่าง = ไม่มี', Object.keys(occs.OCCUPATIONS).every((m) => occs.styleHint(m, '').length > 20) && occs.styleHint('', '') === '');
+  await query('UPDATE users SET occupation_main = NULL, occupation_sub = NULL WHERE id = $1', [uidA]);
   check('ยังไม่ล็อกอินเรียกคำแนะนำไม่ได้', (await call('GET', '/api/chat/suggestion')).status === 401);
 
   // คำขอใช้ข้อมูลรออนุมัติ = สำคัญกว่าเรื่องสอนใช้แอป

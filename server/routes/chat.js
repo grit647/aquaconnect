@@ -361,6 +361,7 @@ router.post('/conversations/:id/messages', async (req, res) => {
       callName: user.call_name || '',
       occupationText: require('../occupations').describe(user.occupation_main, user.occupation_sub, user.occupation_detail),
       persona: user.secretary_persona,
+      audienceHint: require('../occupations').styleHint(user.occupation_main, user.occupation_sub),
       userName: user.name,
       memoryContext,
       pendingRequests,

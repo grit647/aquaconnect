@@ -6,6 +6,7 @@
 const { query } = require('./db');
 
 const MAX_SUGGESTION_CHARS = 90;
+const PROFILE_SUGGESTION = 'อัปเดตโปรไฟล์ให้เลขารู้จักฉัน';
 const NEXT_RE = /<<\s*ข้อความถัดไป\s*[:：]\s*([\s\S]*?)(?:>>|$)/g;
 
 const oneLine = (s) => String(s || '').split(/\s+/).join(' ').trim();
@@ -28,6 +29,7 @@ async function userStats(userId) {
     `SELECT
        (SELECT floor(extract(epoch FROM (now() - created_at)) / 86400)::int FROM users WHERE id = $1) AS age_days,
        (SELECT count(*)::int FROM messages WHERE user_id = $1 AND role = 'user') AS user_msgs,
+       (SELECT occupation_main IS NOT NULL FROM users WHERE id = $1) AS has_profile,
        (SELECT count(*)::int FROM memories WHERE owner_id = $1) AS memories,
        (SELECT count(*)::int FROM events WHERE user_id = $1) AS events,
        (SELECT count(*)::int FROM events WHERE user_id = $1 AND remind_at <= now() AND acknowledged_at IS NULL) AS due_events,
@@ -70,6 +72,7 @@ async function buildContext(userId) {
   const [s, cats, fb] = await Promise.all([userStats(userId), categoryOverview(userId), feedbackHistory(userId)]);
   const stage = s.user_msgs < 15 || s.age_days < 3 ? 'ผู้ใช้ใหม่ (เพิ่งเริ่มใช้)' : s.memories < 8 ? 'เริ่มคุ้นแอปแล้ว แต่ข้อมูลยังน้อย' : 'ใช้งานมาพอสมควร มีข้อมูลสะสม';
   const unused = [];
+  if (!s.has_profile) unused.push('ยังไม่ได้ตั้งสถานะ/อาชีพในโปรไฟล์ (เลขายังไม่รู้ว่าควรคุยในแนวไหนกับเขา)');
   if (!s.memories) unused.push('ยังไม่เคยสอนหรือเล่าเรื่องตัวเองให้เลขาจำ');
   if (!s.events) unused.push('ยังไม่เคยใช้ปฏิทิน/นัดเตือน');
   if (!s.groups) unused.push('ยังไม่เคยสร้างหรือเข้าร่วมกลุ่ม');
@@ -98,6 +101,7 @@ async function buildContext(userId) {
 - ของค้าง: ${pending.join(' / ') || 'ไม่มี'}
 เลือกเรื่องที่จะแนะนำตามลำดับนี้ (เอาข้อแรกที่เข้าเงื่อนไขและเกี่ยวกับบทสนทนาตอนนี้ได้อย่างเป็นธรรมชาติ):
 1) ของค้างที่ผู้ใช้ควรรู้ (คำขอรออนุมัติ ข้อความกลุ่มที่ยังไม่อ่าน นัดที่ถึงเวลา ข้อสรุปรอยืนยัน) → แนะนำให้ไปจัดการ เช่น "มีใครขอใช้ข้อมูลฉันบ้าง"
+1.5) ถ้าผู้ใช้ยังไม่ได้ตั้งสถานะ/อาชีพในโปรไฟล์ และไม่มีของค้าง → แนะนำข้อความ "อัปเดตโปรไฟล์ให้เลขารู้จักฉัน" ได้ แต่แค่เป็นบางครั้ง (ไม่ใช่ทุกคำตอบ ถ้าผู้ใช้เคยไม่เอาแนวนี้ให้ข้ามไป)
 2) ผู้ใช้ใหม่ → แนะนำให้ลองใช้ฟีเจอร์ที่ยังไม่เคยใช้ทีละอย่าง เริ่มจากที่ง่ายและมีประโยชน์ที่สุดกับอาชีพ/ความสนใจของเขา เช่น "สอนเลขาเรื่องฟาร์มของฉัน" "ตั้งเตือนนัดพรุ่งนี้" (ถ้าไม่แน่ใจว่าฟีเจอร์ทำงานอย่างไร ให้เรียก platform_guide ก่อน)
 3) มีข้อมูลหลายหมวดแล้ว → วิเคราะห์เนื้อหาที่คุณรู้ ว่าหมวดไหนว่าง น้อย หรือเก่า (ไม่ได้อัปเดตนาน) หรือยังขาดเรื่องสำคัญอะไร แล้วชวนเล่าเพิ่ม/อัปเดตเรื่องนั้น เช่น "ราคากุ้งช่วงนี้เปลี่ยนไป อัปเดตให้เลขาหน่อย"
 4) คุณอยากเก่งขึ้นเพื่อดูแลผู้ใช้ดีขึ้น → ชวนให้ผู้ใช้สอน เช่น วิธีตัดสินใจ ความชำนาญ สิ่งที่ผู้ใช้ทำต่างจากคนทั่วไป เช่น "อยากสอนเลขาว่าดูน้ำเสียยังไง"
@@ -118,6 +122,7 @@ async function ruleBased(userId) {
   if (s.unread_group) cands.push('สรุปข้อความที่ยังไม่อ่านในกลุ่มให้หน่อย');
   if (s.due_events) cands.push('วันนี้มีนัดอะไรบ้าง');
   if (s.pending_proposals) cands.push('ที่เลขาสรุปไว้ จำไว้ได้เลย');
+  if (!s.has_profile) cands.push(PROFILE_SUGGESTION);   // ยังไม่ได้ตั้งสถานะ/อาชีพ → ชวนอัปเดตโปรไฟล์ (เลขาจะได้คุยให้เหมาะกับเขา)
   if (!s.memories) cands.push('อยากสอนเลขาเรื่องงานของฉัน');
   if (!s.events) cands.push('ช่วยตั้งเตือนนัดหมายให้หน่อย');
   if (!s.groups && s.user_msgs >= 10) cands.push('ใช้กลุ่มแชททำอะไรได้บ้าง');
