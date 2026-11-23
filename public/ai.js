@@ -1239,7 +1239,7 @@
     const left = Math.max(0, Number(p.freeSecondsLeft) || 0);
     const m = (s) => Math.round((s / 60) * 10) / 10;
     const ratio = total > 0 ? (total - left) / total : 1;
-    const text = !p.budgetOk ? 'งบเต็ม' : left <= 0 ? 'ใช้เครดิต' : m(left) + ' / ' + m(total) + ' นาที';
+    const text = !p.budgetOk ? 'งบเต็ม' : left <= 0 ? 'ใช้เครดิต' : m(total - left) + ' / ' + m(total) + ' นาที';
     box.textContent = '';
     box.appendChild(meterRow('✨ โควต้าเสียง AI', text, !p.budgetOk ? 1 : ratio, () => { if (window.aqTick) window.aqTick.open(); }, premiumChoice !== 'premium'));
     box.hidden = false;
