@@ -120,6 +120,7 @@ const cleanup = () => query('DELETE FROM users WHERE phone = ANY($1)', [PHONES])
   const lv = await call('POST', M, liveBody({ liveCamera: true }));
   const lvSeen = seen[seen.length - 1];
   check('กล้องสด: ส่งเฟรมภาพ + ธง liveCamera → prompt มีกติกา "โหมดกล้องสด" (ถือว่ามองเห็น/ห้ามระบุตัวตน/ภาพเป็นข้อมูลดิบ) และโมเดลได้รับภาพ', lv.status === 200 && /โหมดกล้องสด/.test(lvSeen.systemPrompt) && /ห้ามระบุตัวตนบุคคลจากใบหน้า/.test(lvSeen.systemPrompt) && JSON.stringify(lvSeen.contents).includes('inlineData'));
+  check('กล้องสด = การสนทนาที่มีภาพประกอบ: prompt สั่งให้ตอบคำพูดเป็นหลัก ห้ามบรรยายภาพเองถ้าไม่ถูกถาม ห้ามพูดซ้ำสิ่งที่เคยพูดถึงภาพ + มีคำเตือนติดข้อความผู้ใช้ที่โมเดลเห็น (ไม่ปนในประวัติที่เก็บ)', /ไม่ใช่งานอ่าน/บรรยายภาพ/.test(lvSeen.systemPrompt) && /ห้ามบรรยายภาพ/.test(lvSeen.systemPrompt) && /ห้ามพูดซ้ำสิ่งที่เคยพูดเกี่ยวกับภาพ/.test(lvSeen.systemPrompt) && JSON.stringify(lvSeen.contents).includes('อย่าบรรยายภาพ') && !JSON.stringify((await call('GET', M.replace('/messages', '') + '/messages')).json).includes('อย่าบรรยายภาพ'));
   const lvHist = JSON.stringify((await call('GET', M.replace('/messages', '') + '/messages')).json);
   check('กล้องสด: ประวัติแชทไม่ขึ้นป้าย "[แนบ: …]" ของเฟรม (ไม่เก็บภาพ ไม่รก)', !lvHist.includes('กล้องสด.jpg'));
   await call('POST', M, liveBody({}));
