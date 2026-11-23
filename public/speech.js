@@ -20,6 +20,7 @@
     t = t.replace(/(?<=\d)\.(?=\d)/g, ' จุด ');
     t = t.replace(/(?<=\d),(?=\d{3}(?!\d))/g, '');
     return t
+      .replace(/⟦photo:[0-9a-f-]+⟧/gi, '')   // ป้ายรูปจากอัลบั้ม (ไม่อ่านออกเสียง)
       .replace(/[*_`#>~]/g, '')
       .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
       .replace(/\p{Extended_Pictographic}/gu, '')

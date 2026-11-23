@@ -24,6 +24,8 @@ app.use('/api/chat/transcribe', express.json({ limit: '7mb' }));
 app.use('/api/credits/topups', express.json({ limit: '3mb' }));
 // ส่งข้อความพร้อมไฟล์แนบ (รูป/PDF เป็น base64) — เพดานจริง (4 ไฟล์ รวม ~8MB) ตรวจซ้ำใน attachments.js
 app.use(/^\/api\/chat\/conversations\/[^/]+\/messages$/, express.json({ limit: '9mb' }));
+// อัลบั้มรูป: รูปที่หน้าเว็บย่อแล้ว (base64) ใหญ่กว่า 1MB ได้ — ขยายเฉพาะเส้นทางอัปโหลด (ต้องประกาศก่อน express.json ตัวทั่วไปด้านล่าง)
+app.post('/api/album', express.json({ limit: '4mb' }));
 app.use('/api/admin/payment-qr', express.json({ limit: '3mb' }));
 // เก็บ body ดิบไว้ด้วย (req.rawBody) เพราะการตรวจลายเซ็น webhook ของ LINE ต้องใช้ข้อความดิบก่อนถูกแปลงเป็น JSON
 app.use(express.json({ limit: '1mb', verify: (req, res, buf) => { req.rawBody = buf; } }));
@@ -37,6 +39,7 @@ app.use('/api/connect', connectRouter);
 app.use('/api/calendar', calendarRouter);
 app.use('/api/me', require('./routes/me'));
 app.use('/api/groups', require('./routes/groups'));
+app.use('/api/album', require('./routes/album'));
 app.use('/api/admin', adminRouter);
 app.use('/api/meetings', require('./routes/meetings'));
 

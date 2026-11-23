@@ -757,6 +757,76 @@
       gBtn(body, '🚪 ออกจากกลุ่ม', async () => { try { await api('POST', '/api/groups/' + groupId + '/leave', {}); grpBackToPopup(); } catch (err) { gNote(body, err.message); } }, 'danger');
     }
   });
+  // ---------- อัลบั้มรูป (เมนู ☰ → 🖼️ อัลบั้ม): เพิ่มรูป เลขาอ่านรูปแล้วตั้งชื่อ/แท็กให้ ขอให้เลขาดึงรูปมาแสดงในแชทได้ ----------
+  // ย่อรูปที่หน้าเว็บก่อนอัปโหลด (คงสัดส่วน): รูปเต็มด้านยาวไม่เกิน 1280 พิกเซล + รูปย่อ 320 พิกเซล
+  function resizeKeep(file, maxSide, quality) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file); const img = new Image();
+      img.onload = () => {
+        try {
+          const k = Math.min(1, maxSide / Math.max(img.width, img.height));
+          const cv = document.createElement('canvas'); cv.width = Math.max(1, Math.round(img.width * k)); cv.height = Math.max(1, Math.round(img.height * k));
+          cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+          URL.revokeObjectURL(url); resolve(cv.toDataURL('image/jpeg', quality));
+        } catch (e) { URL.revokeObjectURL(url); reject(e); }
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('เปิดรูปไม่ได้ (ลองรูปชนิด JPG/PNG)')); };
+      img.src = url;
+    });
+  }
+  async function showAlbum() {
+    const body = openSheet('อัลบั้มรูป');
+    let data;
+    try { data = await api('GET', '/api/album'); } catch (err) { note(body, err.message); return; }
+    const mb = (b) => (Math.round((b / 1048576) * 10) / 10);
+    note(body, 'รูปในอัลบั้มเป็นส่วนตัว คนอื่นไม่เห็น เลขาอ่านรูปแล้วตั้งชื่อและแท็กให้ ลองบอกเลขาว่า "ขอดูรูปบ่อกุ้ง" เลขาจะค้นแล้วเอารูปมาแสดงในแชทให้');
+    const usage = note(body, 'รูป ' + data.usage.count + '/' + data.usage.maxPhotos + ' • พื้นที่ ' + mb(data.usage.bytes) + '/' + mb(data.usage.maxBytes) + ' MB', 'sub');
+    const msg = note(body, '');
+    const fileIn = document.createElement('input'); fileIn.type = 'file'; fileIn.accept = 'image/*'; fileIn.multiple = true; fileIn.hidden = true; body.appendChild(fileIn);
+    const addBtn = sheetButton(body, '➕ เพิ่มรูป (ถ่ายรูป / เลือกจากเครื่อง)', () => fileIn.click());
+    fileIn.addEventListener('change', async () => {
+      const files = [...fileIn.files].slice(0, 10); fileIn.value = '';
+      if (!files.length) return;
+      addBtn.disabled = true; let ok = 0;
+      for (let i = 0; i < files.length; i++) {
+        msg.textContent = 'กำลังเพิ่มรูป ' + (i + 1) + '/' + files.length + ' (เลขากำลังอ่านรูป...)';
+        try {
+          const image = await resizeKeep(files[i], 1280, 0.82);
+          const thumb = await resizeKeep(files[i], 320, 0.7);
+          await api('POST', '/api/album', { image, thumb });
+          ok++;
+        } catch (err) { msg.textContent = 'รูปที่ ' + (i + 1) + ': ' + err.message; break; }
+      }
+      addBtn.disabled = false;
+      if (ok) showAlbum();
+    });
+    if (!data.photos.length) { note(body, 'ยังไม่มีรูป กด "เพิ่มรูป" ได้เลย'); return; }
+    const grid = document.createElement('div'); grid.className = 'alb-grid'; body.appendChild(grid);
+    data.photos.forEach((p) => {
+      const cell = document.createElement('button'); cell.type = 'button'; cell.className = 'alb-item';
+      const im = document.createElement('img'); im.loading = 'lazy'; im.alt = p.caption || 'รูป'; im.src = '/api/album/' + p.id + '/thumb';
+      const cap = document.createElement('span'); cap.textContent = p.caption || '(ไม่มีชื่อ)';
+      cell.append(im, cap); cell.addEventListener('click', () => showAlbumPhoto(p)); grid.appendChild(cell);
+    });
+  }
+  function showAlbumPhoto(p) {
+    const body = openSheet('รูปในอัลบั้ม');
+    const im = document.createElement('img'); im.className = 'alb-big'; im.alt = p.caption || 'รูป'; im.src = '/api/album/' + p.id + '/image';
+    im.addEventListener('click', () => openPhotoLightbox(p.id)); body.appendChild(im);
+    const cap = document.createElement('input'); cap.type = 'text'; cap.maxLength = 80; cap.value = p.caption || ''; cap.placeholder = 'ชื่อรูป'; body.appendChild(cap);
+    const msg = note(body, '');
+    sheetButton(body, '💾 บันทึกชื่อ', async () => {
+      try { const r = await api('PATCH', '/api/album/' + p.id, { caption: cap.value }); p.caption = r.photo.caption; msg.textContent = '✓ บันทึกแล้ว'; } catch (err) { msg.textContent = err.message; }
+    });
+    if (p.description) note(body, '🤖 เลขาอ่านรูปนี้ว่า: ' + p.description);
+    if (p.tags && p.tags.length) note(body, 'แท็ก: ' + p.tags.join(' • '), 'sub');
+    sheetButton(body, '🗑️ ลบรูปนี้', async () => {
+      if (!confirm('ลบรูปนี้ออกจากอัลบั้ม? ลบแล้วกู้คืนไม่ได้')) return;
+      try { await api('DELETE', '/api/album/' + p.id); showAlbum(); } catch (err) { msg.textContent = err.message; }
+    }, 'danger');
+    sheetButton(body, '← กลับอัลบั้ม', showAlbum);
+  }
+
   // ---------- สัมมนา / ประชุมออนไลน์: สร้างห้อง + ส่งลิงก์ (ใครมีลิงก์เข้าได้โดยไม่ต้องสมัคร) ----------
   const meetUrl = (m) => location.origin + '/meet/' + m.code;
   async function copyText(text) {
@@ -827,10 +897,36 @@
   function addBubble(role, text) {
     const div = document.createElement('div');
     div.className = 'bubble ' + role;
+    // ป้ายรูปจากอัลบั้ม (เก็บไว้ท้ายข้อความของเลขาในประวัติ) → ตัดออกจากข้อความ แล้วโชว์เป็นรูปใต้ข้อความ
+    const ids = [];
+    if (role === 'assistant' && typeof text === 'string' && text.includes('⟦photo:')) {
+      text = text.replace(/\s*⟦photo:([0-9a-f-]{36})⟧/gi, (m, id) => { ids.push(id); return ''; });
+    }
     div.textContent = text;
     logEl.appendChild(div);
+    if (ids.length) appendPhotoStrip(div, ids);
     scrollToBottom();
     return div;
+  }
+  // ---------- อัลบั้มรูป: รูปที่เลขาดึงมาแสดงในแชท + ดูรูปเต็ม ----------
+  function openPhotoLightbox(id) {
+    const ov = document.createElement('div'); ov.id = 'photoLightbox';
+    const img = document.createElement('img'); img.alt = ''; img.src = '/api/album/' + id + '/image';
+    const x = document.createElement('button'); x.type = 'button'; x.textContent = '✕ ปิด';
+    const close = () => ov.remove();
+    ov.addEventListener('click', close); x.addEventListener('click', close);
+    ov.append(img, x); document.body.appendChild(ov);
+  }
+  function appendPhotoStrip(bubble, ids) {
+    const strip = document.createElement('div'); strip.className = 'photos';
+    ids.forEach((id) => {
+      const im = document.createElement('img'); im.loading = 'lazy'; im.alt = 'รูปจากอัลบั้ม'; im.src = '/api/album/' + id + '/thumb';
+      im.addEventListener('click', () => openPhotoLightbox(id));
+      im.addEventListener('load', scrollToBottom);
+      im.addEventListener('error', () => im.remove());   // รูปถูกลบไปแล้ว → ซ่อนเงียบๆ
+      strip.appendChild(im);
+    });
+    bubble.appendChild(strip);
   }
   // ---------- สิ่งที่เลขาสรุปว่าเจ้าของสอน (ให้เจ้าของกดยืนยัน/ไม่ใช่) ----------
   const shownProposals = new Set();
@@ -1128,9 +1224,10 @@
     setBotState('thinking');
     let replyText = null;
     try {
-      const { reply, suggestion: nextSuggestion, savedMemories, createdEvents, profile } = await api('POST', '/api/chat/conversations/' + conversationId + '/messages', { content: text, source: source || 'text', askRequestId: connected ? connected.requestId : undefined, attachments: files.length ? files : undefined, focusCategory: focusCategory || undefined, suggestionId: suggestionId || undefined });
+      const { reply, photos, suggestion: nextSuggestion, savedMemories, createdEvents, profile } = await api('POST', '/api/chat/conversations/' + conversationId + '/messages', { content: text, source: source || 'text', askRequestId: connected ? connected.requestId : undefined, attachments: files.length ? files : undefined, focusCategory: focusCategory || undefined, suggestionId: suggestionId || undefined });
       typing.remove();
-      addBubble('assistant', reply);
+      const replyBubble = addBubble('assistant', reply);
+      if (photos && photos.length) appendPhotoStrip(replyBubble, photos);   // รูปที่เลขาดึงจากอัลบั้มมาให้ดู
       (savedMemories || []).forEach((m) => addSavedChip(m.category));
       (createdEvents || []).forEach(addEventChip);
       // (ข้อเสนอให้จำ/สรุปแยกหมวด จะถามตอนกลับเข้าแอป ไม่โผล่กลางบทสนทนา — ไม่ให้ดูซ้ำซาก)
@@ -1768,6 +1865,7 @@
     if (SHOW_LEGACY_MENU) sheetButton(body, '➕ เริ่มหัวข้อใหม่', async () => { try { await newConversation(); } catch (err) { addBubble('error', err.message); } });
     if (SHOW_LEGACY_MENU) sheetButton(body, '🗂️ หัวข้อที่เคยคุย', showTopics);
     if (SHOW_LEGACY_MENU) sheetButton(body, '💡 ให้เลขาทบทวนสิ่งที่ฉันสอน', async () => { closeSheet(); try { const r = await api('POST', '/api/chat/reflect', {}); showProposals(r.proposals); if (!r.proposals.length) addBubble('assistant', 'ตอนนี้ยังไม่มีอะไรใหม่ที่เลขาอยากจดไว้ค่ะ คุยกันอีกสักพักแล้วลองใหม่นะคะ'); } catch (err) { addBubble('error', err.message); } });
+    sheetButton(body, '🖼️ อัลบั้ม', showAlbum);
     sheetButton(body, '📅 ปฏิทิน & เตือน' + (dueCount ? ' (' + dueCount + ')' : ''), () => { closeSheet(); openCal(); });
     if (SHOW_LEGACY_MENU) sheetButton(body, '🎙️ คุยด้วยเสียงต่อเนื่อง (ใช้กับหูฟังบลูทูธ)', () => { closeSheet(); enterVoiceMode(false); });
     if (!isStandalone()) sheetButton(body, '📲 ติดตั้งไอคอนบนหน้าจอหลัก', installApp);

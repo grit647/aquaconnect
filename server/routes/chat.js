@@ -393,10 +393,12 @@ router.post('/conversations/:id/messages', async (req, res) => {
     result.text = sx.text;
     let nextSuggestion = null;
     if (sx.suggestion) { try { nextSuggestion = { id: await suggest.logShown(req.user.id, 'ai', sx.suggestion), text: sx.suggestion, kind: 'ai' }; } catch (e) { console.error('suggestion log error:', e.message); } }   // ห้ามใช้ markdown (ตัวหนา **) — ในแอป/เสียงอ่านเป็นข้อความธรรมดา
+    // รูปจากอัลบั้มที่เลขาสั่งแสดง (show_album_photos) → แนบป้าย ⟦photo:id⟧ ท้ายข้อความที่เก็บ (หน้าจอแปลงเป็นรูป ทั้งตอนตอบสดและตอนเปิดประวัติ) • ตรวจซ้ำว่าเป็นรูปของผู้ใช้คนนี้เท่านั้น
+    const shownPhotoIds = [...new Set(result.executed.filter((e) => e.name === 'show_album_photos' && e.result && e.result.ok).flatMap((e) => e.result.shown.map((x) => x.id)))].slice(0, 4);
     // บันทึกข้อความผู้ใช้ + คำตอบเลขา พร้อมกันเป็นก้อนเดียว (ถ้า AI พัง จะไม่มีข้อความค้างครึ่งๆ กลางๆ ให้ส่งซ้ำซ้อน)
     await withTransaction(async (c) => {
       await c.query('INSERT INTO messages (conversation_id, user_id, role, content, source) VALUES ($1, $2, $3, $4, $5)', [conv.id, req.user.id, 'user', storedContent, source]);
-      await c.query('INSERT INTO messages (conversation_id, user_id, role, content, source) VALUES ($1, $2, $3, $4, $5)', [conv.id, req.user.id, 'assistant', result.text, result.executed.some((e) => e.name === 'search_the_web' && e.result && e.result.ok) ? 'google' : 'text']);
+      await c.query('INSERT INTO messages (conversation_id, user_id, role, content, source) VALUES ($1, $2, $3, $4, $5)', [conv.id, req.user.id, 'assistant', result.text + shownPhotoIds.map((id) => '\n⟦photo:' + id + '⟧').join(''), result.executed.some((e) => e.name === 'search_the_web' && e.result && e.result.ok) ? 'google' : 'text']);
       await c.query(
         'UPDATE conversations SET last_message_at = now(), title = COALESCE(title, $2) WHERE id = $1',
         [conv.id, content.slice(0, 50)]
@@ -416,7 +418,7 @@ router.post('/conversations/:id/messages', async (req, res) => {
       if (e.name === 'set_secretary_name' && e.result && e.result.ok) profile.secretaryName = e.result.secretaryName;
       if (e.name === 'set_user_call_name' && e.result && e.result.ok) profile.callName = e.result.callName;
     }
-    res.json({ reply: result.text, suggestion: nextSuggestion, savedMemories, createdEvents, profile: Object.keys(profile).length ? profile : undefined, proposals: decided ? await listPendingProposals(req.user.id) : pendingProposals });
+    res.json({ reply: result.text, photos: shownPhotoIds, suggestion: nextSuggestion, savedMemories, createdEvents, profile: Object.keys(profile).length ? profile : undefined, proposals: decided ? await listPendingProposals(req.user.id) : pendingProposals });
   } catch (err) {
     console.error('POST message error:', err);
     res.status(500).json({ error: 'เกิดข้อผิดพลาดฝั่งเซิร์ฟเวอร์ ลองใหม่อีกครั้ง' });
