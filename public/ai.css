@@ -446,5 +446,9 @@ body {
 #sheetBody button.cat-guide, .pcard.cat-guide { border-color: #38bdf8; background: rgba(56, 189, 248, 0.14); }
 
 /* ปุ่มสัมมนา/ประชุมออนไลน์: ใต้ปุ่มกลุ่ม (กลุ่มอยู่บน แล้วตามด้วยสัมมนา) */
-#meetBtn { left: 10px; right: auto; top: auto; bottom: 126px; font-size: 12px; padding: 5px 11px; }
-#groupsBtn { bottom: 160px; }
+#meetBtn { left: 10px; right: auto; top: auto; bottom: 10px; font-size: 12px; padding: 5px 11px; }
+/* ลำดับจากบนลงล่าง: โปรไฟล์ผู้ใช้ / โปรไฟล์เลขา AI / กลุ่ม / สัมมนา-ประชุม */
+#groupsBtn { bottom: 49px; }
+#aiBadge { bottom: 88px; }
+#avatar { bottom: 142px; }
+#connToggle { bottom: 154px; }
