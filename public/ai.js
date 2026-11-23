@@ -694,7 +694,7 @@
         if (grp.groupId !== groupId) return;
         const atBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 80;
         r.messages.forEach((m) => { grpAddMsg(body, m); grp.lastId = Math.max(grp.lastId, m.id); });
-        if (sts.on && !first) { r.messages.forEach((m) => { if (!m.isSystem && !m.mine && m.content) sts.buffer.push(m); }); if (sts.buffer.length > 30) sts.buffer.splice(0, sts.buffer.length - 30); }
+        if (sts.on && !first) { r.messages.forEach((m) => { if (!m.mine && m.content) sts.buffer.push(m); }); if (sts.buffer.length > 60) sts.buffer.splice(0, sts.buffer.length - 60); }
         grpUpdateSession(r.session);
         if (r.messages.length && (first || atBottom)) stick();
         if (first && !r.messages.length) gNote(body, 'ยังไม่มีข้อความ — พิมพ์ทักทายเป็นคนแรกได้เลย');
@@ -1739,24 +1739,23 @@
   // พูด → ถอดเสียง → ส่งเข้ากลุ่มตรงๆ (ไม่ต้องเลือกว่าส่งถึงใคร) • ข้อความใหม่ของคนอื่น/เลขา AI ในกลุ่ม → ทุก 10 วินาทีอ่านออกเสียง "ชื่อ + ข้อความ" ด้วยเสียงที่ตั้งไว้ (พรีเมียม/ธรรมดา)
   // กดรูปเลขาเปิดตั้งค่าเสียงได้ • กดปุ่ม STS อีกครั้ง = ออกจากโหมด • ใช้หน้าจอสนทนาเสียงเดิม (ไมค์/จับเงียบ/กันจอดับ/ถามซ้ำเมื่อฟังไม่ได้ความ ใช้ร่วมกัน)
   const STS_RELAY_MS = 10000;
-  const stsWho = (m) => (m.isAi ? (m.myAi ? 'เลขาของคุณ ' + m.name : 'เลขา ' + m.name + ' ของ ' + (m.ownerName || '')) : m.name);
+  const stsWho = (m) => (m.isSystem ? 'ระบบ' : m.isAi ? (m.myAi ? 'เลขาของคุณ ' + m.name : 'เลขา ' + m.name + ' ของ ' + (m.ownerName || '')) : m.name);
   function stsFlush() {
     if (!sts.on || !voiceMode || voicePaused || !sts.buffer.length || sts.busy || sending) return;
     if (botState === 'thinking' || botState === 'speaking') return;
     if (rec && rec.heardSpeech) return;   // ผู้ใช้กำลังพูดอยู่ — รอรอบถัดไป
-    const items = sts.buffer.splice(0, sts.buffer.length);
     const cut = (s, n) => (String(s).length > n ? String(s).slice(0, n) + ' ...' : String(s));
     let text = ''; let used = 0;
-    for (const m of items) {
-      const part = stsWho(m) + ' พูดว่า ' + cut(m.content, 180) + '. ';
+    for (const m of sts.buffer) {
+      const part = (m.isSystem ? 'ระบบแจ้งว่า ' : stsWho(m) + ' พูดว่า ') + cut(String(m.content).replace(/[📋⏱️🤖]/gu, ''), 180) + '. ';
       if (text.length + part.length > 700 && used) break;
       text += part; used++;
     }
-    if (used < items.length) text += 'และมีข้อความอื่นอีก ' + (items.length - used) + ' ข้อความ ดูในแชทได้ค่ะ';
-    const last = items[Math.min(used, items.length) - 1];
+    const items = sts.buffer.splice(0, used);   // ที่อ่านไม่ทันรอบนี้ค้างไว้อ่านรอบถัดไป (ช่วงเลขาคุยกันเองข้อความเยอะ ไม่ทิ้ง)
+    const last = items[items.length - 1];
     stopRecording(true);   // หยุดฟังชั่วคราวตอนอ่าน (กันไมค์รับเสียงลำโพง) อ่านจบแล้วกลับมาฟังต่อเอง
     sts.busy = true;
-    vCaption(null, stsWho(last) + ': ' + cut(last.content, 200));
+    vCaption(null, (last.isSystem ? 'ระบบ' : stsWho(last)) + ': ' + cut(last.content, 200));
     speak(text, () => { sts.busy = false; afterSpeech(); });
   }
   async function stsPost(text) {
