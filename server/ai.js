@@ -127,7 +127,7 @@ async function realTranscribe(base64Audio, mimeType) {
         contents: [{
           role: 'user',
           parts: [
-            { text: 'Transcribe the speech in this audio verbatim, in the language actually spoken (usually Thai, sometimes with English words mixed in). Do NOT translate. Output only the transcript with no preface or explanation. Output an empty string only if the audio contains no human speech at all (pure silence or noise).' },
+            { text: 'Transcribe the speech in this audio verbatim, in the language actually spoken (usually Thai, sometimes with English words mixed in). Do NOT translate. Output only the transcript with no preface or explanation. Output an empty string only if the audio contains no human speech at all (pure silence or noise). If there IS some sound but you cannot clearly make out complete, meaningful words or a sentence (mumbling, coughing, breathing, background noise, music, distant or overlapping voices, cut-off fragments), output exactly [[unclear]] instead of guessing words. Never invent text such as thanks-for-watching or subtitle credits.' },
             { inlineData: { mimeType: mimeType || 'audio/webm', data: base64Audio } },
           ],
         }],

@@ -1880,13 +1880,26 @@
     });
   }
 
+  let unclearStreak = 0;   // จำนวนครั้งติดกันที่ฟังไม่ได้ความ
   async function transcribeAndSend(blob) {
     setBotState('thinking');
     $('stateLabel').textContent = 'กำลังถอดเสียง...';
     if (voiceMode && !voicePaused) $('vState').textContent = 'กำลังถอดเสียง...';
     try {
       const audio = await blobToBase64(blob);
-      const { text } = await api('POST', '/api/chat/transcribe', { audio, mimeType: blob.type || 'audio/webm' });
+      const { text, unclear } = await api('POST', '/api/chat/transcribe', { audio, mimeType: blob.type || 'audio/webm' });
+      if (unclear) {   // มีเสียงแต่ฟังไม่ได้ความ (เสียงแทรก/ไมค์ไวเกิน) → ไม่ส่งเข้าเลขา ให้เลขาถามกลับสั้นๆ ขอพูดใหม่ (ถามไม่เกิน 2 ครั้งติด ถ้ายังเป็นอีกให้เงียบรอ ไม่วนพูดเสียค่าเสียง)
+        unclearStreak++;
+        setBotState('idle');
+        if (unclearStreak <= 2) {
+          const ask = 'ยังฟังไม่เข้าใจความหมายค่ะ ขอพูดอีกครั้งนะคะ';
+          if (voiceMode) vCaption('(ฟังไม่ได้ความ)', ask); else addBubble('hint', ask);
+          if (voiceMode ? !voicePaused : (ttsOn || realtime)) { speak(ask, afterSpeech); return; }
+        } else if (voiceMode) vCaption('(ฟังไม่ได้ความ)', null);
+        if (voiceMode && ++idleCycles >= IDLE_LIMIT) { pauseVoice('ฟังไม่ได้ความนานแล้ว หยุดฟังชั่วคราวค่ะ — แตะไมค์เพื่อคุยต่อ'); return; }
+        if (realtime) startListening();
+        return;
+      }
       if (!text || !text.trim()) {
         setBotState('idle');
         addBubble('hint', 'ไม่ได้ยินเสียงชัดๆ ค่ะ ลองพูดใหม่อีกครั้งนะคะ');
@@ -1897,6 +1910,7 @@
         if (realtime) startListening();
         return;
       }
+      unclearStreak = 0;
       await send(text, 'voice');
     } catch (err) {
       setBotState('idle');

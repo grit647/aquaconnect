@@ -89,12 +89,14 @@ async function call(method, path, body, cookie) {
   check('ข้อความยาวเกินถูกปฏิเสธ (400)', (await call('POST', `/api/chat/conversations/${convB.id}/messages`, { content: 'ก'.repeat(4001) }, B.cookie)).status === 400);
 
   // ---- ถอดเสียง (ปุ่มไมค์) — ใช้ตัวถอดเสียงจำลอง ไม่เรียก Gemini จริง ----
-  ai.setTranscribeForTests(async (audio, mime) => (audio === 'SILENT' ? '' : `ถอดได้:${mime}`));
+  ai.setTranscribeForTests(async (audio, mime) => (audio === 'SILENT' ? '' : audio === 'NOISE1' ? '[[unclear]]' : audio === 'NOISE2' ? 'ฮึ' : audio === 'NOISE3' ? 'ขอบคุณที่รับชม' : `ถอดได้:${mime}`));
   check('ไม่ login ถอดเสียงไม่ได้ (401)', (await call('POST', '/api/chat/transcribe', { audio: 'AAAA', mimeType: 'audio/webm' })).status === 401);
   const tr = await call('POST', '/api/chat/transcribe', { audio: 'QUJD', mimeType: 'audio/webm;codecs=opus' }, B.cookie);
   check('ส่งเสียงแล้วได้ข้อความกลับ (ตัด codecs ออกจากชนิดไฟล์)', tr.status === 200 && tr.json.text === 'ถอดได้:audio/webm', JSON.stringify(tr.json));
   const trSilent = await call('POST', '/api/chat/transcribe', { audio: 'SILENT', mimeType: 'audio/webm' }, B.cookie);
   check('เสียงเงียบ → ได้ข้อความว่าง ไม่ error', trSilent.status === 200 && trSilent.json.text === '');
+  for (const n of ['NOISE1', 'NOISE2', 'NOISE3']) { const r = await call('POST', '/api/chat/transcribe', { audio: n, mimeType: 'audio/webm' }, B.cookie); check('เสียงรบกวน/ฟังไม่ได้ความ (' + n + ') → ไม่ส่งข้อความมั่วกลับ แต่ตั้งธง unclear ให้หน้าจอให้เลขาถามใหม่', r.status === 200 && r.json.text === '' && r.json.unclear === true, JSON.stringify(r.json)); }
+  check('เสียงพูดจริง → ไม่ตั้งธง unclear', tr.json.unclear === undefined);
   check('ไม่ส่งไฟล์เสียง → 400', (await call('POST', '/api/chat/transcribe', { mimeType: 'audio/webm' }, B.cookie)).status === 400);
   check('ชนิดไฟล์ไม่ใช่เสียง → 400', (await call('POST', '/api/chat/transcribe', { audio: 'QUJD', mimeType: 'text/html' }, B.cookie)).status === 400);
   const big = await call('POST', '/api/chat/transcribe', { audio: 'A'.repeat(5 * 1024 * 1024 + 10), mimeType: 'audio/webm' }, B.cookie);

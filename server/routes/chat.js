@@ -129,6 +129,8 @@ router.post('/transcribe', async (req, res) => {
     if (limited) return res.status(429).json({ error: limited });
 
     const text = await ai.transcribeAudio(audio, mime);
+    // มีเสียงแต่ฟังไม่ได้ความ (เสียงรบกวน/ไมค์ไวเกิน) → ไม่ส่งข้อความมั่วๆ เข้าเลขา ให้หน้าจอให้เลขาถามกลับว่าไม่เข้าใจ ขอพูดใหม่
+    if (require('../transcript').isUnintelligible(text)) return res.json({ text: '', unclear: true });
     res.json({ text });
   } catch (err) {
     console.error('POST transcribe error:', err.message);
