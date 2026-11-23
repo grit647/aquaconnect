@@ -915,6 +915,7 @@
     const bot = $('bot');
     if (bot) bot.autoRotate = (s === 'idle');
     if (voiceMode) { $('voiceScreen').className = (voicePaused ? 'paused ' : '') + 'state-' + s; if (!voicePaused) $('vState').textContent = STATE_TEXT[s] || ''; }
+    if (s === 'speaking') armBarge(); else if (rec && rec.barge) dropArmed();
   }
 
   // ---------- ข้อความในแชท ----------
@@ -1378,7 +1379,7 @@
     setBotState('thinking');
     let replyText = null;
     try {
-      const { reply, photos, generated, suggestion: nextSuggestion, savedMemories, createdEvents, profile } = await api('POST', '/api/chat/conversations/' + conversationId + '/messages', { content: text, source: source || 'text', askRequestId: connected ? connected.requestId : undefined, attachments: files.length ? files : undefined, premiumVoice: (premiumActive() && (ttsOn || realtime)) ? true : undefined, liveCamera: files.some((f) => f.__live) ? true : undefined, focusCategory: focusCategory || undefined, suggestionId: suggestionId || undefined });
+      const { reply, photos, generated, suggestion: nextSuggestion, savedMemories, createdEvents, profile } = await api('POST', '/api/chat/conversations/' + conversationId + '/messages', { content: text, source: source || 'text', askRequestId: connected ? connected.requestId : undefined, attachments: files.length ? files : undefined, premiumVoice: (premiumActive() && (ttsOn || realtime)) ? true : undefined, liveCamera: files.some((f) => f.__live) ? true : undefined, interrupted: bargedIn ? true : undefined, focusCategory: focusCategory || undefined, suggestionId: suggestionId || undefined });
       typing.remove();
       const replyBubble = addBubble('assistant', reply);
       if (photos && photos.length) appendPhotoStrip(replyBubble, photos);   // รูปที่เลขาดึงจากอัลบั้มมาให้ดู
@@ -1408,6 +1409,7 @@
       if (source !== 'voice') inputEl.value = text;
       setSuggestion(prevSuggestion);
     } finally {
+      bargedIn = false;
       sending = false;
       sendBtn.disabled = false;
       renderSuggestion();
@@ -1607,6 +1609,16 @@
       } catch (e) { /* ignore */ }
     });
     vbox.append(vhd, vnote, vrng, vlab, vtest); pop.appendChild(vbox);
+    // โหมดพูดแทรก
+    const bbox = document.createElement('div'); bbox.className = 'tvoice';
+    const bhd = document.createElement('div'); bhd.className = 'tvh'; bhd.textContent = '🎧 โหมดพูดแทรก (ในหน้าสนทนาเสียง)';
+    const brow = document.createElement('label'); brow.className = 'tbarge';
+    const bcb = document.createElement('input'); bcb.type = 'checkbox'; bcb.checked = bargeOn();
+    const btx = document.createElement('span'); btx.textContent = 'เลขากำลังพูดอยู่ พูดแทรกได้เลย เลขาจะหยุดแล้วฟังคุณ';
+    brow.append(bcb, btx);
+    const bnote = document.createElement('div'); bnote.className = 'tvi'; bnote.textContent = 'แนะนำให้ใช้กับหูฟัง — ถ้าเปิดลำโพงมือถือ ไมค์อาจได้ยินเสียงเลขาเองแล้วตัดเสียงเลขากลางคัน ถ้าเป็นแบบนั้นให้ปิดสวิตช์นี้ (เปิดอยู่ไมค์จะทำงานระหว่างเลขาพูดด้วย)';
+    bcb.addEventListener('change', () => { try { localStorage.setItem('aq_barge', bcb.checked ? '1' : '0'); } catch (e) { /* ignore */ } });
+    bbox.append(bhd, brow, bnote); pop.appendChild(bbox);
     let saveTimer = null;
     const saveLook = () => {
       clearTimeout(saveTimer);
@@ -1963,7 +1975,7 @@
     return list.find((m) => MediaRecorder.isTypeSupported(m)) || '';
   }
 
-  async function startListening() {
+  async function startListening(armed) {
     if (rec || sending) return;
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
       addBubble('error', 'เบราว์เซอร์นี้ยังอัดเสียงไม่ได้ — เปิดในเบราว์เซอร์ปกติ หรือพิมพ์แทนได้ค่ะ');
@@ -1989,12 +2001,13 @@
     const mimeType = pickMime();
     const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
     const chunks = [];
-    const state = { stream, recorder, ctx: null, timer: null, cancelled: false, heardSpeech: false };
+    const state = { stream, recorder, ctx: null, timer: null, cancelled: false, heardSpeech: false, barge: !!armed, bargeFrames: 0 };
     rec = state;
     recorder.ondataavailable = (ev) => { if (ev.data && ev.data.size) chunks.push(ev.data); };
     recorder.onstop = async () => {
       cleanupRec(state);
-      rec = null;
+      if (state.silentDrop) return;   // ทิ้งเงียบๆ (เตรียมรับเสียงแทรกไว้แต่เลขาพูดจบเอง) — ห้ามแตะสถานะ/ตัวแปรของรอบฟังใหม่ที่อาจเริ่มไปแล้ว
+      if (rec === state) rec = null;
       renderMic();
       if (state.cancelled || !state.heardSpeech || !chunks.length) {
         setBotState('idle');
@@ -2012,6 +2025,7 @@
       await transcribeAndSend(new Blob(chunks, { type: recorder.mimeType || 'audio/webm' }));
     };
     recorder.start();
+    if (armed) { watchSilence(state); return; }   // เตรียมรับเสียงแทรกระหว่างเลขาพูด: ไม่เปลี่ยนสถานะหน้าจอ
     setBotState('listening');
     renderMic();
     watchSilence(state);
@@ -2027,7 +2041,7 @@
       analyser.fftSize = 1024;
       src.connect(analyser);
       const buf = new Uint8Array(analyser.fftSize);
-      const started = Date.now();
+      let started = Date.now();
       let lastVoice = 0;
       const THRESH = 0.035;
       state.timer = setInterval(() => {
@@ -2036,6 +2050,13 @@
         for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; sum += v * v; }
         const rms = Math.sqrt(sum / buf.length);
         const now = Date.now();
+        if (state.barge) {   // เลขากำลังพูดอยู่: แค่คอยวัดระดับเสียง ถ้าผู้ใช้พูดดังต่อเนื่อง ~0.5 วินาที = พูดแทรก
+          if (now - started < 700) return;   // ข้ามช่วงเริ่มเสียง (กันเสียงเปลี่ยนผ่านตอนเริ่มพูด)
+          state.bargeFrames = rms > BARGE_THRESH ? state.bargeFrames + 1 : 0;
+          if (state.bargeFrames >= BARGE_FRAMES) { bargeIn(state); started = now; lastVoice = now; }
+          else if (now - started > 90000) dropArmed();
+          return;
+        }
         if (rms > THRESH) { state.heardSpeech = true; lastVoice = now; }
         if (state.heardSpeech && now - lastVoice > 1400) stopRecording(false);
         else if (!state.heardSpeech && now - started > 9000) stopRecording(false);
@@ -2043,10 +2064,28 @@
       }, 120);
     } catch (e) {
       // ตรวจเสียงเงียบไม่ได้: ให้ผู้ใช้กดไมค์ซ้ำเพื่อหยุดเอง, ถือว่ามีเสียงพูดเสมอ
-      state.heardSpeech = true;
+      if (state.barge) dropArmed(); else state.heardSpeech = true;   // เตรียมรับเสียงแทรกไม่ได้ก็ข้าม ไม่กระทบการฟังปกติ
     }
   }
 
+  // ---------- โหมดพูดแทรก (ตั้งค่าเปิด/ปิดได้ที่ ตั้งค่าเสียง; ค่าเริ่มต้นปิด; แนะนำใช้กับหูฟัง) ----------
+  // ระหว่างเลขาพูด เปิดไมค์ค้างไว้ (อัดเสียงรอไว้เลย กันคำแรกขาด) คอยวัดระดับเสียง ถ้าผู้ใช้พูดดังต่อเนื่อง → หยุดเสียงเลขาทันที แล้วฟังต่อจนพูดจบ
+  // เลขาพูดจบเองโดยไม่มีใครแทรก → ทิ้งที่อัดรอไว้ แล้วเข้าโหมดฟังปกติ • ไม่ใช้ในโหมด STS
+  const BARGE_THRESH = 0.05; const BARGE_FRAMES = 4;   // เสียงเกิน 0.05 ต่อเนื่อง 4 รอบตรวจ (~0.5 วินาที)
+  let bargedIn = false;   // ข้อความถัดไปที่ส่ง เป็นการพูดแทรกเลขา (บอกเลขาให้รู้)
+  const bargeOn = () => { try { return localStorage.getItem('aq_barge') === '1'; } catch (e) { return false; } };
+  function armBarge() { if (!bargeOn() || !voiceMode || voicePaused || !realtime || sts.on || rec || sending) return; startListening(true); }
+  function dropArmed() {
+    const st = rec; if (!st || !st.barge) return;
+    rec = null; st.cancelled = true; st.silentDrop = true;
+    try { if (st.recorder.state !== 'inactive') st.recorder.stop(); } catch (e) { /* ignore */ }
+    cleanupRec(st);
+  }
+  function bargeIn(st) {
+    st.barge = false; st.heardSpeech = true; bargedIn = true;
+    cancelSpeech();                // หยุดเสียงเลขาทันที (ทั้งเสียงเบราว์เซอร์และเสียงพรีเมียม)
+    setBotState('listening'); renderMic();
+  }
   function cleanupRec(state) {
     if (state.timer) clearInterval(state.timer);
     try { state.ctx && state.ctx.close(); } catch (e) { /* ignore */ }

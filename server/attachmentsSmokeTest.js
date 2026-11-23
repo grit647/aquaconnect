@@ -131,6 +131,11 @@ const cleanup = () => query('DELETE FROM users WHERE phone = ANY($1)', [PHONES])
   for (let k = 0; k < 2; k++) { const r = await call('POST', M, liveBody({ liveCamera: true })); if (r.status === 200) liveOk++; }
   check('กล้องสดส่งเฟรมต่อเนื่องได้ (ใช้ตัวนับของกล้องสดเอง ไม่กินโควตา "แนบไฟล์" 10 ครั้ง/5 นาที)', liveOk === 2, String(liveOk));
 
+  await call('POST', M, { content: 'เดี๋ยวก่อน', interrupted: true });
+  const intSeen = seen[seen.length - 1];
+  await call('POST', M, { content: 'ปกติ' });
+  check('พูดแทรก: ธง interrupted → prompt บอกเลขาว่าข้อความก่อนหน้าถูกตัดกลางคัน ตอบสิ่งที่แทรกเลย ไม่เล่าต่อ / ไม่มีธง → ไม่มีกติกานี้', /ผู้ใช้เพิ่งพูดแทรก/.test(intSeen.systemPrompt) && /ไม่ต้องเล่าต่อจากที่ค้างไว้/.test(intSeen.systemPrompt) && !/ผู้ใช้เพิ่งพูดแทรก/.test(seen[seen.length - 1].systemPrompt));
+
   const spoof = await call('POST', M, { content: 'ไฟล์ปลอม', attachments: [{ name: 'x.jpg', mime: 'image/jpeg', data: b64('this is not a jpeg') }] });
   check('ไฟล์ปลอมชนิด → 400 ไม่ส่งให้โมเดล', spoof.status === 400 && spoof.json.error.includes('ไม่ใช่ชนิดที่แจ้งไว้'));
 
