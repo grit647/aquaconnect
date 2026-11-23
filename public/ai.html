@@ -102,8 +102,10 @@
   <div id="pipGuide" hidden><div class="pg-card"><div class="pg-t">ย่อหน้าต่างเรียบร้อย ✅</div><div class="pg-b">แตะปุ่ม <b>Home</b> (วงกลมกลางจอ) 1 ครั้ง<br>เพื่อกลับหน้าจอหลัก — เลขาจะลอยอยู่ ยังคุยต่อได้เลย</div><button id="pgOk" type="button">รับทราบ</button><label class="pg-n"><input type="checkbox" id="pgNever"> ไม่ต้องแสดงอีก</label></div></div>
   <div id="vState">กำลังเตรียมไมค์...</div>
   <div id="vTopic"></div>
+  <button id="vAi" type="button" hidden aria-label="ตั้งค่าเสียงเลขา (เสียงพรีเมียม / เสียงธรรมดา)"><span id="vAiPic" class="vai-pic"></span><span id="vAiName"></span><span class="vai-gear">⚙️</span></button>
   <button id="vMic" type="button" aria-label="หยุดฟังชั่วคราว / คุยต่อ"><span class="vring"></span><span class="vicon">🎙️</span></button>
   <div id="vTools"><button id="vPlus" type="button" class="round-btn" aria-label="แนบรูป ไฟล์ หรือลิงก์ให้เลขาอ่าน">＋</button><button id="vCam" type="button" class="round-btn" aria-label="เปิดกล้อง ถ่ายรูปถามเลขา">📸</button></div>
+  <button id="vSts" type="button" hidden aria-label="ออกจากโหมด STS">🎧 STS เปิดอยู่ — กดอีกครั้งเพื่อออก</button>
   <div id="vAttach" hidden></div>
   <div id="vCaption"><div id="vUser"></div><div id="vReply"></div><div id="vGen"></div></div>
   <div id="vHint">สวมหูฟังบลูทูธแล้วพูดได้เลย คุยต่อเนื่องไม่ต้องกดซ้ำ — แตะไมค์เพื่อหยุดชั่วคราว</div>
@@ -126,7 +128,7 @@
     <div id="grpSession" hidden><span id="grpSessText"></span><button id="grpSessStop" type="button">หยุด</button></div>
     <div id="grpBody"></div>
     <form id="grpComposer" hidden>
-      <div id="grpAttachRow"><button id="grpPlus" type="button" class="gatt" aria-label="แนบรูป ไฟล์ หรือลิงก์ให้เลขาอ่าน">＋</button><button id="grpCam" type="button" class="gatt" aria-label="เปิดกล้อง ถ่ายรูปถามเลขา">📸</button><div id="grpAttach"></div></div>
+      <div id="grpAttachRow"><button id="grpPlus" type="button" class="gatt" aria-label="แนบรูป ไฟล์ หรือลิงก์ให้เลขาอ่าน">＋</button><button id="grpCam" type="button" class="gatt" aria-label="เปิดกล้อง ถ่ายรูปถามเลขา">📸</button><button id="grpSts" type="button" class="gatt gsts" aria-label="โหมดคุยกลุ่มด้วยเสียง STS" title="STS: พูดส่งเข้ากลุ่ม + ฟังเสียงอ่านข้อความที่ตอบกลับ (ไม่ต้องมองจอ)">🎧 STS</button><div id="grpAttach"></div></div>
       <button id="grpAi" type="button" aria-label="เลขาของฉัน (ตั้งค่าร่วมคุย / สรุปการสนทนา)" title="เลขาของฉัน"></button>
       <input id="grpInput" type="text" maxlength="1000" placeholder="พิมพ์ข้อความ… (กดส่งแล้วเลือกว่าจะส่งถึงใคร)" autocomplete="off">
       <button id="grpMic" type="button" aria-label="พูดเพื่อพิมพ์">🎤</button>

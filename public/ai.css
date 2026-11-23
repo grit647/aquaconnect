@@ -555,3 +555,14 @@ body {
 #grpAttach .chip-att span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 46vw; }
 #grpAttach .chip-att button { border: none; background: transparent; color: var(--danger); font-size: 14px; cursor: pointer; padding: 0 6px; }
 #grpAttach .g-attach-hint { font-size: 12px; color: var(--ok); }
+
+/* STS ในห้องแชทกลุ่ม */
+#grpAttachRow .gsts { width: auto; padding: 0 12px; border-radius: 999px; font-size: 13px; font-weight: 800; color: var(--neon2); border-color: var(--neon2); }
+#voiceScreen[data-sts] { z-index: 75; }   /* เหนือห้องแชทกลุ่ม (70) */
+#voiceScreen[data-sts] #vTools, #voiceScreen[data-sts] #vAttach { display: none; }
+#vAi { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--neon2); background: rgba(19, 26, 48, 0.9); color: var(--text); border-radius: 999px; padding: 4px 12px 4px 4px; font: inherit; font-size: 14px; font-weight: 700; cursor: pointer; }
+#vAi[hidden] { display: none; }
+#vAi .vai-pic { width: 34px; height: 34px; border-radius: 50%; overflow: hidden; background: var(--panel2, #1a2340); border: 2px solid var(--neon2); display: flex; align-items: center; justify-content: center; color: var(--neon2); font-weight: 800; }
+#vAi .vai-pic img { width: 100%; height: 100%; object-fit: cover; display: block; }
+#vSts { border: 1px solid var(--ok); background: rgba(52, 211, 153, 0.12); color: var(--ok); border-radius: 999px; padding: 10px 18px; font: inherit; font-size: 14px; font-weight: 800; cursor: pointer; }
+#vSts[hidden] { display: none; }

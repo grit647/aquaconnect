@@ -310,6 +310,7 @@
   }
   // ============================ กลุ่มสนทนา (เต็มจอ) ============================
   // หน้าแรกกลุ่ม → [สร้างกลุ่มใหม่ (ผู้สร้างเป็นแอดมิน สร้างได้ 2 กลุ่ม)] / [ดูกลุ่มทั้งหมด → ขอเข้าร่วม → ผู้สร้างอนุญาต] → แชทกลุ่ม (รูปโปรไฟล์ทุกข้อความ)
+  const sts = { on: false, buffer: [], timer: null, busy: false };   // โหมด STS ในห้องแชทกลุ่ม: พูด→ส่งเข้ากลุ่ม / ข้อความใหม่ในกลุ่ม→อ่านออกเสียง (ทุก 10 วินาที)
   const grp = { view: 'home', groupId: null, name: '', lastId: 0, timer: null, sessTimer: null, info: null, back: null, nextTarget: null };
   const gEl = (id) => document.getElementById(id);
   function grpAvatar(name, pic) {
@@ -693,13 +694,14 @@
         if (grp.groupId !== groupId) return;
         const atBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 80;
         r.messages.forEach((m) => { grpAddMsg(body, m); grp.lastId = Math.max(grp.lastId, m.id); });
+        if (sts.on && !first) { r.messages.forEach((m) => { if (!m.isSystem && !m.mine && m.content) sts.buffer.push(m); }); if (sts.buffer.length > 30) sts.buffer.splice(0, sts.buffer.length - 30); }
         grpUpdateSession(r.session);
         if (r.messages.length && (first || atBottom)) stick();
         if (first && !r.messages.length) gNote(body, 'ยังไม่มีข้อความ — พิมพ์ทักทายเป็นคนแรกได้เลย');
       } catch (err) { if (first) { gNote(body, err.message); gEl('grpComposer').hidden = true; } }
     };
     await load(true);
-    grp.timer = setInterval(() => { if (document.visibilityState === 'visible') load(false); }, 4000);
+    grp.timer = setInterval(() => { if (document.visibilityState === 'visible' || sts.on) load(false); }, 4000);
   }
   gEl('grpComposer').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -1717,6 +1719,7 @@
   }
 
   function exitVoiceMode() {
+    if (sts.on) stsCleanup();
     voiceMode = false; voicePaused = false; realtime = false;
     cancelSpeech(); stopRecording(true); unlockScreen();
     if (voiceStream) { try { voiceStream.getTracks().forEach((t) => t.stop()); } catch (e) { /* ignore */ } voiceStream = null; }
@@ -1731,6 +1734,65 @@
   $('micBtn').addEventListener('click', () => enterVoiceMode(false));
   $('vExit').addEventListener('click', exitVoiceMode);
   $('vMic').addEventListener('click', () => { if (voicePaused) resumeVoice(); else pauseVoice(); });
+
+  // ---------- STS ในห้องแชทกลุ่ม (เพื่อการเดินทาง/ไม่ต้องมองจอ) ----------
+  // พูด → ถอดเสียง → ส่งเข้ากลุ่มตรงๆ (ไม่ต้องเลือกว่าส่งถึงใคร) • ข้อความใหม่ของคนอื่น/เลขา AI ในกลุ่ม → ทุก 10 วินาทีอ่านออกเสียง "ชื่อ + ข้อความ" ด้วยเสียงที่ตั้งไว้ (พรีเมียม/ธรรมดา)
+  // กดรูปเลขาเปิดตั้งค่าเสียงได้ • กดปุ่ม STS อีกครั้ง = ออกจากโหมด • ใช้หน้าจอสนทนาเสียงเดิม (ไมค์/จับเงียบ/กันจอดับ/ถามซ้ำเมื่อฟังไม่ได้ความ ใช้ร่วมกัน)
+  const STS_RELAY_MS = 10000;
+  const stsWho = (m) => (m.isAi ? (m.myAi ? 'เลขาของคุณ ' + m.name : 'เลขา ' + m.name + ' ของ ' + (m.ownerName || '')) : m.name);
+  function stsFlush() {
+    if (!sts.on || !voiceMode || voicePaused || !sts.buffer.length || sts.busy || sending) return;
+    if (botState === 'thinking' || botState === 'speaking') return;
+    if (rec && rec.heardSpeech) return;   // ผู้ใช้กำลังพูดอยู่ — รอรอบถัดไป
+    const items = sts.buffer.splice(0, sts.buffer.length);
+    const cut = (s, n) => (String(s).length > n ? String(s).slice(0, n) + ' ...' : String(s));
+    let text = ''; let used = 0;
+    for (const m of items) {
+      const part = stsWho(m) + ' พูดว่า ' + cut(m.content, 180) + '. ';
+      if (text.length + part.length > 700 && used) break;
+      text += part; used++;
+    }
+    if (used < items.length) text += 'และมีข้อความอื่นอีก ' + (items.length - used) + ' ข้อความ ดูในแชทได้ค่ะ';
+    const last = items[Math.min(used, items.length) - 1];
+    stopRecording(true);   // หยุดฟังชั่วคราวตอนอ่าน (กันไมค์รับเสียงลำโพง) อ่านจบแล้วกลับมาฟังต่อเอง
+    sts.busy = true;
+    vCaption(null, stsWho(last) + ': ' + cut(last.content, 200));
+    speak(text, () => { sts.busy = false; afterSpeech(); });
+  }
+  async function stsPost(text) {
+    vCaption('🎙️ ' + text, '');
+    try {
+      await api('POST', '/api/groups/' + grp.groupId + '/messages', { content: text });
+      if (window.aqTick) window.aqTick.state('speaking', 'idle');   // เสียงตี๊ด = ส่งเข้ากลุ่มแล้ว
+      vCaption(null, '✓ ส่งเข้ากลุ่มแล้ว');
+    } catch (err) { vCaption(null, err.message); }
+    setBotState('idle');
+    if (realtime && !voicePaused) startListening();
+  }
+  function stsCleanup() {
+    sts.on = false; sts.busy = false; sts.buffer = [];
+    clearInterval(sts.timer); sts.timer = null;
+    const vs = $('voiceScreen'); delete vs.dataset.sts;
+    $('vAi').hidden = true; $('vSts').hidden = true;
+    updateTopic();
+  }
+  async function enterSts() {
+    if (!grp.groupId || sts.on || voiceMode) return;
+    if (inLine) { alert('โหมด STS ต้องใช้ไมค์ — เปิดแอปด้วยเบราว์เซอร์ปกติ (Chrome / Safari) แทนเบราว์เซอร์ในไลน์นะคะ'); return; }
+    const groupName = grp.name;
+    sts.on = true; sts.buffer = []; sts.busy = false;
+    await enterVoiceMode(false);
+    if (!voiceMode) { sts.on = false; return; }
+    const vs = $('voiceScreen'); vs.dataset.sts = '1';
+    aiImgInto($('vAiPic')); $('vAiName').textContent = (me && me.secretaryName) || 'เลขา';
+    $('vAi').hidden = false; $('vSts').hidden = false;
+    $('vTopic').textContent = '👥 กลุ่ม: ' + groupName;
+    $('vHint').textContent = 'โหมด STS: พูดแล้วส่งเข้ากลุ่มทันที • ข้อความใหม่ในกลุ่มจะอ่านให้ฟังทุก 10 วินาที • กดรูปเลขาเพื่อตั้งค่าเสียง';
+    clearInterval(sts.timer); sts.timer = setInterval(stsFlush, STS_RELAY_MS);
+  }
+  $('grpSts').addEventListener('click', enterSts);
+  $('vSts').addEventListener('click', exitVoiceMode);      // กด STS อีกครั้ง = ออกจากโหมด (กลับไปห้องแชทกลุ่ม)
+  $('vAi').addEventListener('click', () => { if (window.aqTick) window.aqTick.open(); });   // ตั้งค่าเสียงเลขา (พรีเมียม/ธรรมดา ใช้ค่าเดิมที่ตั้งไว้)
 
 
   // ---------- หน้าต่างเล็กลอย (Picture-in-Picture) — ทดลอง ----------
@@ -1863,7 +1925,7 @@
         setBotState('idle');
         if (voiceMode && !voicePaused && !state.cancelled) {
           idleCycles++;
-          if (idleCycles >= IDLE_LIMIT) pauseVoice('ไม่ได้ยินเสียงนานแล้ว หยุดฟังชั่วคราวค่ะ — แตะไมค์เพื่อคุยต่อ');
+          if (!sts.on && idleCycles >= IDLE_LIMIT) pauseVoice('ไม่ได้ยินเสียงนานแล้ว หยุดฟังชั่วคราวค่ะ — แตะไมค์เพื่อคุยต่อ');
           else startListening();
           return;
         }
@@ -1947,7 +2009,7 @@
           if (voiceMode) vCaption('(ฟังไม่ได้ความ)', ask); else addBubble('hint', ask);
           if (voiceMode ? !voicePaused : (ttsOn || realtime)) { speak(ask, afterSpeech); return; }
         } else if (voiceMode) vCaption('(ฟังไม่ได้ความ)', null);
-        if (voiceMode && ++idleCycles >= IDLE_LIMIT) { pauseVoice('ฟังไม่ได้ความนานแล้ว หยุดฟังชั่วคราวค่ะ — แตะไมค์เพื่อคุยต่อ'); return; }
+        if (voiceMode && (++idleCycles, !sts.on && idleCycles >= IDLE_LIMIT)) { pauseVoice('ฟังไม่ได้ความนานแล้ว หยุดฟังชั่วคราวค่ะ — แตะไมค์เพื่อคุยต่อ'); return; }
         if (realtime) startListening();
         return;
       }
@@ -1956,12 +2018,13 @@
         addBubble('hint', 'ไม่ได้ยินเสียงชัดๆ ค่ะ ลองพูดใหม่อีกครั้งนะคะ');
         if (voiceMode) {
           vCaption('(ไม่ได้ยินชัด ลองพูดใหม่ได้เลยค่ะ)', null);
-          if (++idleCycles >= IDLE_LIMIT) { pauseVoice('ไม่ได้ยินเสียงชัดเจนนานแล้ว หยุดฟังชั่วคราวค่ะ — แตะไมค์เพื่อคุยต่อ'); return; }
+          if ((++idleCycles, !sts.on && idleCycles >= IDLE_LIMIT)) { pauseVoice('ไม่ได้ยินเสียงชัดเจนนานแล้ว หยุดฟังชั่วคราวค่ะ — แตะไมค์เพื่อคุยต่อ'); return; }
         }
         if (realtime) startListening();
         return;
       }
       unclearStreak = 0;
+      if (sts.on) { await stsPost(text); return; }   // โหมด STS: ส่งเข้าห้องแชทกลุ่มตรงๆ ไม่ผ่านเลขา
       await send(text, 'voice');
     } catch (err) {
       setBotState('idle');
