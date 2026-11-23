@@ -59,7 +59,9 @@ router.get('/overview', async (req, res) => {
 router.get('/users', async (req, res) => {
   try {
     const r = await query(
-      `SELECT u.id, u.name, u.phone, u.is_admin, u.status, (u.line_user_id IS NOT NULL) AS line_linked, u.google_search_enabled, (CASE WHEN u.google_search_month = $1 THEN u.google_search_count ELSE 0 END) AS google_search_count, u.tts_enabled, (CASE WHEN u.tts_seconds_month = $2 THEN u.tts_seconds_used ELSE 0 END) AS tts_seconds, u.line_picture_url AS picture, u.created_at,
+      `SELECT u.id, u.name, u.phone, u.is_admin, u.status, (u.line_user_id IS NOT NULL) AS line_linked, u.google_search_enabled, (CASE WHEN u.google_search_month = $1 THEN u.google_search_count ELSE 0 END) AS google_search_count, u.tts_enabled, (CASE WHEN u.tts_seconds_month = $2 THEN u.tts_seconds_used ELSE 0 END) AS tts_seconds,
+              (SELECT COALESCE(sum(t.seconds), 0) FROM tts_usage t WHERE t.user_id = u.id) AS tts_seconds_total,
+              (SELECT COALESCE(sum(t.credits_charged), 0) FROM tts_usage t WHERE t.user_id = u.id) AS tts_credits_total, u.line_picture_url AS picture, u.created_at,
               (SELECT count(*)::int FROM messages m WHERE m.user_id = u.id AND m.role = 'user') AS messages,
               (SELECT count(*)::int FROM memories x WHERE x.owner_id = u.id) AS memories,
               COALESCE(b.balance, 0) AS balance,
@@ -68,7 +70,7 @@ router.get('/users', async (req, res) => {
          FROM users u LEFT JOIN credit_balances b ON b.user_id = u.id ORDER BY u.created_at DESC LIMIT 500`,
       [require('../webSearch').currentMonth(), require('../tts').monthNow()]
     );
-    res.json({ users: r.rows.map((x) => ({ ...x, balance: Number(x.balance), tts_seconds: Number(x.tts_seconds) })) });
+    res.json({ users: r.rows.map((x) => ({ ...x, balance: Number(x.balance), tts_seconds: Number(x.tts_seconds), tts_seconds_total: Number(x.tts_seconds_total), tts_credits_total: Number(x.tts_credits_total) })) });
   } catch (err) {
     console.error('admin users error:', err);
     res.status(500).json({ error: 'เกิดข้อผิดพลาดฝั่งเซิร์ฟเวอร์' });
@@ -111,7 +113,8 @@ router.get('/tts-usage', async (req, res) => {
       query('SELECT count(*)::int AS n FROM users WHERE tts_enabled'),
     ]);
     const credits = await query('SELECT COALESCE(sum(credits_charged), 0) AS c FROM tts_usage WHERE month = $1', [tts.monthNow()]);
-    res.json({ month: tts.monthNow(), spentThb: Math.round(spent.thb * 100) / 100, seconds: Math.round(spent.seconds), budgetThb: Number(budget.rows[0] && budget.rows[0].value) || 0, creditsCharged: Number(credits.rows[0].c), enabledUsers: enabledUsers.rows[0].n });
+    const all = await query('SELECT COALESCE(sum(seconds), 0) AS sec, COALESCE(sum(cost_thb), 0) AS thb, COALESCE(sum(credits_charged), 0) AS c FROM tts_usage');
+    res.json({ allTime: { seconds: Math.round(Number(all.rows[0].sec)), thb: Math.round(Number(all.rows[0].thb) * 100) / 100, credits: Number(all.rows[0].c) }, month: tts.monthNow(), spentThb: Math.round(spent.thb * 100) / 100, seconds: Math.round(spent.seconds), budgetThb: Number(budget.rows[0] && budget.rows[0].value) || 0, creditsCharged: Number(credits.rows[0].c), enabledUsers: enabledUsers.rows[0].n });
   } catch (err) {
     console.error('admin tts usage error:', err);
     res.status(500).json({ error: 'เกิดข้อผิดพลาดฝั่งเซิร์ฟเวอร์' });

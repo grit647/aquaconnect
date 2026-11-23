@@ -224,7 +224,7 @@ button.act.danger { color:var(--danger); border-color:var(--danger); }
     try {
       const t = await api('GET', '/api/admin/tts-usage');
       const box = $('ttsUsage'); if (!box) return;
-      box.textContent = '🔊 เสียงพรีเมียมเดือน ' + t.month + ': ใช้ ' + Math.round((t.seconds / 60) * 10) / 10 + ' นาที · ต้นทุนโดยประมาณ ฿' + t.spentThb + ' จากงบ ฿' + t.budgetThb + (t.budgetThb > 0 && t.spentThb >= t.budgetThb ? ' (เต็มแล้ว ปิดอัตโนมัติ)' : '') + ' · หักเครดิตผู้ใช้ไป ' + t.creditsCharged + ' เครดิต · เปิดสิทธิ์ ' + t.enabledUsers + ' คน';
+      box.textContent = '🔊 เสียงพรีเมียมเดือน ' + t.month + ': ใช้ ' + Math.round((t.seconds / 60) * 10) / 10 + ' นาที · ต้นทุนโดยประมาณ ฿' + t.spentThb + ' จากงบ ฿' + t.budgetThb + (t.budgetThb > 0 && t.spentThb >= t.budgetThb ? ' (เต็มแล้ว ปิดอัตโนมัติ)' : '') + ' · หักเครดิตผู้ใช้ไป ' + t.creditsCharged + ' เครดิต · เปิดสิทธิ์ ' + t.enabledUsers + ' คน | รวมตั้งแต่เริ่ม: ' + Math.round((t.allTime.seconds / 60) * 10) / 10 + ' นาที · ต้นทุนโดยประมาณ ฿' + t.allTime.thb + ' · หักเครดิต ' + t.allTime.credits;
     } catch (e) { /* ไม่มีก็ข้าม */ }
   }
   async function loadUsers() {
@@ -256,8 +256,9 @@ button.act.danger { color:var(--danger); border-color:var(--danger); }
       });
       gTd.appendChild(gb); tr.appendChild(gTd);
       const vTd = el('td');
-      const vb = el('button', (u.tts_enabled ? '✅ เปิด' : '🔒 ปิด') + ' (' + (Math.round((u.tts_seconds / 60) * 10) / 10) + ' นาที)', 'act' + (u.tts_enabled ? '' : ' danger'));
-      vb.title = 'กดเพื่อสลับสิทธิ์ใช้เสียงเลขาพรีเมียม (Gemini TTS) ของคนนี้ (ตัวเลข = นาทีเสียงที่ใช้ในเดือนนี้) — ค่าเริ่มต้นปิด';
+      const mins = (s) => Math.round((s / 60) * 10) / 10;
+      const vb = el('button', (u.tts_enabled ? '✅ เปิด' : '🔒 ปิด') + ' · เดือนนี้ ' + mins(u.tts_seconds) + ' · รวม ' + mins(u.tts_seconds_total) + ' นาที', 'act' + (u.tts_enabled ? '' : ' danger'));
+      vb.title = 'กดเพื่อสลับสิทธิ์ใช้เสียงเลขาพรีเมียม (Gemini TTS) ของคนนี้ — ค่าเริ่มต้นปิด\nเดือนนี้ ' + mins(u.tts_seconds) + ' นาที • รวมตั้งแต่เริ่มใช้ ' + mins(u.tts_seconds_total) + ' นาที • เครดิตที่ถูกหักรวม ' + u.tts_credits_total;
       vb.addEventListener('click', async () => {
         try { await api('PATCH', '/api/admin/users/' + u.id + '/tts', { enabled: !u.tts_enabled }); toast('เรียบร้อย'); loadUsers(); loadTtsUsage(); }
         catch (e) { toast(e.message); }

@@ -64,7 +64,7 @@ async function cleanup() {
   const en = await call('PATCH', `/api/admin/users/${uidA}/tts`, { enabled: true }, Adm.cookie);
   check('แอดมินเปิดสิทธิ์ให้รายคนได้', en.status === 200 && en.json.user.tts_enabled === true);
   const ul = (await call('GET', '/api/admin/users', null, Adm.cookie)).json.users.find((u) => u.id === uidA);
-  check('หน้าแอดมินเห็นสถานะสิทธิ์เสียงและนาทีที่ใช้ของแต่ละคน', ul && ul.tts_enabled === true && ul.tts_seconds === 0, JSON.stringify(ul && { e: ul.tts_enabled, s: ul.tts_seconds }));
+  check('หน้าแอดมินเห็นสถานะสิทธิ์เสียงและนาทีที่ใช้ของแต่ละคน (เดือนนี้ + รวมตั้งแต่เริ่ม + เครดิตที่หักรวม)', ul && ul.tts_enabled === true && ul.tts_seconds === 0 && ul.tts_seconds_total === 0 && ul.tts_credits_total === 0, JSON.stringify(ul && { e: ul.tts_enabled, s: ul.tts_seconds, t: ul.tts_seconds_total }));
 
   // ---------- โควตาฟรี ----------
   const st1 = await call('GET', '/api/chat/tts/status', null, A.cookie);
@@ -118,6 +118,9 @@ async function cleanup() {
   const summary = await call('GET', '/api/admin/tts-usage', null, Adm.cookie);
   check('แอดมินดูสรุปเสียงเดือนนี้ได้ (นาที/ต้นทุน/งบ/เครดิตที่หัก/จำนวนคนที่เปิดสิทธิ์)', summary.status === 200 && summary.json.spentThb >= 0 && summary.json.budgetThb === 100000 && summary.json.enabledUsers >= 1 && summary.json.creditsCharged >= 0.03, JSON.stringify(summary.json));
   check('ผู้ใช้ทั่วไปดูสรุปของแอดมินไม่ได้', (await call('GET', '/api/admin/tts-usage', null, A.cookie)).status === 403);
+  const ul2 = (await call('GET', '/api/admin/users', null, Adm.cookie)).json.users.find((u) => u.id === uidA);
+  check('ยอดรวมต่อคนถูก: เดือนนี้ = 2 วินาทีล่าสุด แต่ "รวมตั้งแต่เริ่ม" บวกทุกครั้งทุกเดือน (2+2+2+2+2... ต้องมากกว่าเดือนนี้) และมีเครดิตที่หัก', ul2.tts_seconds_total > ul2.tts_seconds && ul2.tts_seconds_total >= 8 && ul2.tts_credits_total >= 0.03, JSON.stringify({ month: ul2.tts_seconds, total: ul2.tts_seconds_total, credits: ul2.tts_credits_total }));
+  check('สรุปของแอดมินมียอดรวมทั้งระบบตั้งแต่เริ่ม', summary.json.allTime && summary.json.allTime.seconds >= 8 && summary.json.allTime.credits >= 0.03, JSON.stringify(summary.json.allTime));
   const off = await call('PATCH', `/api/admin/users/${uidA}/tts`, { enabled: false }, Adm.cookie);
   const d1 = await call('POST', '/api/chat/tts', { text: 'สวัสดี' }, A.cookie);
   check('แอดมินปิดสิทธิ์ → ขอเสียงไม่ได้อีก (403)', off.status === 200 && d1.status === 403);
