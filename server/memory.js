@@ -100,7 +100,7 @@ async function listCategories(userId) {
     `SELECT c.name, c.visibility, count(m.id)::int AS memories
        FROM memory_categories c LEFT JOIN memories m ON m.category_id = c.id
       WHERE c.owner_id = $1
-      GROUP BY c.id ORDER BY array_position(ARRAY['ทั่วไป','ความสามารถเลขา','ข้อมูลแชท','การใช้งานแพลตฟอร์ม']::text[], c.name) NULLS LAST, c.name`,
+      GROUP BY c.id ORDER BY array_position(ARRAY['การใช้งานแพลตฟอร์ม','ทั่วไป','ความสามารถเลขา','ข้อมูลแชท']::text[], c.name) NULLS LAST, c.name`,
     [userId]
   );
   // หมวดคู่มือไม่มีแถวใน memories — นับเป็นจำนวนหัวข้อในคู่มือ

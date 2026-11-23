@@ -62,7 +62,7 @@ router.get('/my-categories', async (req, res) => {
       query(`SELECT c.id, c.name, c.description, c.visibility, c.price_type, c.price_credits,
                     (SELECT count(*)::int FROM memories m WHERE m.category_id = c.id) AS items,
                     (SELECT max(m.created_at) FROM memories m WHERE m.category_id = c.id) AS last_at
-               FROM memory_categories c WHERE c.owner_id = $1 ORDER BY array_position(ARRAY['ทั่วไป','ความสามารถเลขา','ข้อมูลแชท','การใช้งานแพลตฟอร์ม']::text[], c.name) NULLS LAST, c.name`, [req.user.id]),
+               FROM memory_categories c WHERE c.owner_id = $1 ORDER BY array_position(ARRAY['การใช้งานแพลตฟอร์ม','ทั่วไป','ความสามารถเลขา','ข้อมูลแชท']::text[], c.name) NULLS LAST, c.name`, [req.user.id]),
       query("SELECT value FROM app_settings WHERE key = 'idle_timeout_min'"),
       query("SELECT value FROM app_settings WHERE key = 'free_access_minutes'"),
       sharing.getConnectEnabled(req.user.id),
