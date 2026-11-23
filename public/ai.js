@@ -1707,7 +1707,8 @@
     voicePaused = true; realtime = false;
     stopRecording(true); cancelSpeech();
     $('voiceScreen').className = 'paused state-idle';
-    $('vState').textContent = msg || 'หยุดฟังชั่วคราว — แตะไมค์เพื่อคุยต่อ';
+    if (sts.on) sts.busy = false;   // STS: เสียงอ่านที่ถูกตัดตอนกดหยุด ไม่ค้างสถานะ "กำลังอ่าน"
+    $('vState').textContent = msg || (sts.on ? 'หยุดไมค์ชั่วคราว — ยังอ่านข้อความกลุ่มให้ฟังอยู่ (แตะไมค์เพื่อพูดต่อ)' : 'หยุดฟังชั่วคราว — แตะไมค์เพื่อคุยต่อ');
   }
 
   function resumeVoice() {
@@ -1751,7 +1752,7 @@
     if (!sts.on || !voiceMode) return;
     if (sts.busy && Date.now() - sts.busySince > 45000) sts.busy = false;   // กันค้าง: ถ้าเสียงอ่านไม่จบ/ไม่ส่งสัญญาณจบนานเกิน 45 วินาที ปลดล็อกให้อ่านรอบถัดไป
     stsQueueInfo();
-    if (voicePaused || !sts.buffer.length || sts.busy || sending) return;
+    if (!sts.buffer.length || sts.busy || sending) return;
     if (botState === 'thinking' || botState === 'speaking') return;
     if (rec && rec.heardSpeech) {   // ผู้ใช้กำลังพูดอยู่ — รอรอบถัดไป
       // แต่ถ้าข้อความรอมานานเกิน 12 วินาที (เช่นไมค์ไวจนได้ยินเสียงรบกวนต่อเนื่อง ทำให้ "กำลังพูด" ไม่จบ) ให้จบรอบอัดตอนนี้ (ส่งสิ่งที่พูดไว้ตามปกติ) แล้วรอบหน้าอ่านข้อความที่รอ
@@ -1762,7 +1763,7 @@
   }
   // อ่านข้อความที่รออยู่ในคิวทันที (เรียกจากรอบเช็กทุก 10 วินาที และจาก "จบรอบ" ของการพูด/ส่ง/ฟังไม่ได้ความ — กันกรณีไมค์ไวมีเสียงรบกวนต่อเนื่องจนไม่มีช่วงเงียบให้ระบบอ่านเลย)
   function stsRead() {
-    if (!sts.on || !voiceMode || voicePaused || !sts.buffer.length || sts.busy) return;
+    if (!sts.on || !voiceMode || !sts.buffer.length || sts.busy) return;
     const cut = (s, n) => (String(s).length > n ? String(s).slice(0, n) + ' ...' : String(s));
     let text = ''; let used = 0;
     for (const m of sts.buffer) {
@@ -1780,7 +1781,7 @@
   }
   // จบรอบ (พูดเสร็จ/ส่งเสร็จ/ฟังไม่ได้ความ): ถ้ามีข้อความรออ่านให้อ่านก่อน ไม่งั้นกลับไปฟังต่อ
   function resumeAfterTurn() {
-    if (sts.on && voiceMode && !voicePaused && sts.buffer.length && !sts.busy) { stsRead(); return; }
+    if (sts.on && voiceMode && sts.buffer.length && !sts.busy) { stsRead(); return; }   // หยุดไมค์อยู่ก็ยังอ่านข้อความกลุ่มให้ฟัง
     if (realtime && me && !appEl.hidden && !voicePaused) startListening();
   }
   async function stsPost(text) {
