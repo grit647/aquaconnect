@@ -200,7 +200,7 @@ async function createKnowledgeProposals(userId, conversationId, items, cap = 12)
     try { category = cleanCategoryName(it && it.category); } catch { continue; }
     if (isSelfCategory(category)) continue;
     const text = oneLine(it && (it.summary || it.content));
-    if (text.length < 8 || text.length > 700) continue;
+    if (text.length < 8 || text.length > 900) continue;
     const key = normText(category) + '|' + normText(text);
     if (seen.has(key)) continue;
     seen.add(key);

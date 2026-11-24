@@ -980,35 +980,52 @@
   }
   // ---------- สิ่งที่เลขาสรุปว่าเจ้าของสอน (ให้เจ้าของกดยืนยัน/ไม่ใช่) ----------
   const shownProposals = new Set();
-  function showProposals(list) {
-    (list || []).forEach((p) => {
-      if (shownProposals.has(p.id)) return;
-      shownProposals.add(p.id);
-      const card = document.createElement('div');
-      card.className = 'proposal-card';
-      const t = document.createElement('div');
-      t.className = 'pp-text';
-      t.textContent = '💡 เลขาสรุปว่าคุณสอนไว้: ' + p.content;
-      const row = document.createElement('div');
-      row.className = 'pp-row';
-      const decide = async (accept) => {
-        row.querySelectorAll('button').forEach((b) => { b.disabled = true; });
-        try {
-          await api('POST', '/api/chat/proposals/' + p.id + '/decide', { accept });
-          card.className = 'chip-saved';
-          card.textContent = accept ? '✓ เลขาจำไว้แล้ว ในหมวด "ความสามารถเลขา"' : 'ไม่จำข้อนี้';
-        } catch (err) { card.remove(); }
-      };
-      const yes = document.createElement('button'); yes.type = 'button'; yes.textContent = '✓ จำไว้'; yes.addEventListener('click', () => decide(true));
-      const no = document.createElement('button'); no.type = 'button'; no.className = 'pp-no'; no.textContent = '✕ ไม่ใช่'; no.addEventListener('click', () => decide(false));
-      row.appendChild(yes); row.appendChild(no);
-      card.appendChild(t); card.appendChild(row);
-      logEl.appendChild(card);
-      scrollToBottom();
+  // การ์ดสรุป "ใบเดียว": รวมทุกข้อเสนอที่รอยืนยัน (สรุปการคุยครั้งก่อน/สิ่งที่คุณสอนเลขา) ไว้ในกล่องเดียว ติ๊กเลือกข้อที่จะเก็บได้ แล้วกดบันทึกครั้งเดียว (เดิมเป็นการ์ดแยกทีละข้อ ต้องกดหลายรอบ)
+  function showProposals(list, opts) {
+    const items = (list || []).filter((p) => !shownProposals.has(p.id));
+    if (!items.length) return;
+    items.forEach((p) => shownProposals.add(p.id));
+    const card = document.createElement('div');
+    card.className = 'proposal-card pp-group';
+    const t = document.createElement('div');
+    t.className = 'pp-text';
+    t.textContent = '📝 เลขาสรุปให้แล้ว' + (items.length > 1 ? ' (' + items.length + ' เรื่อง)' : '') + ' — ให้บันทึกไหม? (เอาติ๊กออกข้อที่ไม่ต้องการได้)';
+    card.appendChild(t);
+    const boxes = [];
+    items.forEach((p) => {
+      const rowItem = document.createElement('label'); rowItem.className = 'pp-item';
+      const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = true; boxes.push({ p, cb });
+      const tx = document.createElement('div'); tx.className = 'pp-item-text';
+      const cat = document.createElement('b'); cat.textContent = 'หมวด "' + p.category + '"';
+      const body = document.createElement('span'); body.textContent = String(p.content).replace(/^\[[^\]]+\]\s*/, '');
+      tx.append(cat, body); rowItem.append(cb, tx); card.appendChild(rowItem);
     });
+    const row = document.createElement('div');
+    row.className = 'pp-row';
+    const decideAll = async (saveChecked) => {
+      row.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+      let ok = 0; const cats = new Set();
+      for (const { p, cb } of boxes) {
+        const accept = saveChecked && cb.checked;
+        try { await api('POST', '/api/chat/proposals/' + p.id + '/decide', { accept }); if (accept) { ok++; cats.add(p.category); } } catch (err) { /* ข้อที่ตัดสินไปแล้ว/ล้มเหลว ข้ามได้ */ }
+      }
+      card.className = 'chip-saved';
+      card.textContent = ok ? '✓ บันทึกแล้ว ' + ok + ' เรื่อง ในหมวด ' + [...cats].map((c) => '"' + c + '"').join(', ') : 'ไม่บันทึกครั้งนี้';
+    };
+    const yes = document.createElement('button'); yes.type = 'button'; yes.textContent = '✓ บันทึก'; yes.addEventListener('click', () => decideAll(true));
+    const no = document.createElement('button'); no.type = 'button'; no.className = 'pp-no'; no.textContent = '✕ ไม่บันทึก'; no.addEventListener('click', () => decideAll(false));
+    row.appendChild(yes); row.appendChild(no);
+    if (opts && opts.offer) {   // สรุปตอนกลับเข้าแอป: เลือกปิดการสรุปอัตโนมัติได้
+      const never = document.createElement('button'); never.type = 'button'; never.className = 'pp-no'; never.textContent = 'ไม่ต้องสรุปให้อีก';
+      never.addEventListener('click', async () => { try { await api('POST', '/api/chat/organize-mode', { mode: 'off' }); } catch (e) { /* ignore */ } decideAll(false); });
+      row.appendChild(never);
+    }
+    card.appendChild(row);
+    logEl.appendChild(card);
+    scrollToBottom();
   }
-  async function fetchProposals() {
-    try { showProposals((await api('GET', '/api/chat/proposals')).proposals); } catch (e) { /* ไม่มีก็ข้าม */ }
+  async function fetchProposals(opts) {
+    try { showProposals((await api('GET', '/api/chat/proposals')).proposals, opts); } catch (e) { /* ไม่มีก็ข้าม */ }
   }
 
   // ---------- เลือกหัวข้อ: คุยต่อ/อัปเดตข้อมูลในหมวดนั้น ----------
@@ -1023,32 +1040,18 @@
   // ---------- กลับเข้าแอป: ถามเรื่องที่คุยค้างไว้ ครั้งเดียว (ผู้ใช้ตั้งเองได้ว่า ถามก่อน/บันทึกเอง/ไม่ถาม) ----------
   async function checkOrganize() {
     try {
-      await fetchProposals();
       const r = await api('GET', '/api/chat/organize/pending');
       const c = r.conversation;
-      if (!c) return;
-      const doOrganize = async (auto) => {
-        const res = await api('POST', '/api/chat/conversations/' + c.id + '/organize', { auto: !!auto });
+      let offer = false;
+      if (c && r.mode === 'auto') {
+        const res = await api('POST', '/api/chat/conversations/' + c.id + '/organize', { auto: true });
         (res.saved || []).forEach((m) => addSavedChip(m.category));
         if (res.saved && res.saved.length) addBubble('assistant', 'เลขาสรุปเรื่องที่คุยค้างไว้และจัดเข้าหมวดให้แล้ว ' + res.saved.length + ' รายการค่ะ');
-        else if (res.proposals && res.proposals.length) { addBubble('assistant', 'เลขาสรุปเรื่องที่คุยค้างไว้แยกตามหมวดแล้วค่ะ ดูแล้วกด จำไว้ / ไม่ใช่ ได้เลย'); showProposals(res.proposals); }
-        else addBubble('assistant', 'ดูแล้วยังไม่มีอะไรใหม่ที่ต้องเก็บเพิ่มค่ะ');
-      };
-      if (r.mode === 'auto') { await doOrganize(true); return; }
-      const card = document.createElement('div');
-      card.className = 'proposal-card';
-      const t = document.createElement('div');
-      t.className = 'pp-text';
-      t.textContent = '🗂️ คราวก่อนเราคุยกัน ' + c.userMsgs + ' ข้อความ' + (c.title ? ' เรื่อง "' + c.title + '"' : '') + ' ยังไม่ได้เก็บแยกหมวด ให้เลขาสรุปแล้วเก็บเข้าหมวดให้ไหมคะ';
-      const row = document.createElement('div');
-      row.className = 'pp-row';
-      const mk = (label, cls, fn) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = label; if (cls) b.className = cls; b.addEventListener('click', async () => { row.querySelectorAll('button').forEach((x) => { x.disabled = true; }); card.remove(); try { await fn(); } catch (e) { addBubble('error', e.message); } }); row.appendChild(b); };
-      mk('✓ ให้สรุป', '', () => doOrganize(false));
-      mk('ไว้ก่อน', 'pp-no', () => api('POST', '/api/chat/conversations/' + c.id + '/organize/dismiss', {}));
-      mk('ไม่ต้องถามอีก', 'pp-no', () => api('POST', '/api/chat/conversations/' + c.id + '/organize/dismiss', { never: true }));
-      card.appendChild(t); card.appendChild(row);
-      logEl.appendChild(card);
-      scrollToBottom();
+      } else if (c) {
+        // โหมดถามก่อน: สรุปเนื้อหาที่คุยค้างให้เลยตอนกลับเข้าแอป (สร้างเป็นข้อเสนอรอยืนยัน ยังไม่บันทึก) แล้วรวมกับที่ค้างอยู่เดิมเป็นการ์ดใบเดียว กดบันทึกครั้งเดียว
+        try { await api('POST', '/api/chat/conversations/' + c.id + '/organize', { auto: false }); offer = true; } catch (e) { /* สรุปไม่ได้ก็ข้าม ยังโชว์ที่ค้างเดิม */ }
+      }
+      await fetchProposals(offer ? { offer: true } : undefined);
     } catch (e) { /* ถามไม่ได้ก็ข้าม ไม่กระทบการใช้งาน */ }
   }
   function addSavedChip(category) {

@@ -196,6 +196,12 @@ async function call(method, path, body, cookie) {
   await call('POST', `/api/chat/conversations/${convF.id}/messages`, { content: 'อัปเดตรอบใหม่', focusCategory: 'กุ้ง' }, B.cookie);
   check('โหมดเลือกหมวด: เลิกสั่ง "จบแต่ละประเด็นให้ถาม" → ให้ทำตามตัวคุมของระบบแทน', !lastChatPrompt.includes('เมื่อจบแต่ละประเด็นให้สรุปสั้นๆ แล้วถามครั้งเดียว') && lastChatPrompt.includes('ทำตามส่วน [ถามเรื่องบันทึกข้อมูล]'));
 
+  // ---------- สรุปตอนกลับเข้าแอป: รวบยอด (ไม่แตกเป็นข้อเล็กข้อน้อย) + การ์ดใบเดียวกดบันทึกครั้งเดียว ----------
+  const orgSrc = require('fs').readFileSync(require('path').join(__dirname, 'organize.js'), 'utf8');
+  check('prompt สรุปบทสนทนาสั่งให้รวบยอด: 1 ข้อต่อหมวด ไม่เกิน 4 ข้อ ไม่เก็บหัวข้อ/คำทักทาย', orgSrc.includes('หนึ่งหมวดต่อหนึ่งข้อ') && orgSrc.includes('ไม่เกิน 4 ข้อ') && orgSrc.includes('ไม่เก็บ "หัวข้อที่เคยคุย"') && require('./organize').parseItems(JSON.stringify({ items: Array.from({ length: 9 }, (_, i) => ({ category: 'ก' + i, summary: 'สรุปข้อที่ ' + i + ' ยาวพอ' })) })).length === 4);
+  const clientSrc = require('fs').readFileSync(require('path').join(__dirname, '..', 'public', 'ai.js'), 'utf8');
+  check('หน้าจอ: ข้อเสนอรวมเป็นการ์ดใบเดียว มีช่องติ๊กต่อข้อ + ปุ่มบันทึกครั้งเดียว และตอนกลับเข้าแอปสรุปให้เลย (ไม่ถามก่อนอีกชั้น)', clientSrc.includes("card.className = 'proposal-card pp-group'") && clientSrc.includes("cb.type = 'checkbox'") && clientSrc.includes("'✓ บันทึก'") && !clientSrc.includes("mk('✓ ให้สรุป'"));
+
   // ---------- กลับเข้าแอป: สรุปบทสนทนาค้างแยกหมวด ----------
   const org = require('./organize');
   const mkConv = async (uid, n, ageMin) => {
