@@ -1,5 +1,6 @@
 [
   { "id": "classic", "name": "บอทเดิม", "src": "/models/bot.glb" },
+  { "id": "sbot", "name": "เอสบอท", "src": "/models/s-bot_stylized_cartoon_robot.glb", "credit": "S-Bot โดย amanpatel9725 (CC BY 4.0)", "creditUrl": "https://sketchfab.com/3d-models/s-bot-stylized-cartoon-robot-6350b20fbe76463f82aa41d34c4330c9" },
   { "id": "sky", "name": "บอทฟ้า", "src": "/models/bot.glb", "tint": [0.55, 0.8, 1, 1] },
   { "id": "mint", "name": "บอทมิ้นต์", "src": "/models/bot.glb", "tint": [0.6, 1, 0.8, 1] },
   { "id": "rose", "name": "บอทชมพู", "src": "/models/bot.glb", "tint": [1, 0.7, 0.8, 1] }

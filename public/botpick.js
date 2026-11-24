@@ -63,6 +63,7 @@
       });
       var nm = document.createElement('span'); nm.textContent = it.name;
       b.appendChild(mv); b.appendChild(nm);
+      if (it.credit) { var cr = document.createElement('small'); cr.className = 'bp-credit'; cr.textContent = it.credit; b.appendChild(cr); }
       b.addEventListener('click', function () { save(it.id); apply(it); close(); });
       grid.appendChild(b);
     });
