@@ -129,7 +129,7 @@ async function loadStatus(userId) {
     freeSecondsTotal: freeTotal,
     freeSecondsLeft: Math.max(0, round2(freeTotal - used)),
     creditsPerMinute: cpm,
-    costThbPerMinute: num('tts_cost_thb_per_minute', 0.5),
+    costThbPerMinute: num('tts_cost_thb_per_minute', 0.7),
     balance: Number(row.balance),
     voice: ALL_VOICES.includes(row.tts_voice) ? row.tts_voice : VOICES[Math.min(VOICES.length - 1, Math.max(0, Math.round(voiceIdx)))],   // ผู้ใช้เลือกเอง > เสียงเริ่มต้นของแอดมิน
     style: cleanStyles(row.tts_styles).map((k) => STYLES[k].en).join(', '),

@@ -18,7 +18,7 @@ const router = express.Router();
 router.use(requireAuth);
 
 const MAX_MESSAGE_CHARS = 4000;
-const HISTORY_LIMIT = 20;                    // ส่งข้อความล่าสุดกี่รายการให้โมเดล (คุมค่า token)
+const HISTORY_LIMIT = 10;                    // ส่งข้อความล่าสุดกี่รายการให้โมเดล (คุมค่า token)
 const BURST_MAX = 20;                        // ส่งได้กี่ข้อความต่อช่วง
 const BURST_WINDOW_MS = 5 * 60 * 1000;       // ช่วง 5 นาที
 const DEFAULT_DAILY_LIMIT = 200;             // เพดานข้อความ/วัน/คน (ค่าตั้งใน app_settings: chat_daily_limit)
@@ -421,8 +421,14 @@ router.post('/conversations/:id/messages', async (req, res) => {
       const gctx = groupContextId ? await require('../groups').contextForSecretary(req.user.id, groupContextId).catch(() => null) : null;
       let tools = buildTools(req.user.id, conv.id, { focusCategory });
       if (ext.hasExternal || gctx) tools = Object.fromEntries(Object.entries(tools).filter(([k]) => TOOLS_OK_WITH_EXTERNAL.has(k)));
-      const suggestNote = await suggest.buildContext(req.user.id).catch((e) => { console.error('suggest context error:', e.message); return ''; });
-      result = await ai.runAgent({ systemPrompt: systemPrompt + (ext.hasExternal ? EXTERNAL_NOTE : '') + (gctx ? GROUP_NOTE(gctx.name, gctx.text) : '') + suggestNote + (liveCam ? LIVE_CAMERA_NOTE : '') + (req.body && req.body.interrupted === true ? INTERRUPT_NOTE : '') + (req.body && req.body.premiumVoice === true ? PREMIUM_BRIEF_NOTE : ''), history, tools });
+      // โหมดเสียง (source = voice) หน้าจอไม่แสดงข้อความสีเทา → ไม่ต่อท้ายคำสั่งสร้างคำแนะนำ (ประหยัด token ราว 1 ใน 4 ของทุกรอบ)
+      const suggestNote = source === 'voice' ? '' : await suggest.buildContext(req.user.id).catch((e) => { console.error('suggest context error:', e.message); return ''; });
+      // เวลาปัจจุบัน (เปลี่ยนทุกนาที) ย้ายไปไว้ท้ายสุดของคำสั่งทั้งก้อน — ให้ส่วนหน้าที่ยาวและคงที่เหมือนเดิมทุกรอบ Google แคชคิดราคาถูกลงได้
+      const timeIdx = systemPrompt.lastIndexOf('\n\n[เวลาปัจจุบัน]');
+      const timeM = timeIdx >= 0 ? { index: timeIdx, 0: systemPrompt.slice(timeIdx) } : null;
+      const timeBlock = timeM ? timeM[0] : '';
+      const baseSystem = timeM ? systemPrompt.slice(0, timeM.index) : systemPrompt;
+      result = await ai.runAgent({ systemPrompt: baseSystem + (ext.hasExternal ? EXTERNAL_NOTE : '') + (gctx ? GROUP_NOTE(gctx.name, gctx.text) : '') + suggestNote + (liveCam ? LIVE_CAMERA_NOTE : '') + (req.body && req.body.interrupted === true ? INTERRUPT_NOTE : '') + (req.body && req.body.premiumVoice === true ? PREMIUM_BRIEF_NOTE : '') + timeBlock, history, tools });
     } catch (err) {
       console.error('AI error:', err.message);
       return res.status(502).json({ error: 'เลขาตอบไม่ได้ในตอนนี้ ลองส่งใหม่อีกครั้งนะครับ' });
