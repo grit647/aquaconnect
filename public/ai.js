@@ -2053,13 +2053,10 @@
       if (unclear) {   // มีเสียงแต่ฟังไม่ได้ความ (เสียงแทรก/ไมค์ไวเกิน) → ไม่ส่งเข้าเลขา ให้เลขาถามกลับสั้นๆ ขอพูดใหม่ (ถามไม่เกิน 2 ครั้งติด ถ้ายังเป็นอีกให้เงียบรอ ไม่วนพูดเสียค่าเสียง)
         unclearStreak++;
         setBotState('idle');
-        if (sts.on) { vCaption('(ฟังไม่ได้ความ — ไม่ส่งเข้ากลุ่ม)', null); resumeAfterTurn(); return; }
-        if (unclearStreak <= 2) {
-          const ask = 'ยังฟังไม่เข้าใจความหมายค่ะ ขอพูดอีกครั้งนะคะ';
-          if (voiceMode) vCaption('(ฟังไม่ได้ความ)', ask); else addBubble('hint', ask);
-          if (voiceMode ? !voicePaused : (ttsOn || realtime)) { speak(ask, afterSpeech); return; }
-        } else if (voiceMode) vCaption('(ฟังไม่ได้ความ)', null);
+        // ฟังไม่ได้ความ = เงียบ ไม่พูดถามซ้ำ ไม่ส่งเข้าเลขา (ประหยัดทั้งค่าเสียงพรีเมียมและ token) แล้วฟังต่อ
+        if (voiceMode) vCaption('(ฟังไม่ได้ความ)', null);
         if (voiceMode && (++idleCycles, !sts.on && idleCycles >= IDLE_LIMIT)) { pauseVoice('ฟังไม่ได้ความนานแล้ว หยุดฟังชั่วคราวค่ะ — แตะไมค์เพื่อคุยต่อ'); return; }
+        if (sts.on) { resumeAfterTurn(); return; }
         if (realtime) startListening();
         return;
       }
