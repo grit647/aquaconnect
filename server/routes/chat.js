@@ -388,7 +388,15 @@ router.post('/conversations/:id/messages', async (req, res) => {
     if (focusCategory) {
       const isGuide = require('../memory').isGuideCategory(focusCategory);
       const old = isGuide ? [] : await recallMemories(req.user.id, focusCategory, 15).catch(() => []);
-      if (isGuide) focusBlock = 'หมวดนี้คือคู่มือการใช้งานแพลตฟอร์ม (ทีมงานเขียน อ่านอย่างเดียว) — ผู้ใช้อยากให้คุณอธิบายวิธีใช้แอป ตอบจากคู่มือนี้เท่านั้น ห้ามบันทึก/อัปเดตข้อมูลลงหมวดนี้ และไม่ต้องถามว่าจะอัปเดตหมวด:\n' + require('../platformGuide').fullText();
+      if (isGuide) {
+        // ค้นคู่มือฝั่งเซิร์ฟเวอร์ตั้งแต่ก่อนเรียกโมเดล: แนบเฉพาะ 2 หัวข้อที่ตรงกับคำถาม (ไม่แนบทั้งฉบับ ~9k token) → ตอบได้ในโมเดลรอบเดียว ไม่ต้องวนเรียกเครื่องมือ (ประหยัดทั้งความยาวและจำนวนรอบ)
+        const pgLib = require('../platformGuide');
+        const userTexts = hist.rows.filter((m) => m.role === 'user').slice(-2).map((m) => m.content);
+        let found = pgLib.search(content, 2);
+        if (!found.length && userTexts.length) found = pgLib.search(userTexts.join(' ') + ' ' + content, 2);   // คำถามต่อเนื่องที่ไม่มีคำสำคัญ ("แล้วอันนั้นล่ะ") ใช้เรื่องที่เพิ่งคุยช่วย
+        focusBlock = 'หมวดนี้คือคู่มือการใช้งานแพลตฟอร์ม (ทีมงานเขียน อ่านอย่างเดียว) — ผู้ใช้อยากให้คุณอธิบายวิธีใช้แอป ตอบจากหัวข้อคู่มือด้านล่างนี้เท่านั้น (ระบบค้นมาให้แล้วจากคำถามล่าสุด ไม่ได้แนบคู่มือทั้งฉบับ) ถ้าหัวข้อด้านล่างยังไม่ตอบคำถาม ให้เรียก platform_guide ค้นด้วยคำอื่นอีกครั้ง ห้ามเดาชื่อปุ่ม ห้ามบันทึก/อัปเดตข้อมูลลงหมวดนี้ และไม่ต้องถามว่าจะอัปเดตหมวด:\n' +
+          (found.length ? found.map((s) => '### ' + s.title + '\n' + s.text).join('\n\n') : 'ไม่พบหัวข้อที่ตรงกับคำถามล่าสุด หัวข้อที่มีในคู่มือ: ' + pgLib.index().join(' | '));
+      }
       else focusBlock = [`หมวด "${focusCategory}" ข้อมูลเดิม ${old.length} รายการ:`, ...(old.length ? old.map((o) => '- ' + o.content) : ['(ยังไม่มีข้อมูล เป็นหมวดใหม่)'])].join('\n');
     }
     if (!user) return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบก่อน' });

@@ -105,9 +105,11 @@ function buildTools(userId, conversationId, opts = {}) {
       },
       run: async (args) => {
         const pg = require('./platformGuide');
-        const hits = pg.search(args && args.topic, 3);
+        const all = pg.search(args && args.topic, 4);
+        const hits = all.slice(0, 2);   // ส่งเนื้อหาเต็มแค่ 2 หัวข้อที่ตรงที่สุด (ประหยัด token) ที่เหลือส่งแค่ชื่อ
         if (!hits.length) return { found: false, topics: pg.index(), note: 'ไม่พบหัวข้อตรงๆ — เลือกหัวข้อที่ใกล้เคียงจากรายการแล้วเรียกใหม่ หรือบอกผู้ใช้ว่ายังไม่มีข้อมูลเรื่องนี้ในคู่มือ' };
-        return { found: true, sections: hits.map((s) => ({ title: s.title, text: s.text })), otherTopics: pg.index() };
+        const more = all.slice(2).map((s) => s.title);
+        return { found: true, sections: hits.map((s) => ({ title: s.title, text: s.text })), ...(more.length ? { moreTopics: more, note: 'ถ้าสองหัวข้อนี้ไม่ตรงคำถาม ให้ค้นใหม่ด้วยคำอื่น หรือค้นชื่อหัวข้อใน moreTopics' } : {}) };
       },
     },
     search_album: {

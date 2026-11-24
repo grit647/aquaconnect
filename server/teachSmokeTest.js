@@ -157,7 +157,9 @@ async function call(method, path, body, cookie) {
   check('ค้นคู่มือ: "ข้อความสีเทาในช่องพิมพ์คืออะไร" เจอหัวข้อคำแนะนำจากเลขา', gTitles('ข้อความสีเทาในช่องพิมพ์คืออะไร').includes('คำแนะนำจากเลขา'), gTitles('ข้อความสีเทาในช่องพิมพ์คืออะไร'));
   const tools = require('./secretary').buildTools(uidB, null, {});
   const gr = await tools.platform_guide.run({ topic: 'ตั้งปฏิทิน' });
-  check('เครื่องมือ platform_guide ใช้ได้ คืนหัวข้อที่เกี่ยวข้อง + รายการหัวข้อทั้งหมด', gr.found === true && gr.sections[0].title.includes('ปฏิทิน') && gr.otherTopics.length === guideLib.SECTIONS.length);
+  check('เครื่องมือ platform_guide ใช้ได้ คืนหัวข้อที่เกี่ยวข้อง (เนื้อหาเต็มไม่เกิน 2 หัวข้อ ไม่แนบรายการหัวข้อทั้งหมด)', gr.found === true && gr.sections[0].title.includes('ปฏิทิน') && gr.sections.length <= 2 && gr.otherTopics === undefined);
+  const grWide = await tools.platform_guide.run({ topic: 'เสียง' });
+  check('ค้นคำกว้างๆ (เสียง) → ผลที่ส่งให้โมเดลเล็กลง: เนื้อหาเต็ม ≤ 2 หัวข้อ + แค่ชื่อหัวข้อที่ใกล้เคียง', grWide.sections.length <= 2 && Array.isArray(grWide.moreTopics) && JSON.stringify(grWide).length < 6500, String(JSON.stringify(grWide).length));
   const gn = await tools.platform_guide.run({ topic: 'zzzqqq' });
   check('platform_guide ไม่พบ → found=false พร้อมรายการหัวข้อ ไม่แต่งเอง', gn.found === false && gn.topics.length === guideLib.SECTIONS.length);
   check('system prompt สั่งให้เรียก platform_guide เวลาถามวิธีใช้ และไม่ให้เดาชื่อปุ่ม', require('./secretary').buildSystemPrompt({ secretaryName: 'ทดสอบ', userName: 'ทดสอบ' }).includes('เรียก platform_guide ก่อนตอบ'));
@@ -171,6 +173,16 @@ async function call(method, path, body, cookie) {
   check('ไม่ได้เลือกหมวด → ไม่มีโหมดอัปเดตหมวด', !lastChatPrompt.includes('**ตอนนี้ผู้ใช้เลือกคุยต่อ'));
   await call('POST', `/api/chat/conversations/${convF.id}/messages`, { content: 'หมวดคนอื่น', focusCategory: 'วิชาการ' }, B.cookie);
   check('เลือกหมวดที่ไม่มีของตัวเอง → ไม่เห็นข้อมูลของคนอื่น', lastChatPrompt.includes('ยังไม่มีข้อมูล เป็นหมวดใหม่') && !lastChatPrompt.includes('pH'));
+
+  // ---------- หมวด "การใช้งานแพลตฟอร์ม": ไม่แนบคู่มือทั้งฉบับ แนบเฉพาะหัวข้อที่ค้นเจอจากคำถาม ----------
+  const guideFocusName = require('./memory').GUIDE_CATEGORY;
+  await call('POST', `/api/chat/conversations/${convF.id}/messages`, { content: 'ตั้งปฏิทินเตือนนัดทำยังไง', focusCategory: guideFocusName }, B.cookie);
+  const gp = lastChatPrompt;
+  const fullLen = guideLib.fullText().length;
+  check('คุยในหมวดคู่มือ → แนบเฉพาะหัวข้อที่ตรงกับคำถาม (ปฏิทิน) ไม่แนบคู่มือทั้งฉบับ (prompt สั้นกว่าแนบทั้งฉบับมาก)', gp.includes('ปฏิทิน') && gp.includes('ระบบค้นมาให้แล้ว') && !gp.includes('เสียงเลขาพรีเมียม (เสียงธรรมชาติ)') && gp.length < 20000 && guideLib.search('ตั้งปฏิทินเตือนนัดทำยังไง', 2).every((s) => gp.includes(s.title)), String(gp.length) + ' vs เต็มฉบับ +' + fullLen);
+  const convG = (await call('POST', '/api/chat/conversations', {}, B.cookie)).json.conversation;   // บทสนทนาใหม่ ไม่มีประวัติให้ใช้ช่วยค้น
+  await call('POST', `/api/chat/conversations/${convG.id}/messages`, { content: 'zzzqqq', focusCategory: guideFocusName }, B.cookie);
+  check('คำถามที่ค้นไม่เจอในหมวดคู่มือ → แนบแค่รายชื่อหัวข้อ + ให้โมเดลค้นด้วยเครื่องมือ (ไม่เดา ไม่แนบทั้งฉบับ)', lastChatPrompt.includes('ไม่พบหัวข้อที่ตรงกับคำถามล่าสุด') && lastChatPrompt.includes('platform_guide'));
 
   // ---------- กลับเข้าแอป: สรุปบทสนทนาค้างแยกหมวด ----------
   const org = require('./organize');
