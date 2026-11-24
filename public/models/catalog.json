@@ -1,0 +1,6 @@
+[
+  { "id": "classic", "name": "บอทเดิม", "src": "/models/bot.glb" },
+  { "id": "sky", "name": "บอทฟ้า", "src": "/models/bot.glb", "tint": [0.55, 0.8, 1, 1] },
+  { "id": "mint", "name": "บอทมิ้นต์", "src": "/models/bot.glb", "tint": [0.6, 1, 0.8, 1] },
+  { "id": "rose", "name": "บอทชมพู", "src": "/models/bot.glb", "tint": [1, 0.7, 0.8, 1] }
+]
