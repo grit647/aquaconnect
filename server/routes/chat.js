@@ -63,10 +63,6 @@ function liveLimited(userId) {
   list.push(now); liveRecent.set(userId, list); liveToday.set(userId, { day, count: count + 1 });
   return null;
 }
-const INTERRUPT_NOTE = `
-
-[ผู้ใช้เพิ่งพูดแทรก] ข้อความล่าสุดของคุณถูกตัดกลางคัน เพราะผู้ใช้พูดแทรกตอนคุณยังพูดไม่จบ — ตอบสิ่งที่เขาพูดแทรกเลย สั้นๆ ไม่ต้องเล่าต่อจากที่ค้างไว้ ไม่ต้องขอโทษซ้ำๆ ถ้าเขาบอกให้หยุดหรือเปลี่ยนเรื่อง ให้ทำตาม
-`;
 const LIVE_FRAME_NAME = 'กล้องสด.jpg';
 const LIVE_CAMERA_NOTE = `
 
@@ -428,7 +424,7 @@ router.post('/conversations/:id/messages', async (req, res) => {
       const timeM = timeIdx >= 0 ? { index: timeIdx, 0: systemPrompt.slice(timeIdx) } : null;
       const timeBlock = timeM ? timeM[0] : '';
       const baseSystem = timeM ? systemPrompt.slice(0, timeM.index) : systemPrompt;
-      result = await ai.runAgent({ systemPrompt: baseSystem + (ext.hasExternal ? EXTERNAL_NOTE : '') + (gctx ? GROUP_NOTE(gctx.name, gctx.text) : '') + suggestNote + (liveCam ? LIVE_CAMERA_NOTE : '') + (req.body && req.body.interrupted === true ? INTERRUPT_NOTE : '') + (req.body && req.body.premiumVoice === true ? PREMIUM_BRIEF_NOTE : '') + timeBlock, history, tools });
+      result = await ai.runAgent({ systemPrompt: baseSystem + (ext.hasExternal ? EXTERNAL_NOTE : '') + (gctx ? GROUP_NOTE(gctx.name, gctx.text) : '') + suggestNote + (liveCam ? LIVE_CAMERA_NOTE : '') + (req.body && req.body.premiumVoice === true ? PREMIUM_BRIEF_NOTE : '') + timeBlock, history, tools });
     } catch (err) {
       console.error('AI error:', err.message);
       return res.status(502).json({ error: 'เลขาตอบไม่ได้ในตอนนี้ ลองส่งใหม่อีกครั้งนะครับ' });
