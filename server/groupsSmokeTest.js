@@ -20,13 +20,14 @@ const groupAiPrompts = [];                // prompt ที่เลขาใน�
 let relCalls = 0;
 let agendaReply = '{"issues":["ราคากุ้งช่วงนี้","การดูแลน้ำในบ่อ","โรคที่พบบ่อย"]}';
 let agendaCalls = 0;
+let lastAgendaPrompt = '';
 ai.setCallModelForTests(async ({ systemPrompt, contents, toolDeclarations }) => {
   lastToolNames = (toolDeclarations || []).map((t) => t.name);
   if (systemPrompt.includes('กำลังจดบันทึกส่วนตัวว่าเพิ่งได้ "รู้จัก"')) {
     relCalls++;
-    return { parts: [{ text: '{"people":[{"name":"ผู้ชมทดสอบ","note":"สนใจเรื่องกุ้งและชอบทักทายก่อน"}]}' }], usage: {} };
+    return { parts: [{ text: '{"people":[{"name":"ผู้ชมทดสอบ","note":"สนใจเรื่องกุ้งและชอบทักทายก่อน"}],"skills":["ฝึกจดอุณหภูมิน้ำทุกเช้าลงสมุด"]}' }], usage: {} };
   }
-  if (systemPrompt.includes('ช่วยตั้ง "ประเด็นสนทนา"')) { agendaCalls++; return { parts: [{ text: agendaReply }], usage: {} }; }
+  if (systemPrompt.includes('ช่วยตั้ง "ประเด็นสนทนา"')) { agendaCalls++; lastAgendaPrompt = systemPrompt + '\n' + JSON.stringify(contents); return { parts: [{ text: agendaReply }], usage: {} }; }
   if (systemPrompt.includes('กำลังร่วมสนทนาในกลุ่มแชท')) {
     groupAiPrompts.push(systemPrompt + '\n' + JSON.stringify(contents));
     const t = typeof groupAiText === 'function' ? groupAiText(systemPrompt) : groupAiText;
@@ -312,11 +313,45 @@ const lastReply = () => { const r = sent.filter((s) => s.path === '/message/repl
   check('จากตาที่ 2 เป็นต้นไป บอกเลขาว่าตัวเองเพิ่งพูดอะไรไป (ห้ามพูดซ้ำ) + ให้ให้เนื้อหา/ความเห็นต่อยอด ไม่ใช่คล้อยตามอย่างเดียว', pr[2].includes('สิ่งที่คุณเพิ่งพูดไปแล้ว') && pr[2].includes('สวัสดีครับ ยินดีที่ได้รู้จักนะครับ') && pr[0].includes('ความเห็น') && pr[0].includes('คล้อยตามอย่างเดียว'));
   agendaReply = 'ขอโทษ ตอบเป็นข้อความธรรมดา ไม่ใช่ JSON';
   const fb = await runSession('');
-  check('ถ้าเลขาตั้งประเด็นไม่สำเร็จ (ตอบไม่เป็น JSON) → ใช้ประเด็นสำรอง 3 ข้อ ไม่ล้ม', fb.agenda.length === 3 && fb.agenda[0].includes('ตลาด') && fb.agendaCalls === 1, JSON.stringify(fb.agenda));
+  check('ถ้าเลขาตั้งประเด็นไม่สำเร็จ (ตอบไม่เป็น JSON) → ใช้ประเด็นสำรอง 3 ข้อ ไม่ล้ม', fb.agenda.length === 3 && fb.agenda[0].includes('เก่งหรือมีประสบการณ์') && fb.agendaCalls === 1, JSON.stringify(fb.agenda));
   agendaReply = '{"issues":["ราคากุ้งช่วงนี้","การดูแลน้ำในบ่อ","โรคที่พบบ่อย"]}';
   gai.setPaceForTests(0, 4);
   await query("DELETE FROM memories WHERE owner_id = ANY($1) AND content LIKE '[รู้จักกัน]%'", [[idA1, uidB]]);
   await runSession('ทำความรู้จักกัน');
+
+  // ---------- ประเด็น/บริบทจากโปรไฟล์ของ "ทุกคนที่ร่วม" + ตอบคนจริงก่อน + สกิลหลังจบช่วง ----------
+  await query("UPDATE users SET occupation_main = 'นักเรียน / นักศึกษา', occupation_sub = 'ประถมศึกษา', occupation_detail = 'ป.1' WHERE id = $1", [idA1]);
+  await query("UPDATE users SET occupation_main = 'เกษตรกร / ประมง / ปศุสัตว์', occupation_sub = 'ทำประมง' WHERE id = $1", [uidB]);
+  await query("DELETE FROM memory_proposals WHERE owner_id = ANY($1)", [[idA1, uidB]]);
+  const prof = await runSession('');
+  check('ประเด็นที่เลขาตั้งเองดูโปรไฟล์ของ "ทุกคนที่ร่วม" (ไม่ใช่แค่ผู้เริ่ม/ชื่อกลุ่ม) + หลักการพัฒนาคนที่รู้น้อยสุด + ข้อมูลกลุ่มเป็นแค่ข้อมูลประกอบ',
+    lastAgendaPrompt.includes('ประถมศึกษา') && lastAgendaPrompt.includes('ทำประมง') && /วิเคราะห์โปรไฟล์ของ "ทุกคน"/.test(lastAgendaPrompt) && /พัฒนา "คนที่วัยน้อยสุดหรือความรู้\/ประสบการณ์น้อยสุด"/.test(lastAgendaPrompt) && /ข้อมูลประกอบเท่านั้น/.test(lastAgendaPrompt));
+  const pp0 = prof.prompts[0] || '';
+  check('เลขาแต่ละตัวสวมบริบทเท่ากับเจ้าของ: เห็นโปรไฟล์ตัวเอง (← เจ้าของคุณ) + โปรไฟล์สมาชิกทุกคนในวง + เป้าหมายพัฒนาคนที่รู้น้อยสุด + ห้ามพูดเหมือนผู้เชี่ยวชาญนอกบริบทเจ้าของ',
+    pp0.includes('สวมบริบทเท่ากับเจ้าของ') && pp0.includes('← เจ้าของคุณ') && pp0.includes('ประถมศึกษา') && pp0.includes('ทำประมง') && pp0.includes('ห้ามพูดเหมือนผู้เชี่ยวชาญในเรื่องที่เจ้าของไม่ได้เชี่ยวชาญ') && pp0.includes('คนที่วัยน้อยสุดหรือความรู้/ประสบการณ์น้อยสุดในวง'));
+  check('กติกาเนื้อหา: ทุกข้อความต้องมีสาระใหม่ ห้ามแค่เห็นด้วย + ห้ามประกาศเปลี่ยนประเด็นเอง', pp0.includes('ทุกข้อความต้องมีสาระใหม่อย่างน้อย 1 อย่าง') && pp0.includes('ห้ามประกาศเปลี่ยนประเด็นเอง'));
+  const skillProps = (await query("SELECT owner_id, content FROM memory_proposals WHERE category = 'ทักษะที่กำลังฝึก' AND status = 'pending' AND owner_id = ANY($1)", [[idA1, uidB]])).rows;
+  check('จบช่วงแล้วเลขาเสนอ "ทักษะที่กำลังฝึก" ให้เจ้าของยืนยัน (เป็นข้อเสนอรอยืนยัน ยังไม่บันทึกเอง)', skillProps.length >= 1 && skillProps.every((x) => x.content.includes('ฝึก')) && (await query("SELECT count(*)::int n FROM memories m JOIN memory_categories c ON c.id = m.category_id WHERE c.name = 'ทักษะที่กำลังฝึก' AND m.owner_id = ANY($1)", [[idA1, uidB]])).rows[0].n === 0, String(skillProps.length));
+
+  // ตอบคนจริงก่อน: มีข้อความคนจริงที่ยังไม่มีใครตอบ → ตาถัดไปต้องตอบเขา และไม่นับเป็นข้อความที่ขยับประเด็น
+  await query('DELETE FROM chat_group_ai_sessions WHERE group_id = $1', [gid]);
+  gai.setPaceForTests(60000, 30);
+  const baseQ = groupAiPrompts.length;
+  await call('POST', `/api/groups/${gid}/ai-session`, { topic: 'ทดสอบถามตอบ' }, A.cookie);
+  await call('POST', `/api/groups/${gid}/ai-session/respond`, { accept: true }, B.cookie);
+  await query("INSERT INTO chat_group_messages (group_id, user_id, content) VALUES ($1, $2, 'ช่วยอธิบายให้น้องตังเข้าใจหน่อยว่าข้อมูลคืออะไร')", [gid, idA1]);
+  await waitFor(async () => groupAiPrompts.length > baseQ, 8000);
+  await sleep(500);
+  const qp = groupAiPrompts[baseQ] || '';
+  const sess1 = (await query('SELECT messages FROM chat_group_ai_sessions WHERE group_id = $1 AND ended_at IS NULL', [gid])).rows[0];
+  check('มีข้อความคนจริงที่ยังไม่มีใครตอบ → ตาถัดไปได้คำสั่งให้ตอบเขาก่อน (พร้อมข้อความจริง) + ถ้าอ่านไม่รู้เรื่องให้ขอพิมพ์ใหม่ + ห้ามข้ามประเด็นในตานั้น',
+    qp.includes('มีคนจริงพิมพ์เข้ามาและยังไม่มีใครตอบ') && qp.includes('ช่วยอธิบายให้น้องตังเข้าใจหน่อยว่าข้อมูลคืออะไร') && qp.includes('ตอบ "เขา" โดยตรงเป็นเรื่องแรก') && qp.includes('ขอให้พิมพ์ใหม่') && qp.includes('ห้ามเปลี่ยนไปประเด็นถัดไป'));
+  check('ตาที่ตอบคนจริงไม่นับเป็นข้อความที่ขยับประเด็น (messages ยังเป็น 0) แต่เลขาพูดจริง', sess1 && sess1.messages === 0 && (await query("SELECT count(*)::int n FROM chat_group_messages WHERE group_id = $1 AND is_ai AND ai_depth = 99", [gid])).rows[0].n >= 1);
+  await call('DELETE', `/api/groups/${gid}/ai-session`, null, A.cookie);
+  await gai.flushAll(gid);
+  await query('DELETE FROM chat_group_ai_sessions WHERE group_id = $1', [gid]);
+  gai.setPaceForTests(0, 4, 2);
+  await query("UPDATE users SET occupation_main = NULL, occupation_sub = NULL, occupation_detail = NULL WHERE id = ANY($1)", [[idA1, uidB]]);
 
   // เลขารู้จักคนในกลุ่มนี้ และไม่เอาของกลุ่มอื่นมาใช้
   const g2id = g2.json.group.id;
@@ -339,7 +374,7 @@ const lastReply = () => { const r = sent.filter((s) => s.path === '/message/repl
   const listBc = (await call('GET', '/api/groups', null, B.cookie)).json.groups.find((x) => x.id === gid);
   const listAc = (await call('GET', '/api/groups', null, A.cookie)).json.groups.find((x) => x.id === gid);
   check('เริ่มช่วง → ผู้เริ่มยอมรับอัตโนมัติ / B (ติ๊กร่วมคุยไว้) สถานะ "รอยอมรับ" + มีป้ายที่การ์ดกลุ่มของ B เท่านั้น', cs.status === 200 && sA.myConsent === 'accepted' && sB.myConsent === 'pending' && sB.pendingCount === 1 && listBc.aiConsentPending === true && listAc.aiConsentPending === false, JSON.stringify({ sA: sA && sA.myConsent, sB: sB && sB.myConsent }));
-  check('มีข้อความระบบแจ้งในห้องว่ารอสมาชิกกดยอมรับ', (await call('GET', `/api/groups/${gid}/messages`, null, A.cookie)).json.messages.some((m) => m.isSystem && /กดยอมรับ/.test(m.content)));
+  check('มีข้อความระบบแจ้งในห้องว่ารอสมาชิกกดยอมรับ', (await call('GET', `/api/groups/${gid}/messages`, null, A.cookie)).json.messages.some((m) => m.isSystem && /กดยอมรับ/.test(m.content) && /โปรไฟล์/.test(m.content)));
   await sleep(4000);   // ผ่านตาแรกของช่วงไปแล้ว
   check('B ยังไม่กดยอมรับ → เลขาของ B ไม่ถูกดึงมาพูดเอง (ไม่มีข้อความเลขาเลย) และช่วงยังรออยู่', (await aiCount()) === ai0 && (await query('SELECT 1 FROM chat_group_ai_sessions WHERE group_id = $1 AND ended_at IS NULL', [gid])).rows.length === 1, String((await aiCount()) - ai0));
   const rC = await call('POST', respondUrl, { accept: true }, C.cookie);

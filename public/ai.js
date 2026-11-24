@@ -332,7 +332,7 @@
     // เจ้าของเลขาที่ถูกขอ (ติ๊กร่วมคุยไว้) ต้องกดยอมรับเอง เลขาถึงจะร่วมช่วงนี้ — ไม่กด = ไม่ร่วม
     if (sess.myConsent === 'pending') {
       cons.hidden = false;
-      gEl('grpConsentText').textContent = '🤖 ' + (sess.starterName || 'สมาชิก') + ' เริ่มช่วงให้เลขาคุยกันเอง — ให้เลขาของคุณร่วมไหม? (เลขาจะไม่พูดถ้าคุณไม่กดยอมรับ)';
+      gEl('grpConsentText').textContent = '🤖 ' + (sess.starterName || 'สมาชิก') + ' เริ่มช่วงให้เลขาคุยกันเอง — ให้เลขาของคุณร่วมไหม? (เลขาจะใช้สถานะ/อาชีพในโปรไฟล์ของคุณเป็นบริบทในการคุย ไม่ใช้ความจำส่วนตัว และจะไม่พูดถ้าคุณไม่กดยอมรับ)';
     } else cons.hidden = true;
     const endAt = Date.now() + sess.secondsLeft * 1000;
     const paint = () => {
