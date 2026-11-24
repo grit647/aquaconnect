@@ -34,6 +34,8 @@ const SETTINGS = {
   imagegen_credits_per_image: { label: 'เจนภาพ: เกินโควตาฟรีแล้วหักกี่เครดิตต่อภาพ', min: 0, max: 1000 },
   imagegen_cost_thb_per_image: { label: 'เจนภาพ: ต้นทุนจริงของเราต่อภาพ (บาท) ใช้คิดงบรวม — ประมาณการ ตรวจจากบิล Google Cloud แล้วปรับ', min: 0, max: 1000 },
   imagegen_monthly_budget_thb: { label: 'เจนภาพ: งบรวมของแพลตฟอร์มต่อเดือน (บาท) ครบแล้วปิดทั้งระบบ (0 = ปิดเจนภาพทั้งหมด)', min: 0, max: 100000 },
+  save_ask_min_total: { label: 'เลขาถามเรื่องบันทึกข้อมูลได้เมื่อผู้ใช้พิมพ์ในบทสนทนานั้นอย่างน้อยกี่ข้อความ (มีรายละเอียดมากพอ)', min: 1, max: 100 },
+  save_ask_min_gap: { label: 'หลังเลขาถามเรื่องบันทึกข้อมูลแล้ว ต้องห่างกันอย่างน้อยกี่ข้อความของผู้ใช้ ถึงถามซ้ำได้', min: 1, max: 200 },
   tts_voice_index: { label: 'เสียงพรีเมียม: เลือกเสียง (0 Kore, 1 Aoede, 2 Zephyr, 3 Leda, 4 Puck, 5 Charon)', min: 0, max: 5 },
   album_max_photos: { label: 'อัลบั้มรูป: เก็บรูปได้สูงสุดกี่รูปต่อคน', min: 1, max: 1000 },
   album_max_mb: { label: 'อัลบั้มรูป: ขนาดรวมของรูปต่อคน (MB)', min: 1, max: 1000 },

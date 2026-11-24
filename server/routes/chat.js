@@ -13,6 +13,7 @@ const { nowText } = require('../calendar');
 const { pendingCount } = sharing;
 
 const suggest = require('../suggest');
+const askGate = require('../askGate');
 const tts = require('../tts');
 const router = express.Router();
 router.use(requireAuth);
@@ -428,11 +429,18 @@ router.post('/conversations/:id/messages', async (req, res) => {
       // โหมดเสียง (source = voice) หน้าจอไม่แสดงข้อความสีเทา → ไม่ต่อท้ายคำสั่งสร้างคำแนะนำ (ประหยัด token ราว 1 ใน 4 ของทุกรอบ)
       const suggestNote = source === 'voice' ? '' : await suggest.buildContext(req.user.id).catch((e) => { console.error('suggest context error:', e.message); return ''; });
       // เวลาปัจจุบัน (เปลี่ยนทุกนาที) ย้ายไปไว้ท้ายสุดของคำสั่งทั้งก้อน — ให้ส่วนหน้าที่ยาวและคงที่เหมือนเดิมทุกรอบ Google แคชคิดราคาถูกลงได้
+      // ตัวคุมความถี่ "ถามว่าจะบันทึกไหม": อนุญาตเมื่อคุยมามากพอ และห่างจากครั้งที่ถามล่าสุดพอ (ปรับได้ที่หลังบ้าน save_ask_min_total / save_ask_min_gap)
+      const [gateCfg, gateRowsQ] = await Promise.all([
+        query("SELECT key, value FROM app_settings WHERE key = ANY($1)", [['save_ask_min_total', 'save_ask_min_gap']]),
+        query('SELECT role, content FROM messages WHERE conversation_id = $1 ORDER BY id DESC LIMIT 60', [conv.id]),
+      ]);
+      const cfgNum = (k, d) => { const r = gateCfg.rows.find((x) => x.key === k); const n = Number(r && r.value); return Number.isFinite(n) && n >= 0 ? n : d; };
+      const gate = askGate.evaluate(gateRowsQ.rows.slice().reverse(), { minTotal: cfgNum('save_ask_min_total', askGate.DEFAULTS.minTotal), minGap: cfgNum('save_ask_min_gap', askGate.DEFAULTS.minGap) });
       const timeIdx = systemPrompt.lastIndexOf('\n\n[เวลาปัจจุบัน]');
       const timeM = timeIdx >= 0 ? { index: timeIdx, 0: systemPrompt.slice(timeIdx) } : null;
       const timeBlock = timeM ? timeM[0] : '';
       const baseSystem = timeM ? systemPrompt.slice(0, timeM.index) : systemPrompt;
-      result = await ai.runAgent({ systemPrompt: baseSystem + (ext.hasExternal ? EXTERNAL_NOTE : '') + (gctx ? GROUP_NOTE(gctx.name, gctx.text) : '') + suggestNote + (liveCam ? LIVE_CAMERA_NOTE : '') + (req.body && req.body.premiumVoice === true ? PREMIUM_BRIEF_NOTE : '') + timeBlock, history, tools });
+      result = await ai.runAgent({ systemPrompt: baseSystem + (ext.hasExternal ? EXTERNAL_NOTE : '') + (gctx ? GROUP_NOTE(gctx.name, gctx.text) : '') + suggestNote + (liveCam ? LIVE_CAMERA_NOTE : '') + (req.body && req.body.premiumVoice === true ? PREMIUM_BRIEF_NOTE : '') + askGate.noteFor(gate) + (gate.allowed ? '' : '\n(รอบนี้ห้ามแนะนำข้อความถัดไปที่เกี่ยวกับการบันทึก/จดความจำ)') + timeBlock, history, tools });
     } catch (err) {
       console.error('AI error:', err.message);
       return res.status(502).json({ error: 'เลขาตอบไม่ได้ในตอนนี้ ลองส่งใหม่อีกครั้งนะครับ' });

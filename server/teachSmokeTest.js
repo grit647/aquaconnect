@@ -184,6 +184,18 @@ async function call(method, path, body, cookie) {
   await call('POST', `/api/chat/conversations/${convG.id}/messages`, { content: 'zzzqqq', focusCategory: guideFocusName }, B.cookie);
   check('คำถามที่ค้นไม่เจอในหมวดคู่มือ → แนบแค่รายชื่อหัวข้อ + ให้โมเดลค้นด้วยเครื่องมือ (ไม่เดา ไม่แนบทั้งฉบับ)', lastChatPrompt.includes('ไม่พบหัวข้อที่ตรงกับคำถามล่าสุด') && lastChatPrompt.includes('platform_guide'));
 
+  // ---------- ตัวคุมความถี่ "ถามว่าจะบันทึกไหม" ----------
+  const convQ = (await call('POST', '/api/chat/conversations', {}, B.cookie)).json.conversation;
+  await call('POST', `/api/chat/conversations/${convQ.id}/messages`, { content: 'สวัสดี วันนี้เป็นไงบ้าง' }, B.cookie);
+  check('คุยข้อความแรก → ระบบสั่งเลขา "ห้ามถาม" เรื่องบันทึก (คุยมาน้อย)', lastChatPrompt.includes('[ถามเรื่องบันทึกข้อมูล: ตอนนี้ห้ามถาม]') && lastChatPrompt.includes('ห้ามแนะนำข้อความถัดไปที่เกี่ยวกับการบันทึก'));
+  for (let i = 2; i <= 6; i++) await call('POST', `/api/chat/conversations/${convQ.id}/messages`, { content: 'ข้อความที่ ' + i + ' เรื่องบ่อกุ้ง' }, B.cookie);
+  check('คุยมา 6 ข้อความ (มีรายละเอียดพอ) → ถามเรื่องบันทึกได้ 1 ครั้ง (ให้สรุปสิ่งที่จะเก็บ) และไม่ห้ามข้อความสีเทา', lastChatPrompt.includes('[ถามเรื่องบันทึกข้อมูล: ถามได้ 1 ครั้งเมื่อถึงจังหวะ]') && !lastChatPrompt.includes('ห้ามแนะนำข้อความถัดไปที่เกี่ยวกับการบันทึก'));
+  await query("INSERT INTO messages (conversation_id, user_id, role, content, source) VALUES ($1, $2, 'assistant', 'อยากให้เลขาบันทึกสาระที่คุยกันไว้ในหมวดฟาร์มไหมคะ', 'text')", [convQ.id, uidB]);
+  await call('POST', `/api/chat/conversations/${convQ.id}/messages`, { content: 'ไม่ต้องจดนะ ขอถามต่อเรื่องอาหารกุ้ง' }, B.cookie);
+  check('หลังเลขาเพิ่งถามบันทึกไป → ห้ามถามซ้ำ (ต้องคุยอีกหลายข้อความ) แม้ผู้ใช้ปฏิเสธ', lastChatPrompt.includes('[ถามเรื่องบันทึกข้อมูล: ตอนนี้ห้ามถาม]'));
+  await call('POST', `/api/chat/conversations/${convF.id}/messages`, { content: 'อัปเดตรอบใหม่', focusCategory: 'กุ้ง' }, B.cookie);
+  check('โหมดเลือกหมวด: เลิกสั่ง "จบแต่ละประเด็นให้ถาม" → ให้ทำตามตัวคุมของระบบแทน', !lastChatPrompt.includes('เมื่อจบแต่ละประเด็นให้สรุปสั้นๆ แล้วถามครั้งเดียว') && lastChatPrompt.includes('ทำตามส่วน [ถามเรื่องบันทึกข้อมูล]'));
+
   // ---------- กลับเข้าแอป: สรุปบทสนทนาค้างแยกหมวด ----------
   const org = require('./organize');
   const mkConv = async (uid, n, ageMin) => {
