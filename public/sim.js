@@ -31,7 +31,7 @@
     harvest: 'จับกุ้ง — เร็วๆ นี้ (เลือกไซส์/จังหวะ ดูราคาตลาด)',
   };
 
-  const state = { pond: 'culture', started: false, speed: 0 };
+  const state = { pond: 'culture', started: false, speed: 0, water: 0, cfg: null };
 
   // ----- สร้างการ์ดค่าน้ำ -----
   function renderParams() {
@@ -166,11 +166,27 @@
     $('nodeCulSub').textContent = i.rai + ' ไร่ • บ่อแห้ง'; $('nodeResSub').textContent = '7 ไร่ • น้ำ ' + resv.toFixed(1) + ' ม.';
     $('chipDay').textContent = 'ก่อนปล่อยกุ้ง'; $('chipTime').textContent = '06:00'; $('chipWx').textContent = sel('fProvince'); $('chipCash').textContent = '–';
     window.__pond3dCfg = { rai: i.rai, pe, water: 0, shrimp: 0 };
+    updateBars();
     $('setup').hidden = true;
     log('เริ่มเกม: ' + name + ' • ' + sel('fSpecies') + ' • ' + sel('fSystem') + ' • ความเค็ม ' + $('fSalinity').value + ' ppt • บ่อ ' + i.rai + ' ไร่ • ปล่อย ' + fmt(i.v) + ' ตัว • ระดับน้ำ ' + level.toFixed(1) + ' ม.');
     log('บ่อเลี้ยงยังไม่มีน้ำ — ขั้นต่อไป: เตรียมบ่อ → เตรียมน้ำ → ปล่อยกุ้ง จึงเข้าสู่โหมดเลี้ยง (ยังไม่เปิดใช้ในต้นแบบ)');
     log('บ่อพัก 7 ไร่ มีน้ำเริ่มต้น ' + resv.toFixed(1) + ' ม. (สุ่มให้ ต่ำสุด 1 ม. สูงสุด 3 ม.)');
   });
+
+  // ----- กราฟแท่ง "ระดับน้ำ" + "ความจุ" ใต้บ่อพัก/บ่อเลี้ยง (ความจุ = ปริมาตรน้ำ เทียบตอนเต็ม 3 ม. ของพื้นที่บ่อ) -----
+  function setBar(id, val, max, txt) { $(id + 'Bar').setAttribute('width', String(Math.max(0, Math.min(1, max ? val / max : 0)) * 120)); $(id + 'Txt').textContent = txt; }
+  function updateBars() {
+    const c = state.cfg;
+    if (!c) { ['resLv', 'resCap', 'culLv', 'culCap'].forEach((id) => setBar(id, 0, 1, id.indexOf('Lv') > 0 ? 'ระดับน้ำ –' : 'ความจุ –')); return; }
+    const one = (pfx, area, lv) => {
+      setBar(pfx + 'Lv', lv, 3, 'ระดับน้ำ ' + lv.toFixed(1) + ' / 3.0 ม.');
+      setBar(pfx + 'Cap', area * lv, area * 3, 'ความจุ ' + fmt(Math.round(area * lv)) + ' / ' + fmt(area * 3) + ' ลบ.ม.');
+    };
+    one('res', c.reservoir.rai * 1600, c.reservoir.level);
+    one('cul', c.rai * 1600, state.water || 0);
+    const t = $('culTick'); t.setAttribute('x1', String(456 + 120 * c.level / 3)); t.setAttribute('x2', String(456 + 120 * c.level / 3)); t.setAttribute('visibility', 'visible');
+  }
+  updateBars();
 
   // รูปโปรไฟล์ไลน์ของผู้เล่น แทนรูปกุ้งบนหัวหน้าตั้งค่า (ไม่มีรูป/ยังไม่ล็อกอิน = คงรูปกุ้งไว้)
   (async function () {
