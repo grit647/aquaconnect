@@ -25,9 +25,9 @@
     </div>
     <div class="speed" role="group" aria-label="ความเร็วเวลา">
       <button class="sp on" data-sp="0" title="หยุด">⏸</button>
-      <button class="sp" data-sp="1" title="ปกติ">▶</button>
-      <button class="sp" data-sp="2" title="เร็ว 2 เท่า">▶▶</button>
-      <button class="sp" data-sp="4" title="เร็ว 4 เท่า">▶▶▶</button>
+      <button class="sp" data-sp="1" title="เรียลไทม์ (1 วินาที = 1 วินาที)">▶</button>
+      <button class="sp" data-sp="60" title="เร็ว 60 เท่า (1 วินาที = 1 นาที)">▶▶</button>
+      <button class="sp" data-sp="600" title="เร็ว 600 เท่า (1 วินาที = 10 นาที)">▶▶▶</button>
     </div>
     <button class="btn ghost small" id="musicBtn" title="เพลงประกอบ" type="button">🎵</button>
     <button class="btn ghost small" id="fsBtn" title="เต็มจอ/ล็อกแนวนอน">⛶</button>
@@ -41,7 +41,9 @@
       <nav class="ponds" id="pondTabs">
         <button class="pond" data-pond="canal">① คลอง<small>แหล่งน้ำธรรมชาติ</small></button>
         <button class="pond" data-pond="reservoir">② บ่อพัก<small>เตรียมน้ำ/เติมน้ำ</small></button>
+        <button class="pump-btn" data-pump="reservoir" type="button">🚰 สูบน้ำ</button>
         <button class="pond on" data-pond="culture">③ บ่อเลี้ยง<small>กุ้งอยู่ตรงนี้</small></button>
+        <button class="pump-btn" data-pump="culture" type="button">🚰 สูบน้ำ</button>
       </nav>
       <section class="actions" id="actions">
         <div class="sec-t">จัดการ</div>
@@ -112,12 +114,12 @@
         <div class="sec-t">ต้นทุนสะสม</div>
         <div class="kv"><span>🦐 ลูกกุ้ง</span><b>–</b></div>
         <div class="kv"><span>🍤 อาหาร</span><b>–</b></div>
-        <div class="kv"><span>⚡ ค่าไฟ</span><b>–</b></div>
-        <div class="kv"><span>⛽ น้ำมัน</span><b>–</b></div>
+        <div class="kv"><span>⚡ ค่าไฟ</span><b id="costElec">–</b></div>
+        <div class="kv"><span>⛽ น้ำมัน</span><b id="costFuel">–</b></div>
         <div class="kv"><span>🧂 ปูน/สารเคมี</span><b>–</b></div>
         <div class="kv"><span>🧫 จุลินทรีย์</span><b>–</b></div>
         <div class="kv"><span>🧪 ค่าตรวจ/แรงงาน/อื่นๆ</span><b>–</b></div>
-        <div class="kv total"><span>รวมต้นทุน</span><b>–</b></div>
+        <div class="kv total"><span>รวมต้นทุน</span><b id="costTotal">–</b></div>
         <div class="sec-t">เทียบกับราคาขาย</div>
         <div class="kv"><span>ต้นทุน/กก. (ประมาณ)</span><b>–</b></div>
         <div class="kv"><span>ราคาขายวันนี้ (ตามไซส์)</span><b>–</b></div>
@@ -174,6 +176,19 @@
       <button class="btn" id="startBtn">▶ เริ่มเกม</button>
     </div>
     <div class="muted tiny">หน้านี้เป็นต้นแบบเพื่อดูการจัดวาง ยังไม่มีการคำนวณจริง</div>
+  </div>
+</div>
+
+<!-- สูบน้ำ -->
+<div id="pumpBox" class="modal" hidden style="z-index:50">
+  <div class="card pump-card">
+    <div class="card-t" id="pumpTitle">🚰 สูบน้ำ</div>
+    <div class="muted tiny" id="pumpInfo"></div>
+    <div class="row p-modes" id="pumpModes"><button class="btn small ghost" data-pm="engine" type="button">⛽ เครื่องยนต์ (ดีเซล)</button><button class="btn small ghost" data-pm="electric" type="button">⚡ มอเตอร์ไฟฟ้า</button></div>
+    <div id="pumpList"></div>
+    <div class="tiny" id="pumpEst"></div>
+    <div class="row"><button class="btn ghost" id="pumpClose" type="button">ปิด</button><button class="btn" id="pumpGo" type="button">▶ เริ่มสูบ</button></div>
+    <div class="muted tiny" id="pumpNote">ตัวเลขกำลังเครื่อง/ปริมาณน้ำ/อัตราสิ้นเปลือง เป็นค่าประมาณจากข้อมูลทั่วไป (ท่อ 3 นิ้ว 3 แรงม้า 2.25 kW ตามสเปกสินค้าในตลาด) ปรับให้ตรงของจริงภายหลังได้ • ราคาดีเซล ฿40/ลิตร • ไฟฟ้า ฿4/หน่วย</div>
   </div>
 </div>
 

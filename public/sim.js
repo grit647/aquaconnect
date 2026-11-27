@@ -80,15 +80,12 @@
   // ----- ปุ่มจัดการ (ยังไม่ทำงานจริง) -----
   qsa('[data-act]', $('actions')).forEach((b) => b.addEventListener('click', () => {
     if (!state.started) { toast('กด "เริ่มเกม" ก่อนครับ'); $('setup').hidden = false; return; }
+    if (b.dataset.act === 'pump') { if (state.pond === 'canal') { toast('คลองเป็นแหล่งน้ำธรรมชาติ — เลือก ② บ่อพัก หรือ ③ บ่อเลี้ยง แล้วกดสูบน้ำ'); return; } openPump(state.pond); return; }
     toast(ACTS[b.dataset.act] || 'เร็วๆ นี้');
   }));
 
   // ----- ความเร็วเวลา (ปุ่มเปลี่ยนสถานะอย่างเดียว) -----
-  qsa('.sp').forEach((b) => b.addEventListener('click', () => {
-    state.speed = Number(b.dataset.sp);
-    qsa('.sp').forEach((x) => x.classList.toggle('on', x === b));
-    if (state.started) toast(state.speed ? 'เดินเวลา ×' + state.speed + ' — เร็วๆ นี้ (ยังไม่มีแกนจำลอง)' : 'หยุดเวลา');
-  }));
+  qsa('.sp').forEach((b) => b.addEventListener('click', () => setSpeed(Number(b.dataset.sp))));
 
   // ----- เต็มจอ + ล็อกแนวนอน (ใช้ได้เฉพาะบางเบราว์เซอร์) -----
   $('fsBtn').addEventListener('click', async () => {
@@ -166,7 +163,8 @@
     $('nodeCulSub').textContent = i.rai + ' ไร่ • บ่อแห้ง'; $('nodeResSub').textContent = '7 ไร่ • น้ำ ' + resv.toFixed(1) + ' ม.';
     $('chipDay').textContent = 'ก่อนปล่อยกุ้ง'; $('chipTime').textContent = '06:00'; $('chipWx').textContent = sel('fProvince'); $('chipCash').textContent = '–';
     window.__pond3dCfg = { rai: i.rai, pe, water: 0, shrimp: 0 };
-    updateBars();
+    state.water = 0; state.simSec = 0; state.cost = { fuelL: 0, kwh: 0 }; state.pumps = { reservoir: null, culture: null };
+    refreshSim();
     $('setup').hidden = true;
     log('เริ่มเกม: ' + name + ' • ' + sel('fSpecies') + ' • ' + sel('fSystem') + ' • ความเค็ม ' + $('fSalinity').value + ' ppt • บ่อ ' + i.rai + ' ไร่ • ปล่อย ' + fmt(i.v) + ' ตัว • ระดับน้ำ ' + level.toFixed(1) + ' ม.');
     log('บ่อเลี้ยงยังไม่มีน้ำ — ขั้นต่อไป: เตรียมบ่อ → เตรียมน้ำ → ปล่อยกุ้ง จึงเข้าสู่โหมดเลี้ยง (ยังไม่เปิดใช้ในต้นแบบ)');
@@ -187,6 +185,120 @@
     const t = $('culTick'); t.setAttribute('x1', String(456 + 120 * c.level / 3)); t.setAttribute('x2', String(456 + 120 * c.level / 3)); t.setAttribute('visibility', 'visible');
   }
   updateBars();
+
+  // ===== เวลาเกม + สูบน้ำ (เรียลไทม์: ระดับน้ำขึ้นตามอัตราสูบจริงของอุปกรณ์) =====
+  const PRICE = { diesel: 40, kwh: 4.0 };   // ฿/ลิตร ดีเซล • ฿/หน่วย ไฟฟ้า (ค่าประมาณ ปรับได้)
+  const PUMPS = {                            // q = ลบ.ม./ชม. (ค่าประมาณที่ระยะส่งต่ำของฟาร์ม) • lph = ลิตรดีเซล/ชม. • kw = กำลังไฟที่ใช้จริง
+    engine: [
+      { label: 'ท่อ 8 นิ้ว', hp: 20, q: 340, lph: 3.0 },
+      { label: 'ท่อ 10 นิ้ว', hp: 30, q: 550, lph: 4.5 },
+      { label: 'ท่อ 12 นิ้ว', hp: 40, q: 790, lph: 6.0 },
+    ],
+    electric: [
+      { label: 'ท่อ 3 นิ้ว • มอเตอร์ 3 HP', hp: 3, q: 50, kw: 2.6 },
+      { label: 'ท่อ 6 นิ้ว • มอเตอร์ 5 HP', hp: 5, q: 190, kw: 4.3 },
+      { label: 'ท่อ 8 นิ้ว • มอเตอร์ 10 HP', hp: 10, q: 380, kw: 8.5 },
+    ],
+  };
+  const PNAME = { reservoir: '② บ่อพัก', culture: '③ บ่อเลี้ยง' };
+  const SRC_MIN = 0.3;                       // ระดับน้ำต่ำสุดที่ยังสูบจากบ่อพักได้ (ม.)
+  Object.assign(state, { pumps: { reservoir: null, culture: null }, simSec: 0, cost: { fuelL: 0, kwh: 0 }, pumpSel: { mode: 'engine', idx: 0 }, pumpPond: null });
+  const aRes = () => state.cfg.reservoir.rai * 1600;
+  const pondArea = (k) => (k === 'reservoir' ? aRes() : state.cfg.rai * 1600);
+  const pondLevel = (k) => (k === 'reservoir' ? state.cfg.reservoir.level : state.water);
+  const setLevel = (k, v) => { if (k === 'reservoir') state.cfg.reservoir.level = v; else state.water = v; };
+  const pondTarget = (k) => (k === 'reservoir' ? 3.0 : state.cfg.level);
+  const eqOf = (m, i) => PUMPS[m][i];
+  const hourCost = (eq) => (eq.lph ? eq.lph * PRICE.diesel : eq.kw * PRICE.kwh);
+  const fmtDur = (h) => { const m = Math.round(h * 60); return m >= 60 ? Math.floor(m / 60) + ' ชม. ' + (m % 60) + ' นาที' : m + ' นาที'; };
+  const baht = (n) => '฿' + fmt(Math.round(n));
+  function clockText() {
+    const t = 6 * 3600 + state.simSec, d = Math.floor(t / 86400), s = t % 86400;
+    return { hhmm: String(Math.floor(s / 3600)).padStart(2, '0') + ':' + String(Math.floor((s % 3600) / 60)).padStart(2, '0'), day: d };
+  }
+  function setSpeed(n) {
+    state.speed = n; qsa('.sp').forEach((x) => x.classList.toggle('on', Number(x.dataset.sp) === n));
+    if (state.started) toast(n ? 'เดินเวลา ×' + n + (n === 1 ? ' (เรียลไทม์)' : '') : 'หยุดเวลา');
+  }
+  function openPump(k) {
+    if (!state.started) { toast('กด "เริ่มเกม" ก่อนครับ'); $('setup').hidden = false; return; }
+    state.pumpPond = k; $('pumpBox').hidden = false; renderPump();
+  }
+  function renderPump() {
+    const k = state.pumpPond; if (!k) return;
+    const run = state.pumps[k], lv = pondLevel(k), tg = pondTarget(k), ar = pondArea(k);
+    $('pumpTitle').textContent = '🚰 สูบน้ำเข้า ' + PNAME[k];
+    $('pumpInfo').textContent = (k === 'reservoir' ? 'สูบจาก ① คลอง' : 'สูบจาก ② บ่อพัก (น้ำในบ่อพักจะลดลงตามที่สูบ)') + ' • ระดับน้ำตอนนี้ ' + lv.toFixed(2) + ' ม. → เป้าหมาย ' + tg.toFixed(1) + ' ม. • พื้นที่ ' + fmt(ar) + ' ตร.ม.';
+    $('pumpModes').hidden = !!run; $('pumpList').hidden = !!run;
+    qsa('[data-pm]').forEach((b) => b.classList.toggle('on', b.dataset.pm === state.pumpSel.mode));
+    const go = $('pumpGo');
+    if (run) { updatePumpStatus(); go.textContent = '⏹ หยุดสูบ'; go.disabled = false; return; }
+    const list = $('pumpList'); list.textContent = '';
+    PUMPS[state.pumpSel.mode].forEach((eq, i) => {
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'pick-opt' + (i === state.pumpSel.idx ? ' on' : '');
+      b.textContent = eq.label + (eq.lph ? ' • เครื่องยนต์ดีเซล ~' + eq.hp + ' แรงม้า' : '');
+      const sm = document.createElement('small');
+      sm.textContent = 'สูบได้ ~' + eq.q + ' ลบ.ม./ชม. • ' + (eq.lph ? 'น้ำมัน ' + eq.lph + ' ลิตร/ชม.' : 'ไฟ ' + eq.kw + ' kW') + ' ≈ ' + baht(hourCost(eq)) + '/ชม. • ≈ ฿' + (hourCost(eq) / eq.q).toFixed(2) + '/ลบ.ม.';
+      b.appendChild(sm); b.addEventListener('click', () => { state.pumpSel.idx = i; renderPump(); }); list.appendChild(b);
+    });
+    const eq = eqOf(state.pumpSel.mode, state.pumpSel.idx), need = Math.max(0, (tg - lv) * ar);
+    let est = need <= 0 ? 'ระดับน้ำถึงเป้าหมายแล้ว ไม่ต้องสูบเพิ่ม' : 'ต้องเติม ' + fmt(Math.round(need)) + ' ลบ.ม. → ใช้เวลาประมาณ ' + fmtDur(need / eq.q) + ' (เวลาเกมแบบเรียลไทม์) • ต้นทุนประมาณ ' + baht(need / eq.q * hourCost(eq));
+    let can = need > 0;
+    if (k === 'culture') { const avail = Math.max(0, (state.cfg.reservoir.level - SRC_MIN) * aRes()); if (avail < need) { est += ' • ⚠️ น้ำในบ่อพักมีให้ใช้ ~' + fmt(Math.round(avail)) + ' ลบ.ม. ไม่พอ ต้องสูบเข้าบ่อพักเพิ่มก่อน'; } if (avail <= 0) can = false; }
+    $('pumpEst').textContent = est; go.textContent = '▶ เริ่มสูบ'; go.disabled = !can;
+  }
+  function updatePumpStatus() {
+    const k = state.pumpPond, p = k && state.pumps[k]; if (!p) return;
+    const eq = eqOf(p.mode, p.idx);
+    $('pumpEst').textContent = 'กำลังสูบด้วย ' + eq.label + ' • ระดับน้ำ ' + pondLevel(k).toFixed(2) + ' → ' + pondTarget(k).toFixed(1) + ' ม. • สูบแล้ว ' + fmt(Math.round(p.vol)) + ' ลบ.ม. • ใช้เวลา ' + fmtDur(p.sec / 3600) + ' • ค่าใช้จ่ายรอบนี้ ' + baht(p.sec / 3600 * hourCost(eq));
+  }
+  function startPump(k) {
+    const sel = state.pumpSel, eq = eqOf(sel.mode, sel.idx);
+    if (state.pumps[k]) return;
+    state.pumps[k] = { mode: sel.mode, idx: sel.idx, vol: 0, sec: 0 };
+    if (!state.speed) setSpeed(1);
+    log('[' + clockText().hhmm + '] เริ่มสูบเข้า ' + PNAME[k] + ' ด้วย ' + eq.label + (eq.lph ? ' (เครื่องยนต์)' : ' (ไฟฟ้า)') + ' • เป้าหมาย ' + pondTarget(k).toFixed(1) + ' ม.');
+    renderPump(); refreshSim();
+  }
+  function stopPump(k, why) {
+    const p = state.pumps[k]; if (!p) return; const eq = eqOf(p.mode, p.idx);
+    state.pumps[k] = null;
+    log('[' + clockText().hhmm + '] หยุดสูบ ' + PNAME[k] + (why ? ': ' + why : '') + ' • สูบแล้ว ' + fmt(Math.round(p.vol)) + ' ลบ.ม. ใช้เวลา ' + fmtDur(p.sec / 3600) + ' ค่าใช้จ่าย ' + baht(p.sec / 3600 * hourCost(eq)));
+    if (state.pumpPond === k && !$('pumpBox').hidden) renderPump(); refreshSim();
+  }
+  function pumpTick(dt) {
+    ['reservoir', 'culture'].forEach((k) => {
+      const p = state.pumps[k]; if (!p) return;
+      const eq = eqOf(p.mode, p.idx), qs = eq.q / 3600, ar = pondArea(k); let vol = qs * dt, why = '';
+      const room = Math.max(0, (pondTarget(k) - pondLevel(k)) * ar);
+      if (vol >= room) { vol = room; why = 'ถึงระดับเป้าหมายแล้ว'; }
+      if (k === 'culture') { const avail = Math.max(0, (state.cfg.reservoir.level - SRC_MIN) * aRes()); if (vol >= avail) { vol = avail; why = 'น้ำในบ่อพักเหลือน้อย (ต่ำกว่า ' + SRC_MIN + ' ม.) สูบต่อไม่ได้'; } }
+      setLevel(k, pondLevel(k) + vol / ar); if (k === 'culture') state.cfg.reservoir.level -= vol / aRes();
+      const sec = vol / qs; if (eq.lph) state.cost.fuelL += eq.lph * sec / 3600; else state.cost.kwh += eq.kw * sec / 3600;
+      p.vol += vol; p.sec += sec; if (why) stopPump(k, why);
+    });
+  }
+  function refreshSim() {
+    if (!state.cfg) return;
+    const c = clockText(); $('chipTime').textContent = c.hhmm; $('chipDay').textContent = 'ก่อนปล่อยกุ้ง' + (c.day ? ' (+' + c.day + ' วัน)' : '');
+    updateBars();
+    if (window.__pond3dCfg) window.__pond3dCfg.water = state.water;
+    const fuel = state.cost.fuelL * PRICE.diesel, el = state.cost.kwh * PRICE.kwh;
+    $('costFuel').textContent = baht(fuel) + ' (' + state.cost.fuelL.toFixed(1) + ' ล.)'; $('costElec').textContent = baht(el) + ' (' + state.cost.kwh.toFixed(1) + ' หน่วย)'; $('costTotal').textContent = baht(fuel + el);
+    qsa('.pump-btn').forEach((b) => { const run = !!state.pumps[b.dataset.pump]; b.classList.toggle('run', run); b.textContent = run ? '🚰 กำลังสูบ…' : '🚰 สูบน้ำ'; });
+    if (!$('pumpBox').hidden && state.pumpPond && state.pumps[state.pumpPond]) updatePumpStatus();
+  }
+  qsa('.pump-btn').forEach((b) => b.addEventListener('click', () => openPump(b.dataset.pump)));
+  qsa('[data-pm]').forEach((b) => b.addEventListener('click', () => { state.pumpSel = { mode: b.dataset.pm, idx: 0 }; renderPump(); }));
+  $('pumpClose').addEventListener('click', () => { $('pumpBox').hidden = true; });
+  $('pumpBox').addEventListener('click', (e) => { if (e.target === $('pumpBox')) $('pumpBox').hidden = true; });
+  $('pumpGo').addEventListener('click', () => { const k = state.pumpPond; if (state.pumps[k]) stopPump(k, 'ผู้เล่นสั่งหยุด'); else startPump(k); });
+  let lastT = performance.now();
+  setInterval(() => {
+    const now = performance.now(), dtReal = Math.min(1, (now - lastT) / 1000); lastT = now;
+    if (!state.started || !state.speed) return;
+    const dt = dtReal * state.speed; state.simSec += dt; pumpTick(dt); refreshSim();
+  }, 250);
 
   // รูปโปรไฟล์ไลน์ของผู้เล่น แทนรูปกุ้งบนหัวหน้าตั้งค่า (ไม่มีรูป/ยังไม่ล็อกอิน = คงรูปกุ้งไว้)
   (async function () {
