@@ -31,7 +31,7 @@
     harvest: 'จับกุ้ง — เร็วๆ นี้ (เลือกไซส์/จังหวะ ดูราคาตลาด)',
   };
 
-  const state = { pond: 'culture', started: false, speed: 0, water: 0, cfg: null };
+  const state = { pond: 'culture', started: false, speed: 0, water: 0, cfg: null, stocked: false };
 
   // ----- สร้างการ์ดค่าน้ำ -----
   function renderParams() {
@@ -169,7 +169,7 @@
     const level = Number($('fLevel').value), resv = Math.round((1 + Math.random() * 2) * 10) / 10, pe = $('fSystem').value === 'pe';
     state.cfg = { name, species: $('fSpecies').value, system: $('fSystem').value, salinity: Number($('fSalinity').value), rai: i.rai, stock: i.v, level, province: $('fProvince').value, reservoir: { rai: 7, level: resv } };
     state.started = true;
-    state.water = 0; state.simSec = 0; state.cost = { fuelL: 0, kwh: 0 }; state.pumps = { reservoir: null, culture: null };
+    state.water = 0; state.stocked = false; state.simSec = 0; state.cost = { fuelL: 0, kwh: 0 }; state.pumps = { reservoir: null, culture: null };
     paintGame();
     $('setup').hidden = true;
     log('เริ่มเกม: ' + name + ' • ' + sel('fSpecies') + ' • ' + sel('fSystem') + ' • ความเค็ม ' + $('fSalinity').value + ' ppt • บ่อ ' + i.rai + ' ไร่ • ปล่อย ' + fmt(i.v) + ' ตัว • ระดับน้ำ ' + level.toFixed(1) + ' ม.');
@@ -302,6 +302,11 @@
       document.querySelector('.node[data-pond=' + k + ']').classList.toggle('filling', !!p);
       if (p) { const eq = eqOf(p.mode, p.idx); $('flow_' + id + '_a').textContent = (eq.lph ? '⛽' : '⚡') + eq.q + ' ม³/ชม.'; $('flow_' + id + '_b').textContent = (state.speed ? '+' : '⏸ +') + (eq.q / pondArea(k) * 100).toFixed(0) + ' ซม./ชม.'; }
     });
+    // สถานะช่วงของเกม (ตรงกลางจอ): ยังไม่มีน้ำ = กำลังเตรียมบ่อ • เริ่มมีน้ำ = กำลังเตรียมน้ำ • ปล่อยกุ้งแล้ว = กำลังเลี้ยง
+    { const bd = $('stageBadge'), cfg = state.cfg; bd.hidden = false; bd.className = 'stage-badge';
+      if (state.stocked) { bd.classList.add('s-grow'); $('stageMain').textContent = '🦐 กำลังเลี้ยง'; $('stageSub').textContent = 'ปล่อยกุ้ง ' + fmt(cfg.stock) + ' ตัว'; }
+      else if (state.water > 0.01) { bd.classList.add('s-water'); $('stageMain').textContent = '💧 กำลังเตรียมน้ำ'; $('stageSub').textContent = state.water >= cfg.level - 0.005 ? 'ถึงระดับที่ตั้งไว้แล้ว (' + cfg.level.toFixed(1) + ' ม.) — พร้อมปล่อยกุ้ง' : 'ระดับน้ำ ' + state.water.toFixed(2) + ' / เป้าหมาย ' + cfg.level.toFixed(1) + ' ม.'; }
+      else { bd.classList.add('s-pond'); $('stageMain').textContent = '🏗️ กำลังเตรียมบ่อ'; $('stageSub').textContent = 'บ่อยังไม่มีน้ำ'; } }
     qsa('.gear-btn').forEach((g) => g.classList.toggle('run', !!state.pumps[g.dataset.pump]));
     qsa('.pump-btn').forEach((b) => { const run = !!state.pumps[b.dataset.pump]; b.classList.toggle('run', run); b.textContent = run ? '🚰 สูบอยู่…' : '🚰 สูบน้ำ'; });
     if (!$('pumpBox').hidden && state.pumpPond && state.pumps[state.pumpPond]) updatePumpStatus();
@@ -326,7 +331,7 @@
     $('fLevelVal').textContent = Number($('fLevel').value).toFixed(1); stockInfo();
   }
   function saveGame(silent) {
-    const data = { v: 1, savedAt: Date.now(), form: readForm(), game: state.started ? { cfg: state.cfg, water: state.water, simSec: state.simSec, cost: state.cost, pumps: state.pumps } : null };
+    const data = { v: 1, savedAt: Date.now(), form: readForm(), game: state.started ? { cfg: state.cfg, stocked: state.stocked, water: state.water, simSec: state.simSec, cost: state.cost, pumps: state.pumps } : null };
     try { localStorage.setItem(SAVE_KEY, JSON.stringify(data)); if (silent === true) { $('hSave').title = 'บันทึกล่าสุด ' + new Date().toLocaleTimeString('th-TH'); return; } toast(state.started ? '💾 บันทึกเกมแล้ว (' + clockText().hhmm + ' ระดับน้ำบ่อเลี้ยง ' + state.water.toFixed(2) + ' ม.)' : '💾 บันทึกค่าที่ตั้งไว้แล้ว'); }
     catch (e) { toast('บันทึกไม่ได้ — เบราว์เซอร์ไม่อนุญาตให้เก็บข้อมูล'); }
   }
@@ -355,7 +360,7 @@
     $('resumeBox').hidden = false;
     $('resumeYes').onclick = () => {
       applyForm(d.form || {});
-      Object.assign(state, { cfg: g.cfg, started: true, water: g.water || 0, simSec: g.simSec || 0, cost: g.cost || { fuelL: 0, kwh: 0 }, pumps: g.pumps || { reservoir: null, culture: null }, speed: 0 });
+      Object.assign(state, { cfg: g.cfg, started: true, stocked: !!g.stocked, water: g.water || 0, simSec: g.simSec || 0, cost: g.cost || { fuelL: 0, kwh: 0 }, pumps: g.pumps || { reservoir: null, culture: null }, speed: 0 });
       paintGame(); $('resumeBox').hidden = true;
       log('โหลดเกมที่บันทึกไว้ (บันทึกเมื่อ ' + new Date(d.savedAt).toLocaleString('th-TH') + ') • เวลาหยุดอยู่ กด ▶ เพื่อเดินต่อ');
       toast('เล่นต่อจากที่บันทึกไว้');
