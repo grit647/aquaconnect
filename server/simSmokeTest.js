@@ -42,6 +42,15 @@ const get = async (p) => { const r = await fetch(BASE + p); return { status: r.s
   let songsOk = pl.length === 3; const counts = [];
   for (const it of pl) { const r = await fetch(BASE + '/music/' + encodeURIComponent(it.file)); const b = await r.arrayBuffer(); try { const s = ctxm.window.SimMidi.parseMidi(b); counts.push(s.notes.length + 'โน้ต/' + Math.round(s.length) + 'วิ'); if (s.notes.length < 100 || s.length < 30) songsOk = false; } catch (e) { songsOk = false; counts.push(e.message); } }
   check('เพลงประกอบ: music.js อ่านไฟล์ .mid ได้ครบ 3 เพลง (มีโน้ต ยาว >30 วิ)', songsOk && /id="musicBtn"/.test(sim.text) && /\/music\.js/.test(sim.text), counts.join(', '));
+  // ตัวจัดคิวเพลงต้องไม่ค้าง: จำลองเวลา 300 วินาทีทุก 0.25 วิ (เหมือน setInterval จริง) ต้องวนเพลงหลายรอบและส่งโน้ตครบพอดี ไม่ซ้ำ ไม่วนไม่รู้จบ
+  {
+    const song = ctxm.window.SimMidi.parseMidi(await (await fetch(BASE + '/music/' + encodeURIComponent(pl[0].file))).arrayBuffer());
+    const period = song.length + 1.5, me = { t0: 0.15, idx: 0, loop: 0 }; let emitted = 0, ok2 = true, last = -1;
+    const t0 = Date.now();
+    for (let now = 0; now <= 300; now += 0.25) ctxm.window.SimMidi.schedule(me, song, period, now, 1.2, (n, when) => { emitted++; if (when < last - 1e-6 && n.t > 0 && false) ok2 = false; last = when; });
+    let expected = 0; for (let L = 0; ; L++) { const c = song.notes.filter((n) => 0.15 + L * period + n.t <= 300 + 1.2).length; if (!c) break; expected += c; }
+    check('เพลงวนซ้ำไม่ค้าง (จำลอง 300 วินาที)', Date.now() - t0 < 2000 && me.loop >= 4 && emitted === expected && ok2, 'วน ' + me.loop + ' รอบ, ส่ง ' + emitted + '/' + expected + ' โน้ต, ใช้เวลา ' + (Date.now() - t0) + ' มิลลิวินาที');
+  }
   const home = await get('/');
   check('หน้าหลักยังเป็นหน้าเลขา (ไม่ถูก /sim แย่ง)', home.status === 200 && /id="menuBtn"/.test(home.text));
   const other = await get('/something-else');

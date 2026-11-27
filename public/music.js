@@ -42,7 +42,17 @@
     const length = notes.length ? Math.max(...notes.map((x) => x.t + x.d)) : 0;
     return { notes, length };
   }
-  if (typeof window !== 'undefined') window.SimMidi = { parseMidi };
+  // ตัวจัดคิวโน้ตล่วงหน้า (ฟังก์ชันล้วน ทดสอบได้): ส่งโน้ตที่ถึงเวลาภายใน lookahead วินาทีข้างหน้า และวนเพลงซ้ำเมื่อจบ
+  // (บั๊กเดิม 2026-11-27: คำนวณ horizon นอกลูป พอเพลงจบแล้ววนซ้ำไม่รู้จบ → หน้าเว็บค้างทั้งหน้า — ตอนนี้คำนวณใหม่ทุกรอบ + มีตัวกันวนเกิน)
+  function schedule(me, song, period, now, lookahead, emit) {
+    for (let guard = 0; guard < 20000; guard++) {
+      const horizon = now + lookahead - me.t0 - me.loop * period;
+      if (me.idx >= song.notes.length) { if (horizon >= period) { me.loop++; me.idx = 0; continue; } return; }
+      const n = song.notes[me.idx]; if (n.t > horizon) return;
+      emit(n, me.t0 + me.loop * period + n.t); me.idx++;
+    }
+  }
+  if (typeof window !== 'undefined') window.SimMidi = { parseMidi, schedule };
   if (typeof document === 'undefined' || !document.getElementById('musicBtn')) return;
 
   // ---------- เครื่องเล่น (เสียงสังเคราะห์ด้วย WebAudio) ----------
@@ -86,15 +96,7 @@
     if (ctx.state === 'suspended') await ctx.resume();
     const me = { stopped: false, t0: ctx.currentTime + 0.15, idx: 0, loop: 0, song }; st.cur = me;
     const period = song.length + 1.5;
-    const tick = () => {
-      if (me.stopped) return;
-      const horizon = ctx.currentTime + 1.2 - me.t0 - me.loop * period;
-      while (true) {
-        if (me.idx >= song.notes.length) { if (horizon >= period) { me.loop++; me.idx = 0; continue; } break; }
-        const n = song.notes[me.idx]; if (n.t > horizon) break;
-        playNote(n, me.t0 + me.loop * period + n.t); me.idx++;
-      }
-    };
+    const tick = () => { if (!me.stopped) schedule(me, song, period, ctx.currentTime, 1.2, playNote); };
     st.timer = setInterval(tick, 250); tick();
   }
   function toast(m) { const t = $('toast'); if (!t) return; t.textContent = m; t.hidden = false; setTimeout(() => { t.hidden = true; }, 2200); }

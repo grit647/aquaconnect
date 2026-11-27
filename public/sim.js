@@ -365,7 +365,11 @@
 
   // ขนาดเวทีตามพื้นที่เห็นจริงของเบราว์เซอร์ (100dvh บางเครื่องล้ำไปใต้แถบปุ่มระบบ ทำให้ปุ่มขวาหาย)
   const stageEl = $('stage');
+  let typing = false;   // กำลังพิมพ์ = แป้นพิมพ์บนมือถือย่อพื้นที่เห็น → ห้ามย่อเวทีตาม (ไม่งั้นฟอร์มบีบเละ)
+  document.addEventListener('focusin', (e) => { if (/^(INPUT|TEXTAREA)$/.test(e.target.tagName) && e.target.type !== 'range') typing = true; });
+  document.addEventListener('focusout', () => { typing = false; setTimeout(fitStage, 350); });
   function fitStage() {
+    if (typing) return;
     const vv = window.visualViewport;
     const W = Math.floor(vv ? vv.width : window.innerWidth), H = Math.floor(Math.min(window.innerHeight, vv ? vv.height : window.innerHeight));
     if (window.matchMedia('(orientation: portrait)').matches) {
