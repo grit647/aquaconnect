@@ -45,7 +45,7 @@
   // ตัวจัดคิวโน้ตล่วงหน้า (ฟังก์ชันล้วน ทดสอบได้): ส่งโน้ตที่ถึงเวลาภายใน lookahead วินาทีข้างหน้า และวนเพลงซ้ำเมื่อจบ
   // (บั๊กเดิม 2026-11-27: คำนวณ horizon นอกลูป พอเพลงจบแล้ววนซ้ำไม่รู้จบ → หน้าเว็บค้างทั้งหน้า — ตอนนี้คำนวณใหม่ทุกรอบ + มีตัวกันวนเกิน)
   function schedule(me, song, period, now, lookahead, emit) {
-    for (let guard = 0; guard < 20000; guard++) {
+    for (let guard = 0; guard < 3000; guard++) {
       const horizon = now + lookahead - me.t0 - me.loop * period;
       if (me.idx >= song.notes.length) { if (horizon >= period) { me.loop++; me.idx = 0; continue; } return; }
       const n = song.notes[me.idx]; if (n.t > horizon) return;
@@ -121,6 +121,10 @@
   $('musicMute').addEventListener('click', () => { st.muted = !st.muted; if (!st.muted && !st.cur) { st.started = true; play(st.track); } applyVol(); });
   $('musicVol').addEventListener('input', () => { st.vol = Number($('musicVol').value) / 100; if (st.muted && st.vol > 0) st.muted = false; applyVol(); });
   $('startBtn').addEventListener('click', startIfNeeded);              // เริ่มเล่นพร้อมกดเริ่มเกม (ต้องมีการแตะก่อน เบราว์เซอร์ถึงยอมให้มีเสียง)
-  document.addEventListener('visibilitychange', () => { if (!st.ctx) return; if (document.hidden) st.ctx.suspend(); else if (!st.muted) st.ctx.resume(); });
+  // ปิดหน้า/ปิดโปรแกรม/สลับไปหน้าอื่น = ปิดระบบเสียงทิ้งทั้งหมด (กันเสียงค้างหลังออกจากเกม)
+  const killAudio = () => { stop(); if (st.ctx) { try { st.ctx.close(); } catch (e) { /* ข้าม */ } st.ctx = null; st.master = null; } render(); };
+  window.addEventListener('pagehide', killAudio); window.addEventListener('beforeunload', killAudio);
+  window.addEventListener('pageshow', (e) => { if (e.persisted && st.started && !st.muted && st.list.length) play(st.track); });   // กลับมาจากแคชหน้า (ปุ่มย้อนกลับ) → เล่นใหม่
+  document.addEventListener('visibilitychange', () => { if (!st.ctx) return; if (document.hidden) { st.ctx.suspend(); } else if (!st.muted) st.ctx.resume(); });
   loadList();
 })();
