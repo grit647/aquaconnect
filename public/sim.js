@@ -117,6 +117,18 @@
     log('(ต้นแบบหน้าจอ — ยังไม่มีการคำนวณ ค่าบนแดชบอร์ดเป็น "–")');
   });
 
+  // ถือแนวตั้ง = ภาพถูกหมุนตะแคงด้วย CSS → บอกให้ผู้ใช้หมุนมือถือให้ภาพตรง (หายเองหรือแตะเพื่อปิด)
+  const portraitMq = window.matchMedia ? window.matchMedia('(orientation: portrait)') : null;
+  let hintTimer = null;
+  function updateHint() {
+    const h = $('rotHint');
+    if (portraitMq && portraitMq.matches) { h.hidden = false; clearTimeout(hintTimer); hintTimer = setTimeout(() => { h.hidden = true; }, 7000); }
+    else { h.hidden = true; clearTimeout(hintTimer); }
+  }
+  $('rotHint').addEventListener('click', () => { $('rotHint').hidden = true; });
+  if (portraitMq) { (portraitMq.addEventListener ? portraitMq.addEventListener('change', updateHint) : portraitMq.addListener(updateHint)); }
+  updateHint();
+
   renderParams();
   selectPond('culture');
 })();

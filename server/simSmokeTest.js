@@ -13,7 +13,7 @@ const get = async (p) => { const r = await fetch(BASE + p); return { status: r.s
 (async () => {
   const sim = await get('/sim');
   check('/sim ตอบหน้า sim.html (ไม่ใช่หน้าเลขา)', sim.status === 200 && /ฟาร์มกุ้งจำลอง/.test(sim.text) && !/id="menuBtn"/.test(sim.text));
-  check('หน้าแยกจอแนวนอน: มีหน้า "กรุณาหมุนจอ"', /id="rotate"/.test(sim.text) && /กรุณาหมุนจอเป็นแนวนอน/.test(sim.text));
+  check('หน้าแยกจอแนวนอน: มีเวที #stage และข้อความแนะนำให้หมุนมือถือ (ไม่มีหน้ากั้น)', /id="stage"/.test(sim.text) && /id="rotHint"/.test(sim.text) && !/id="rotate"/.test(sim.text) && /หมุนมือถือเป็นแนวนอน/.test(sim.text));
   check('มีระบบบ่อ 3 ส่วน (คลอง/บ่อพัก/บ่อเลี้ยง)', ['data-pond="canal"', 'data-pond="reservoir"', 'data-pond="culture"'].every((k) => sim.text.includes(k)));
   check('มี 3 แท็บแดชบอร์ด น้ำ/กุ้ง/ต้นทุน', ['data-tab="water"', 'data-tab="shrimp"', 'data-tab="cost"'].every((k) => sim.text.includes(k)));
   check('ปุ่มจัดการครบ 9 ปุ่ม', (sim.text.match(/data-act="/g) || []).length === 9);
@@ -23,7 +23,7 @@ const get = async (p) => { const r = await fetch(BASE + p); return { status: r.s
   let ok = true; let why = '';
   try { new vm.Script(js.text, { filename: 'sim.js' }); } catch (e) { ok = false; why = e.message; }
   check('sim.js คอมไพล์ผ่าน', js.status === 200 && ok, why);
-  check('sim.css เสิร์ฟได้และมีกติกาแนวนอน (orientation: portrait)', css.status === 200 && /orientation:\s*portrait/.test(css.text));
+  check('sim.css: ถือแนวตั้ง = หมุนเวทีตะแคง 90° (ไม่บังคับให้ผู้ใช้หมุนจอ)', css.status === 200 && /orientation:\s*portrait/.test(css.text) && /rotate\(90deg\)/.test(css.text) && /width:\s*100dvh/.test(css.text));
   const keys = ['ph', 'alk', 'temp', 'ca', 'mg', 'sal', 'tan', 'no2', 'secchi', 'do'];
   check('ค่าน้ำบนแดชบอร์ดครบ 10 ตัว (pH อัลคาไลน์ อุณหภูมิ Ca Mg ความเค็ม แอมโมเนีย ไนไตรท์ ความขุ่นใส DO)', keys.every((k) => js.text.includes(`key: '${k}'`)) && (js.text.match(/\{ key: '/g) || []).length === 10);
 
