@@ -341,13 +341,20 @@
   function loadSaved() {
     let d = null; try { d = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); } catch (e) { d = null; }
     if (!d || d.v !== 1) return;
-    applyForm(d.form || {});
-    if (d.game && d.game.cfg) {
-      Object.assign(state, { cfg: d.game.cfg, started: true, water: d.game.water || 0, simSec: d.game.simSec || 0, cost: d.game.cost || { fuelL: 0, kwh: 0 }, pumps: d.game.pumps || { reservoir: null, culture: null }, speed: 0 });
-      paintGame();
+    if (!(d.game && d.game.cfg)) { applyForm(d.form || {}); toast('โหลดค่าที่บันทึกไว้แล้ว'); return; }
+    // มีเกมที่เล่นค้างไว้ → ให้ผู้เล่นเลือก เล่นต่อ หรือ เริ่มใหม่
+    const g = d.game, t = 6 * 3600 + (g.simSec || 0), hh = String(Math.floor((t % 86400) / 3600)).padStart(2, '0') + ':' + String(Math.floor((t % 3600) / 60)).padStart(2, '0');
+    const money = Math.round((g.cost ? g.cost.fuelL * PRICE.diesel + g.cost.kwh * PRICE.kwh : 0));
+    $('resumeInfo').textContent = 'ฟาร์ม "' + g.cfg.name + '" • บันทึกเมื่อ ' + new Date(d.savedAt).toLocaleString('th-TH') + ' • เวลาเกม ' + hh + (t >= 86400 ? ' (+' + Math.floor(t / 86400) + ' วัน)' : '') + ' • บ่อเลี้ยงน้ำ ' + (g.water || 0).toFixed(2) + ' ม. • บ่อพักน้ำ ' + g.cfg.reservoir.level.toFixed(2) + ' ม. • ต้นทุนสะสม ' + baht(money);
+    $('resumeBox').hidden = false;
+    $('resumeYes').onclick = () => {
+      applyForm(d.form || {});
+      Object.assign(state, { cfg: g.cfg, started: true, water: g.water || 0, simSec: g.simSec || 0, cost: g.cost || { fuelL: 0, kwh: 0 }, pumps: g.pumps || { reservoir: null, culture: null }, speed: 0 });
+      paintGame(); $('resumeBox').hidden = true;
       log('โหลดเกมที่บันทึกไว้ (บันทึกเมื่อ ' + new Date(d.savedAt).toLocaleString('th-TH') + ') • เวลาหยุดอยู่ กด ▶ เพื่อเดินต่อ');
-      toast('โหลดเกมที่บันทึกไว้แล้ว');
-    } else toast('โหลดค่าที่บันทึกไว้แล้ว');
+      toast('เล่นต่อจากที่บันทึกไว้');
+    };
+    $('resumeNew').onclick = () => { $('resumeBox').hidden = true; };
   }
 
   // รูปโปรไฟล์ไลน์ของผู้เล่น แทนรูปกุ้งบนหัวหน้าตั้งค่า (ไม่มีรูป/ยังไม่ล็อกอิน = คงรูปกุ้งไว้)
