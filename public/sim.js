@@ -313,7 +313,7 @@
   $('pumpGo').addEventListener('click', () => { const k = state.pumpPond; if (state.pumps[k]) stopPump(k, 'ผู้เล่นสั่งหยุด'); else startPump(k); });
   let lastT = performance.now();
   setInterval(() => {
-    const now = performance.now(), dtReal = Math.min(1, (now - lastT) / 1000); lastT = now;
+    const now = performance.now(), dtReal = Math.min(60, (now - lastT) / 1000); lastT = now;
     if (!state.started || !state.speed) return;
     const dt = dtReal * state.speed; state.simSec += dt; pumpTick(dt); refreshSim();
   }, 250);
@@ -357,6 +357,66 @@
     };
     $('resumeNew').onclick = () => { $('resumeBox').hidden = true; };
   }
+
+  // ===== หน้าต่างลอย (Picture-in-Picture): ย่อสถานะเกมเป็นวิดีโอเล็กลอยเหนือแอปอื่น เกมเดินต่อเนื่อง =====
+  const PIP_W = 480, PIP_H = 270; let pip = null, pipPrevSpeed = 1, pipIgnore = false;
+  const pipSupported = () => !!(document.pictureInPictureEnabled && HTMLCanvasElement.prototype.captureStream);
+  function drawGearC(ctx, cx, cy, rot, color) {
+    ctx.save(); ctx.translate(cx, cy); ctx.rotate(rot); ctx.beginPath();
+    for (let i = 0; i < 8; i++) for (const [a, r] of [[-11, 8], [-7, 11], [7, 11], [11, 8]]) { const t = (i * 45 + a - 90) * Math.PI / 180; ctx[i === 0 && a === -11 ? 'moveTo' : 'lineTo'](r * Math.cos(t), r * Math.sin(t)); }
+    ctx.closePath(); ctx.fillStyle = '#2a2410'; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = color; ctx.stroke();
+    ctx.beginPath(); ctx.arc(0, 0, 3.5, 0, 6.3); ctx.stroke(); ctx.restore();
+  }
+  function drawPip(ctx) {
+    const w = PIP_W, h = PIP_H, t = Date.now() / 1000, f = '"Segoe UI","Noto Sans Thai",sans-serif', c = state.cfg;
+    ctx.fillStyle = '#0b0f1e'; ctx.fillRect(0, 0, w, h); ctx.textBaseline = 'top';
+    ctx.fillStyle = '#22d3ee'; ctx.font = 'bold 20px ' + f; ctx.fillText('🦐 ' + (c ? c.name : 'ฟาร์มกุ้งจำลอง'), 14, 10);
+    if (!c) { ctx.fillStyle = '#8d98c4'; ctx.font = '16px ' + f; ctx.fillText('ยังไม่ได้เริ่มเกม', 14, 50); return; }
+    const ck = clockText();
+    ctx.fillStyle = '#e8ecff'; ctx.font = 'bold 16px ' + f; ctx.fillText(ck.hhmm + (ck.day ? ' (+' + ck.day + ' วัน)' : '') + '    ' + (state.speed ? '▶ ×' + state.speed : '⏸ หยุดเวลา'), 14, 40);
+    const bar = (y, label, val, max, color, tick) => {
+      ctx.fillStyle = '#8d98c4'; ctx.font = '13px ' + f; ctx.fillText(label, 14, y);
+      ctx.fillStyle = '#27345c'; ctx.fillRect(14, y + 18, w - 28, 10); ctx.fillStyle = color; ctx.fillRect(14, y + 18, (w - 28) * Math.min(1, Math.max(0, val / max)), 10);
+      if (tick) { ctx.fillStyle = '#fbbf24'; ctx.fillRect(14 + (w - 28) * tick / max - 1, y + 15, 3, 16); }
+    };
+    bar(70, '② บ่อพัก น้ำ ' + c.reservoir.level.toFixed(2) + ' / 3.0 ม.', c.reservoir.level, 3, '#22d3ee');
+    bar(112, '③ บ่อเลี้ยง น้ำ ' + state.water.toFixed(2) + ' / 3.0 ม. (เป้า ' + c.level.toFixed(1) + ')', state.water, 3, '#a78bfa', c.level);
+    let y = 158; ctx.font = '14px ' + f;
+    ['reservoir', 'culture'].forEach((k) => {
+      const p = state.pumps[k]; if (!p) return; const eq = eqOf(p.mode, p.idx);
+      drawGearC(ctx, 26, y + 9, state.speed ? t * 4 * Math.min(3, 1 + Math.log10(state.speed)) : 0, '#fbbf24');
+      ctx.fillStyle = '#fbbf24'; ctx.fillText('สูบเข้า ' + PNAME[k] + ' • ' + eq.label + ' • +' + (eq.q / pondArea(k) * 100).toFixed(0) + ' ซม./ชม.', 46, y); y += 26;
+    });
+    if (y === 158) { ctx.fillStyle = '#8d98c4'; ctx.fillText('ไม่มีปั๊มทำงาน', 14, y); }
+    ctx.fillStyle = '#34d399'; ctx.font = 'bold 15px ' + f; ctx.fillText('ต้นทุนน้ำมัน/ไฟสะสม ' + baht(state.cost.fuelL * PRICE.diesel + state.cost.kwh * PRICE.kwh), 14, h - 28);
+  }
+  function cleanupPip() {
+    if (pip) { clearInterval(pip.timer); try { pip.video.pause(); pip.video.srcObject = null; pip.video.remove(); } catch (e) { /* ข้าม */ } pip = null; }
+    $('pipBtn').textContent = '📺 ย่อ';
+  }
+  async function togglePip() {
+    if (document.pictureInPictureElement) { try { await document.exitPictureInPicture(); } catch (e) { /* ข้าม */ } cleanupPip(); return; }
+    if (!pipSupported()) { toast('เครื่องนี้เปิดหน้าต่างลอยไม่ได้ — ใช้ Chrome/Edge (ไม่ใช่เบราว์เซอร์ในไลน์) และเปิดสิทธิ์ "ภาพซ้อนภาพ" ในตั้งค่ามือถือ'); return; }
+    try {
+      const canvas = document.createElement('canvas'); canvas.width = PIP_W; canvas.height = PIP_H;
+      const ctx = canvas.getContext('2d'), video = document.createElement('video');
+      video.muted = true; video.playsInline = true; video.autoplay = true; video.srcObject = canvas.captureStream(10);
+      Object.assign(video.style, { position: 'fixed', left: '0', top: '0', width: '2px', height: '2px', opacity: '0.01', pointerEvents: 'none' });
+      document.body.appendChild(video); drawPip(ctx);
+      pip = { video, timer: setInterval(() => drawPip(ctx), 100) };
+      await video.play(); await video.requestPictureInPicture();
+      video.addEventListener('leavepictureinpicture', cleanupPip, { once: true });
+      // ปุ่มเล่น/หยุดบนหน้าต่างลอย = หยุด/เดินเวลาเกม (วิดีโอยังเล่นต่อเพื่อให้ภาพยังอัปเดต)
+      video.addEventListener('pause', () => {
+        if (!pip || pipIgnore) return;
+        if (state.speed) { pipPrevSpeed = state.speed; setSpeed(0); } else setSpeed(pipPrevSpeed || 1);
+        pipIgnore = true; video.play().catch(() => {}).then(() => { pipIgnore = false; });
+      });
+      $('pipBtn').textContent = '↩️ กลับ';
+      toast('ย่อเป็นหน้าต่างลอยแล้ว — เกมเดินต่อเนื่อง • ปุ่มเล่น/หยุดบนหน้าต่างลอย = หยุด/เดินเวลาเกม');
+    } catch (e) { cleanupPip(); toast('เปิดหน้าต่างลอยไม่ได้: ' + (e && e.message ? e.message : e)); }
+  }
+  $('pipBtn').addEventListener('click', togglePip);
 
   // รูปโปรไฟล์ไลน์ของผู้เล่น แทนรูปกุ้งบนหัวหน้าตั้งค่า (ไม่มีรูป/ยังไม่ล็อกอิน = คงรูปกุ้งไว้)
   (async function () {
