@@ -99,6 +99,16 @@
     } catch (e) { toast('เบราว์เซอร์นี้ไม่รองรับการล็อกแนวนอน — หมุนจอเองได้เลยครับ'); }
   });
 
+  // ----- ปุ่มซ่อน/ยืดเมนูซ้าย-ขวา (ฉากกลางเต็มจอ) -----
+  function togglePanel(side) {
+    const el = document.querySelector(side === 'l' ? '.left' : '.right'); const btn = $(side === 'l' ? 'edgeL' : 'edgeR');
+    const open = !el.classList.contains('open');
+    el.classList.toggle('open', open);
+    btn.textContent = open ? '✕ ปิด' : (side === 'l' ? '☰ จัดการ' : '📊 ค่า/ต้นทุน');
+  }
+  $('edgeL').addEventListener('click', () => togglePanel('l'));
+  $('edgeR').addEventListener('click', () => togglePanel('r'));
+
   // ----- ตัวเลือกที่วาดเอง แทน <select> ของระบบ (ป๊อปอัประบบไม่หมุนตามภาพตอนถือแนวตั้ง) -----
   qsa('select', $('setup')).forEach((sel) => {
     const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'selbtn';
