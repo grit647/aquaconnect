@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0f1e">
+<title>ฟาร์มกุ้งจำลอง — AquaConnect</title>
+<link rel="stylesheet" href="/sim.css">
+</head>
+<body>
+<!-- หน้าโมเดลจำลองการเลี้ยงกุ้งเสมือนจริง — ใช้แนวนอนเท่านั้น (แยกจากหน้าเลขา) | ต้นแบบหน้าจอ: ยังไม่มีการคำนวณ ค่าทั้งหมดเป็น "–" รอแกนจำลอง -->
+
+<div id="rotate" class="rotate">
+  <div class="rot-ico">📱↻</div>
+  <div class="rot-t">กรุณาหมุนจอเป็นแนวนอน</div>
+  <div class="rot-s">หน้านี้ออกแบบสำหรับจอแนวนอนเพื่อให้เห็นบ่อ ค่าน้ำ และต้นทุนพร้อมกัน</div>
+  <a class="btn ghost" href="/">← กลับหน้าเลขา</a>
+</div>
+
+<div id="app">
+  <header class="top">
+    <a class="btn ghost small" href="/" id="backBtn">← กลับ</a>
+    <div class="title">🦐 ฟาร์มกุ้งจำลอง <span class="proto">ต้นแบบหน้าจอ</span></div>
+    <div class="chips">
+      <span class="chip">วันที่เลี้ยง <b id="chipDay">–</b></span>
+      <span class="chip">เวลา <b id="chipTime">–</b></span>
+      <span class="chip">อากาศ <b id="chipWx">–</b></span>
+      <span class="chip cash">เงินสด <b id="chipCash">–</b></span>
+    </div>
+    <div class="speed" role="group" aria-label="ความเร็วเวลา">
+      <button class="sp on" data-sp="0" title="หยุด">⏸</button>
+      <button class="sp" data-sp="1" title="ปกติ">▶</button>
+      <button class="sp" data-sp="2" title="เร็ว 2 เท่า">▶▶</button>
+      <button class="sp" data-sp="4" title="เร็ว 4 เท่า">▶▶▶</button>
+    </div>
+    <button class="btn ghost small" id="fsBtn" title="เต็มจอ/ล็อกแนวนอน">⛶</button>
+  </header>
+
+  <main class="grid">
+    <!-- ซ้าย: เลือกบ่อ + ปุ่มจัดการ -->
+    <aside class="left">
+      <nav class="ponds" id="pondTabs">
+        <button class="pond" data-pond="canal">① คลอง<small>แหล่งน้ำธรรมชาติ</small></button>
+        <button class="pond" data-pond="reservoir">② บ่อพัก<small>เตรียมน้ำ/เติมน้ำ</small></button>
+        <button class="pond on" data-pond="culture">③ บ่อเลี้ยง<small>กุ้งอยู่ตรงนี้</small></button>
+      </nav>
+      <section class="actions" id="actions">
+        <div class="sec-t">จัดการ</div>
+        <button data-act="feed">🍤 ให้อาหาร</button>
+        <button data-act="aerator">🌀 เครื่องตีน้ำ</button>
+        <button data-act="pump">🚰 สูบ/เติม/ถ่ายน้ำ</button>
+        <button data-act="lime">🧂 ปูน/แร่ธาตุ</button>
+        <button data-act="probiotic">🧫 จุลินทรีย์/สารปรับน้ำ</button>
+        <button data-act="testwater">🧪 ตรวจน้ำ</button>
+        <button data-act="tray">🔍 เช็คถาดอาหาร</button>
+        <button data-act="sample">⚖️ สุ่มชั่งกุ้ง</button>
+        <button data-act="harvest" class="danger">🎣 จับกุ้ง</button>
+      </section>
+    </aside>
+
+    <!-- กลาง: ฉาก (3 มิติในอนาคต) + บันทึกเหตุการณ์ -->
+    <section class="center">
+      <div class="scene" id="scene">
+        <svg viewBox="0 0 600 240" class="flow" aria-label="ผังระบบบ่อ">
+          <defs><marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#22d3ee"/></marker></defs>
+          <g class="node" data-pond="canal"><rect x="14" y="70" width="140" height="100" rx="14"/><text x="84" y="115" text-anchor="middle">① คลอง</text><text x="84" y="140" text-anchor="middle" class="sub">แหล่งน้ำธรรมชาติ</text></g>
+          <g class="node" data-pond="reservoir"><rect x="230" y="70" width="140" height="100" rx="14"/><text x="300" y="115" text-anchor="middle">② บ่อพัก</text><text x="300" y="140" text-anchor="middle" class="sub">เตรียมน้ำ</text></g>
+          <g class="node on" data-pond="culture"><rect x="446" y="40" width="140" height="160" rx="14"/><text x="516" y="112" text-anchor="middle">③ บ่อเลี้ยง</text><text x="516" y="138" text-anchor="middle" class="sub">🦐 กุ้ง</text></g>
+          <path d="M156 120H226" marker-end="url(#ar)"/><text x="191" y="110" text-anchor="middle" class="lbl">สูบ</text>
+          <path d="M372 120H442" marker-end="url(#ar)"/><text x="407" y="110" text-anchor="middle" class="lbl">เติม/ถ่าย</text>
+          <path d="M516 204V228" marker-end="url(#ar)"/><text x="516" y="238" text-anchor="middle" class="lbl">น้ำทิ้ง</text>
+        </svg>
+        <div class="scene-note">พื้นที่ฉาก 3 มิติ (กำลังพัฒนา) — แตะบ่อเพื่อดูค่าของบ่อนั้น</div>
+      </div>
+      <div class="log" id="log"><div class="sec-t">บันทึก / เหตุการณ์</div><div class="log-body" id="logBody"><div class="muted">ยังไม่เริ่มเกม — กด "เริ่มเกม" ในหน้าตั้งค่า</div></div></div>
+    </section>
+
+    <!-- ขวา: แดชบอร์ด -->
+    <aside class="right">
+      <nav class="tabs" id="tabs">
+        <button class="tab on" data-tab="water">💧 น้ำ</button>
+        <button class="tab" data-tab="shrimp">🦐 กุ้ง</button>
+        <button class="tab" data-tab="cost">💰 ต้นทุน</button>
+      </nav>
+
+      <section class="panel on" id="p-water">
+        <div class="pond-name" id="pondName">③ บ่อเลี้ยง</div>
+        <div class="params" id="params"></div>
+        <div class="muted tiny">แสดงค่าแบบเรียลไทม์ (โหมดง่าย) — ค่าจริงจากแกนจำลองจะมาแทน "–"</div>
+      </section>
+
+      <section class="panel" id="p-shrimp">
+        <div class="kv"><span>ชนิด</span><b id="kvSpecies">–</b></div>
+        <div class="kv"><span>ความหนาแน่น</span><b id="kvDensity">–</b></div>
+        <div class="kv"><span>ระบบเลี้ยง</span><b id="kvSystem">–</b></div>
+        <div class="kv"><span>ที่ตั้ง</span><b id="kvProvince">–</b></div>
+        <div class="sec-t">ผลการเลี้ยง</div>
+        <div class="kv"><span>น้ำหนักเฉลี่ย</span><b>– ก.</b></div>
+        <div class="kv"><span>ไซส์ (ตัว/กก.)</span><b>–</b></div>
+        <div class="kv"><span>ADG (ก./วัน)</span><b>–</b></div>
+        <div class="kv"><span>FCR</span><b>–</b></div>
+        <div class="kv"><span>อัตรารอด</span><b>– %</b></div>
+        <div class="kv"><span>สุขภาพ/ความเครียด</span><b>–</b></div>
+      </section>
+
+      <section class="panel" id="p-cost">
+        <div class="sec-t">ต้นทุนสะสม</div>
+        <div class="kv"><span>🦐 ลูกกุ้ง</span><b>–</b></div>
+        <div class="kv"><span>🍤 อาหาร</span><b>–</b></div>
+        <div class="kv"><span>⚡ ค่าไฟ</span><b>–</b></div>
+        <div class="kv"><span>⛽ น้ำมัน</span><b>–</b></div>
+        <div class="kv"><span>🧂 ปูน/สารเคมี</span><b>–</b></div>
+        <div class="kv"><span>🧫 จุลินทรีย์</span><b>–</b></div>
+        <div class="kv"><span>🧪 ค่าตรวจ/แรงงาน/อื่นๆ</span><b>–</b></div>
+        <div class="kv total"><span>รวมต้นทุน</span><b>–</b></div>
+        <div class="sec-t">เทียบกับราคาขาย</div>
+        <div class="kv"><span>ต้นทุน/กก. (ประมาณ)</span><b>–</b></div>
+        <div class="kv"><span>ราคาขายวันนี้ (ตามไซส์)</span><b>–</b></div>
+        <div class="kv"><span>จุดคุ้มทุน</span><b>–</b></div>
+        <div class="kv total"><span>กำไรคาดการณ์ถ้าจับวันนี้</span><b>–</b></div>
+        <div class="muted tiny">เกมจะ "สำเร็จ" เมื่อกำไรมากกว่า 0 — เลี้ยงรอดแต่ขาดทุนยังไม่ผ่าน</div>
+      </section>
+    </aside>
+  </main>
+</div>
+
+<!-- หน้าตั้งค่าเริ่มเกม -->
+<div id="setup" class="modal">
+  <div class="card">
+    <div class="card-t">🦐 เริ่มเลี้ยงกุ้ง <span class="proto">ต้นแบบ</span></div>
+    <div class="form">
+      <label>ชนิดกุ้ง
+        <select id="fSpecies"><option value="vannamei">กุ้งขาวแวนนาไม</option><option disabled>กุ้งกุลาดำ (เร็วๆ นี้)</option></select>
+      </label>
+      <label>ระบบเลี้ยง
+        <select id="fSystem"><option value="earth">บ่อดิน (พัฒนา/หนาแน่น)</option><option disabled>ไบโอฟล็อก (เร็วๆ นี้)</option><option disabled>ระบบปิด (เร็วๆ นี้)</option></select>
+      </label>
+      <label>ความหนาแน่น <b id="fDensityVal">80</b> ตัว/ตร.ม. <small class="muted">(ค่าตัวอย่าง รอข้อมูลจริง)</small>
+        <input id="fDensity" type="range" min="20" max="200" step="10" value="80">
+      </label>
+      <label>จังหวัด (ใช้อากาศ/ฤดูของพื้นที่)
+        <select id="fProvince">
+          <option>สมุทรสาคร</option><option>สมุทรสงคราม</option><option>เพชรบุรี</option><option>ฉะเชิงเทรา</option>
+          <option>จันทบุรี</option><option>ตราด</option><option>สุราษฎร์ธานี</option><option>นครศรีธรรมราช</option><option>สงขลา</option>
+        </select>
+      </label>
+      <label>โหมด
+        <select id="fMode"><option value="easy">ง่าย/ฝึก — เห็นค่าจริงเรียลไทม์</option><option value="hard">ยาก — ตรวจเอง มีความคลาดเคลื่อน/ดีเลย์ (เร็วๆ นี้)</option></select>
+      </label>
+    </div>
+    <div class="row">
+      <a class="btn ghost" href="/">← กลับ</a>
+      <button class="btn" id="startBtn">▶ เริ่มเกม</button>
+    </div>
+    <div class="muted tiny">หน้านี้เป็นต้นแบบเพื่อดูการจัดวาง ยังไม่มีการคำนวณจริง</div>
+  </div>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+<script src="/sim.js"></script>
+</body>
+</html>

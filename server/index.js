@@ -62,6 +62,8 @@ app.get('/api/health', async (req, res) => {
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 app.use(express.static(PUBLIC_DIR, { index: 'ai.html' }));
 app.get('/admin', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'admin.html')));
+// หน้าโมเดลจำลองการเลี้ยงกุ้ง (แนวนอน แยกจากหน้าเลขา) — ต้นแบบหน้าจอ
+app.get('/sim', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'sim.html')));
 // หน้าห้องสัมมนา/ประชุม (ลิงก์ที่ส่งให้คนอื่น — เปิดได้โดยไม่ต้องสมัคร)
 app.get('/meet/:code', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'meet.html')));
 

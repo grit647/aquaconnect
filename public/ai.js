@@ -2122,6 +2122,15 @@
   // รายการเมนูเดิม 4 ข้อ (เริ่มหัวข้อใหม่ / หัวข้อที่เคยคุย / ให้เลขาทบทวน / คุยด้วยเสียงต่อเนื่อง) — ซ่อนตามคำขอคุณต้น เพราะมีทางอื่นแล้ว
   // (ปุ่ม "เลือกหัวข้อการสนทนา" หน้าหลัก, เลขาทบทวนเองทุก 5 ข้อความ, ปุ่มไมค์ 🎤 เข้าโหมดเสียงต่อเนื่อง) — โค้ดยังอยู่ เปิดกลับได้โดยเปลี่ยนเป็น true
   const SHOW_LEGACY_MENU = false;
+  const SIM_MENU_ADMIN_ONLY = true;
+  // popup แนะนำโมเดลจำลอง → ปุ่มเข้าหน้าแยก /sim (หน้าจอแนวนอน)
+  function showSimIntro() {
+    const body = openSheet('🦐 การเลี้ยงกุ้งเสมือนจริง');
+    note(body, 'เกมจำลองบ่อกุ้งที่ผู้เลี้ยงเป็นคนจัดการเอง: คลอง → บ่อพัก → บ่อเลี้ยง ดูค่าน้ำ 10 ค่า จัดการเคมี/อาหาร/ออกซิเจน รับมือเหตุการณ์ และคุมต้นทุนให้ได้กำไร');
+    note(body, '📱 หน้านี้ใช้จอ "แนวนอน" — หมุนมือถือก่อนเข้า (เบราว์เซอร์ในไลน์อาจหมุนไม่ได้ แนะนำเปิดด้วย Chrome)');
+    note(body, '⚠️ ตอนนี้เป็นต้นแบบหน้าจอ ยังไม่มีการคำนวณจริง', 'empty');
+    sheetButton(body, '▶ เข้าสู่โมเดลจำลอง (แนวนอน)', () => { location.href = '/sim'; });
+  }
   $('menuBtn').addEventListener('click', () => {
     const body = openSheet('เมนู');
     if (me) {
@@ -2136,6 +2145,8 @@
     if (SHOW_LEGACY_MENU) sheetButton(body, '💡 ให้เลขาทบทวนสิ่งที่ฉันสอน', async () => { closeSheet(); try { const r = await api('POST', '/api/chat/reflect', {}); showProposals(r.proposals); if (!r.proposals.length) addBubble('assistant', 'ตอนนี้ยังไม่มีอะไรใหม่ที่เลขาอยากจดไว้ค่ะ คุยกันอีกสักพักแล้วลองใหม่นะคะ'); } catch (err) { addBubble('error', err.message); } });
     sheetButton(body, '🖼️ อัลบั้ม', showAlbum);
     sheetButton(body, '📅 ปฏิทิน & เตือน' + (dueCount ? ' (' + dueCount + ')' : ''), () => { closeSheet(); openCal(); });
+    // โมเดลจำลองการเลี้ยงกุ้ง (เจ้าของสั่ง 2026-11-27) — ตอนนี้เป็นต้นแบบหน้าจอ จึงเปิดให้แอดมินก่อน (ตั้ง SIM_MENU_ADMIN_ONLY = false เมื่อพร้อมเปิดทุกคน)
+    if (!SIM_MENU_ADMIN_ONLY || (me && me.isAdmin)) sheetButton(body, '🦐 โมเดลจำลอง', showSimIntro);
     if (SHOW_LEGACY_MENU) sheetButton(body, '🎙️ คุยด้วยเสียงต่อเนื่อง (ใช้กับหูฟังบลูทูธ)', () => { closeSheet(); enterVoiceMode(false); });
     if (!isStandalone()) sheetButton(body, '📲 ติดตั้งไอคอนบนหน้าจอหลัก', installApp);
     sheetButton(body, '💰 เครดิต / เติมเงิน', showCredits);

@@ -1,0 +1,95 @@
+/* หน้าโมเดลจำลองการเลี้ยงกุ้ง — แนวนอน ธีมมืดนีออนเดียวกับหน้าเลขา (ai.css) | ต้นแบบหน้าจอ */
+:root {
+  --bg: #0b0f1e; --panel: #131a30; --panel2: #1b2442; --line: #27345c;
+  --text: #e8ecff; --muted: #8d98c4; --neon: #22d3ee; --neon2: #a78bfa;
+  --danger: #fb7185; --ok: #34d399; --warn: #fbbf24;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  font-family: 'Segoe UI', 'Noto Sans Thai', system-ui, sans-serif;
+  background: var(--bg); color: var(--text); line-height: 1.4; overflow: hidden;
+  font-size: clamp(11px, 2.4vh, 14px);
+}
+.muted { color: var(--muted); } .tiny { font-size: 0.82em; margin-top: 6px; }
+.proto { font-size: 0.7em; font-weight: 600; color: var(--warn); border: 1px solid var(--warn); border-radius: 999px; padding: 0 7px; margin-left: 4px; vertical-align: middle; }
+.sec-t { font-weight: 800; color: var(--neon); font-size: 0.9em; margin: 4px 0 4px; }
+
+/* ปุ่ม */
+.btn { background: linear-gradient(135deg, var(--neon), var(--neon2)); color: #06101e; border: 0; border-radius: 10px; padding: 8px 14px; font-weight: 800; font-family: inherit; font-size: 1em; cursor: pointer; text-decoration: none; display: inline-block; text-align: center; }
+.btn.ghost { background: var(--panel2); color: var(--text); border: 1px solid var(--line); font-weight: 600; }
+.btn.small { padding: 5px 10px; border-radius: 8px; }
+
+/* ขอให้หมุนจอ (แนวตั้ง) */
+.rotate { display: none; position: fixed; inset: 0; z-index: 50; background: var(--bg); flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 24px; text-align: center; }
+.rot-ico { font-size: 56px; } .rot-t { font-size: 20px; font-weight: 800; color: var(--neon); } .rot-s { color: var(--muted); max-width: 320px; }
+@media (orientation: portrait) { .rotate { display: flex; } #app { visibility: hidden; } }
+
+/* โครงหน้า */
+#app { height: 100dvh; display: flex; flex-direction: column; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+.top { display: flex; align-items: center; gap: 8px; padding: 5px 8px; background: var(--panel); border-bottom: 1px solid var(--line); flex: 0 0 auto; }
+.title { font-weight: 800; white-space: nowrap; }
+.chips { display: flex; gap: 6px; flex: 1; overflow-x: auto; scrollbar-width: none; }
+.chip { background: var(--panel2); border: 1px solid var(--line); border-radius: 999px; padding: 1px 9px; white-space: nowrap; color: var(--muted); }
+.chip b { color: var(--text); } .chip.cash b { color: var(--ok); }
+.speed { display: flex; gap: 3px; }
+.sp { background: var(--panel2); color: var(--muted); border: 1px solid var(--line); border-radius: 8px; padding: 3px 8px; font-family: inherit; cursor: pointer; }
+.sp.on { color: var(--neon); border-color: var(--neon); }
+
+.grid { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(130px, 19%) 1fr minmax(240px, 33%); gap: 6px; padding: 6px; }
+.left, .right, .center { min-height: 0; display: flex; flex-direction: column; gap: 6px; }
+.left, .right { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 6px; }
+
+/* ซ้าย */
+.ponds { display: flex; flex-direction: column; gap: 4px; flex: 0 0 auto; }
+.pond { text-align: left; background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 10px; padding: 5px 8px; font-family: inherit; font-weight: 700; cursor: pointer; line-height: 1.2; }
+.pond small { display: block; color: var(--muted); font-weight: 400; font-size: 0.78em; }
+.pond.on { border-color: var(--neon); box-shadow: 0 0 0 1px var(--neon) inset; color: var(--neon); }
+.actions { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+.actions button { text-align: left; background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 9px; padding: 5px 8px; font-family: inherit; cursor: pointer; }
+.actions button:active { border-color: var(--neon); }
+.actions button.danger { color: var(--danger); }
+
+/* กลาง */
+.scene { flex: 1 1 auto; min-height: 0; position: relative; background: radial-gradient(ellipse at 50% 40%, #15305a 0%, #0c1a33 70%); border: 1px solid var(--line); border-radius: 12px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.flow { width: 100%; height: 100%; max-height: 100%; }
+.flow path { stroke: var(--neon); stroke-width: 2.5; fill: none; }
+.flow .lbl { fill: var(--muted); font-size: 12px; }
+.flow .node rect { fill: rgba(34, 211, 238, 0.07); stroke: var(--line); stroke-width: 2; cursor: pointer; }
+.flow .node.on rect { stroke: var(--neon); fill: rgba(34, 211, 238, 0.16); }
+.flow .node text { fill: var(--text); font-size: 17px; font-weight: 700; pointer-events: none; }
+.flow .node text.sub { fill: var(--muted); font-size: 12px; font-weight: 400; }
+.scene-note { position: absolute; bottom: 4px; left: 0; right: 0; text-align: center; color: var(--muted); font-size: 0.8em; pointer-events: none; }
+.log { flex: 0 0 25%; min-height: 54px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 5px 8px; display: flex; flex-direction: column; }
+.log-body { overflow-y: auto; flex: 1; font-size: 0.92em; }
+.log-body div { padding: 1px 0; }
+
+/* ขวา */
+.tabs { display: flex; gap: 4px; flex: 0 0 auto; }
+.tab { flex: 1; background: var(--panel2); color: var(--muted); border: 1px solid var(--line); border-radius: 9px; padding: 4px 2px; font-family: inherit; font-weight: 700; cursor: pointer; }
+.tab.on { color: var(--neon); border-color: var(--neon); }
+.panel { display: none; flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.panel.on { display: block; }
+.pond-name { font-weight: 800; margin-bottom: 4px; }
+.params { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.param { background: var(--panel2); border: 1px solid var(--line); border-radius: 9px; padding: 3px 7px; position: relative; }
+.param .pl { color: var(--muted); font-size: 0.82em; line-height: 1.15; }
+.param .pv { font-weight: 800; font-size: 1.25em; line-height: 1.15; }
+.param .pv small { font-weight: 400; color: var(--muted); font-size: 0.6em; margin-left: 2px; }
+.param .dot { position: absolute; right: 7px; top: 7px; width: 8px; height: 8px; border-radius: 50%; background: var(--line); }
+.kv { display: flex; justify-content: space-between; gap: 6px; padding: 3px 2px; border-bottom: 1px dashed var(--line); }
+.kv span { color: var(--muted); } .kv b { text-align: right; }
+.kv.total { border-bottom: 0; background: var(--panel2); border-radius: 8px; padding: 4px 6px; }
+.kv.total span { color: var(--text); font-weight: 700; }
+
+/* หน้าตั้งค่าเริ่มเกม */
+.modal { position: fixed; inset: 0; z-index: 30; background: rgba(5, 8, 20, 0.82); display: flex; align-items: center; justify-content: center; padding: 8px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 12px 16px; width: min(640px, 96vw); max-height: 96dvh; overflow-y: auto; }
+.card-t { font-size: 1.3em; font-weight: 800; color: var(--neon); margin-bottom: 6px; }
+.form { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; margin-bottom: 8px; }
+.form label { display: flex; flex-direction: column; gap: 2px; color: var(--muted); font-size: 0.92em; }
+.form select, .form input[type=range] { width: 100%; background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 5px 6px; font-family: inherit; font-size: 1em; }
+.form input[type=range] { padding: 0; accent-color: var(--neon); }
+.row { display: flex; justify-content: space-between; gap: 10px; margin-top: 6px; }
+.toast { position: fixed; left: 50%; bottom: 12px; transform: translateX(-50%); background: var(--panel2); border: 1px solid var(--neon); color: var(--text); border-radius: 12px; padding: 7px 14px; z-index: 60; max-width: 80vw; text-align: center; }
