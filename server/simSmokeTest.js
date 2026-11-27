@@ -37,6 +37,11 @@ const get = async (p) => { const r = await fetch(BASE + p); return { status: r.s
   const p3 = await get('/pond3d.js'); const th = await get('/vendor/three.min.js');
   ok = true; why = ''; try { new vm.Script(p3.text, { filename: 'pond3d.js' }); } catch (e) { ok = false; why = e.message; }
   check('pond3d.js คอมไพล์ผ่าน + three.js เสิร์ฟได้ + หน้ามี 3 มุมมอง (ท็อป/ตัด/สำรวจ)', ok && th.status === 200 && th.text.length > 100000 && ['data-p3="top"', 'data-p3="section"', 'data-p3="explore"'].every((k) => sim.text.includes(k)), why);
+  const mj = await get('/music.js'); const pl = JSON.parse((await get('/music/playlist.json')).text);
+  const ctxm = { window: {}, Uint8Array, Math, Error, String, Number }; vm.createContext(ctxm); vm.runInContext(mj.text, ctxm);
+  let songsOk = pl.length === 3; const counts = [];
+  for (const it of pl) { const r = await fetch(BASE + '/music/' + encodeURIComponent(it.file)); const b = await r.arrayBuffer(); try { const s = ctxm.window.SimMidi.parseMidi(b); counts.push(s.notes.length + 'โน้ต/' + Math.round(s.length) + 'วิ'); if (s.notes.length < 100 || s.length < 30) songsOk = false; } catch (e) { songsOk = false; counts.push(e.message); } }
+  check('เพลงประกอบ: music.js อ่านไฟล์ .mid ได้ครบ 3 เพลง (มีโน้ต ยาว >30 วิ)', songsOk && /id="musicBtn"/.test(sim.text) && /\/music\.js/.test(sim.text), counts.join(', '));
   const home = await get('/');
   check('หน้าหลักยังเป็นหน้าเลขา (ไม่ถูก /sim แย่ง)', home.status === 200 && /id="menuBtn"/.test(home.text));
   const other = await get('/something-else');

@@ -29,6 +29,7 @@
       <button class="sp" data-sp="2" title="เร็ว 2 เท่า">▶▶</button>
       <button class="sp" data-sp="4" title="เร็ว 4 เท่า">▶▶▶</button>
     </div>
+    <button class="btn ghost small" id="musicBtn" title="เพลงประกอบ" type="button">🎵</button>
     <button class="btn ghost small" id="fsBtn" title="เต็มจอ/ล็อกแนวนอน">⛶</button>
   </header>
 
@@ -154,6 +155,16 @@
   </div>
 </div>
 
+<!-- เพลงประกอบ -->
+<div id="musicBox" class="modal" hidden style="z-index:50">
+  <div class="card pick-card">
+    <div class="card-t">🎵 เพลงประกอบ</div>
+    <div id="musicList"></div>
+    <div class="row" style="align-items:center"><button class="btn ghost small" id="musicMute" type="button">🔊 ปิดเสียง</button><input id="musicVol" type="range" min="0" max="100" value="50" style="flex:1;accent-color:var(--neon)"></div>
+    <div class="row"><span class="muted tiny">เพิ่มเพลงเองได้: ใส่ไฟล์ .mid / .kar ในโฟลเดอร์ public/music แล้วเพิ่มชื่อใน playlist.json</span><button class="btn small" id="musicClose" type="button">ตกลง</button></div>
+  </div>
+</div>
+
 <!-- มุมมอง 3 มิติของบ่อเลี้ยง (ต้นแบบ) -->
 <div id="pond3d" class="p3" hidden>
   <canvas id="pond3dCanvas"></canvas>
@@ -174,6 +185,7 @@
 </div><!-- /stage -->
 <script src="/vendor/three.min.js"></script>
 <script src="/pond3d.js"></script>
+<script src="/music.js"></script>
 <script src="/sim.js"></script>
 </body>
 </html>
