@@ -302,10 +302,11 @@
       document.querySelector('.node[data-pond=' + k + ']').classList.toggle('filling', !!p);
       if (p) { const eq = eqOf(p.mode, p.idx); $('flow_' + id + '_a').textContent = (eq.lph ? '⛽' : '⚡') + eq.q + ' ม³/ชม.'; $('flow_' + id + '_b').textContent = (state.speed ? '+' : '⏸ +') + (eq.q / pondArea(k) * 100).toFixed(0) + ' ซม./ชม.'; }
     });
+    qsa('.gear-btn').forEach((g) => g.classList.toggle('run', !!state.pumps[g.dataset.pump]));
     qsa('.pump-btn').forEach((b) => { const run = !!state.pumps[b.dataset.pump]; b.classList.toggle('run', run); b.textContent = run ? '🚰 สูบอยู่…' : '🚰 สูบน้ำ'; });
     if (!$('pumpBox').hidden && state.pumpPond && state.pumps[state.pumpPond]) updatePumpStatus();
   }
-  qsa('.pump-btn').forEach((b) => b.addEventListener('click', () => openPump(b.dataset.pump)));
+  qsa('.pump-btn, .gear-btn').forEach((b) => b.addEventListener('click', () => openPump(b.dataset.pump)));
   qsa('[data-pm]').forEach((b) => b.addEventListener('click', () => { state.pumpSel = { mode: b.dataset.pm, idx: 0 }; renderPump(); }));
   $('pumpClose').addEventListener('click', () => { $('pumpBox').hidden = true; });
   $('pumpBox').addEventListener('click', (e) => { if (e.target === $('pumpBox')) $('pumpBox').hidden = true; });

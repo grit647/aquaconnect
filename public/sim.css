@@ -91,6 +91,16 @@ body {
 .scene[data-speed="60"] .imp-spin { animation-duration: .45s; } .scene[data-speed="600"] .imp-spin { animation-duration: .25s; }
 .scene.paused .flow-anim, .scene.paused .imp-spin, .scene.paused .node.filling > rect:first-child { animation-play-state: paused; }
 .flow .node rect.bar-lv, .flow .node rect.bar-cap { transition: width .3s linear; }
+.flow .gear-btn { cursor: pointer; }
+.flow .gear-hit { fill: transparent; stroke: none; }
+.flow .gear-spin { transform-box: fill-box; transform-origin: center; }
+.flow .gear-spin path { fill: #0c1a33; stroke: #22d3ee; stroke-width: 2; stroke-linejoin: round; }
+.flow .gear-spin circle { fill: #15305a; stroke: #22d3ee; stroke-width: 1.5; }
+.flow .gear-btn:hover .gear-spin path { fill: #15305a; }
+.flow .gear-btn.run .gear-spin { animation: impspin .8s linear infinite; }
+.flow .gear-btn.run .gear-spin path { stroke: #fbbf24; fill: #2a2410; }
+.scene[data-speed="60"] .gear-btn.run .gear-spin { animation-duration: .45s; } .scene[data-speed="600"] .gear-btn.run .gear-spin { animation-duration: .25s; }
+.scene.paused .gear-btn.run .gear-spin { animation-play-state: paused; }
 .scene-note { position: absolute; bottom: 4px; left: 0; right: 0; text-align: center; color: var(--muted); font-size: 0.8em; pointer-events: none; }
 .log { flex: 0 0 25%; min-height: 54px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 5px 8px; display: flex; flex-direction: column; }
 .log-body { overflow-y: auto; flex: 1; font-size: 0.92em; }
