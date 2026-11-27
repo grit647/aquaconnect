@@ -68,7 +68,7 @@
           <path d="M372 120H442" marker-end="url(#ar)"/><text x="407" y="110" text-anchor="middle" class="lbl">เติม/ถ่าย</text>
           <path d="M516 204V228" marker-end="url(#ar)"/><text x="516" y="238" text-anchor="middle" class="lbl">น้ำทิ้ง</text>
         </svg>
-        <div class="scene-note">พื้นที่ฉาก 3 มิติ (กำลังพัฒนา) — แตะบ่อเพื่อดูค่าของบ่อนั้น</div>
+        <div class="scene-note">แตะบ่อเพื่อดูค่าของบ่อนั้น • แตะ "③ บ่อเลี้ยง" เพื่อเข้าไปดูสภาพบ่อ 3 มิติ</div>
       </div>
       <div class="log" id="log"><div class="sec-t">บันทึก / เหตุการณ์</div><div class="log-body" id="logBody"><div class="muted">ยังไม่เริ่มเกม — กด "เริ่มเกม" ในหน้าตั้งค่า</div></div></div>
     </section>
@@ -154,12 +154,29 @@
   </div>
 </div>
 
+<!-- มุมมอง 3 มิติของบ่อเลี้ยง (ต้นแบบ) -->
+<div id="pond3d" class="p3" hidden>
+  <canvas id="pond3dCanvas"></canvas>
+  <div class="p3-bar">
+    <button class="btn small ghost" data-p3="top" type="button">🔭 ท็อปวิว</button>
+    <button class="btn small ghost" data-p3="section" type="button">📐 ภาพตัด</button>
+    <button class="btn small ghost" data-p3="explore" type="button">🤿 สำรวจพื้นบ่อ</button>
+    <button class="btn small ghost p3-x" id="p3Close" type="button">✕ ปิด</button>
+  </div>
+  <div class="p3-note" id="p3Note"></div>
+  <div class="p3-move" id="p3Move" hidden>
+    <button id="p3F" type="button">▲</button><button id="p3L" type="button">◀</button><button id="p3B" type="button">▼</button><button id="p3R" type="button">▶</button>
+  </div>
+</div>
+
 <!-- ตัวเลือกที่วาดเอง (แทน dropdown ของระบบ ซึ่งไม่หมุนตามภาพ) -->
 <div id="picker" class="modal" hidden><div class="card pick-card"><div class="card-t" id="pickTitle"></div><div id="pickList"></div></div></div>
 
 <div id="rotHint" class="rot-hint" hidden>↻ หมุนมือถือเป็นแนวนอนเพื่อให้ภาพตรง</div>
 <div id="toast" class="toast" hidden></div>
 </div><!-- /stage -->
+<script src="/vendor/three.min.js"></script>
+<script src="/pond3d.js"></script>
 <script src="/sim.js"></script>
 </body>
 </html>

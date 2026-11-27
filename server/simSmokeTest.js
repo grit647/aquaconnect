@@ -34,6 +34,9 @@ const get = async (p) => { const r = await fetch(BASE + p); return { status: r.s
   check('เมนู ☰ มี "🦐 โมเดลจำลอง" และ popup "การเลี้ยงกุ้งเสมือนจริง" ที่พาไป /sim', /🦐 โมเดลจำลอง/.test(ai.text) && /การเลี้ยงกุ้งเสมือนจริง/.test(ai.text) && /location\.href = '\/sim'/.test(ai.text));
   check('เมนูโมเดลจำลองเปิดเฉพาะแอดมินไว้ก่อน (สวิตช์ SIM_MENU_ADMIN_ONLY)', /SIM_MENU_ADMIN_ONLY = true/.test(ai.text) && /!SIM_MENU_ADMIN_ONLY \|\| \(me && me\.isAdmin\)/.test(ai.text));
 
+  const p3 = await get('/pond3d.js'); const th = await get('/vendor/three.min.js');
+  ok = true; why = ''; try { new vm.Script(p3.text, { filename: 'pond3d.js' }); } catch (e) { ok = false; why = e.message; }
+  check('pond3d.js คอมไพล์ผ่าน + three.js เสิร์ฟได้ + หน้ามี 3 มุมมอง (ท็อป/ตัด/สำรวจ)', ok && th.status === 200 && th.text.length > 100000 && ['data-p3="top"', 'data-p3="section"', 'data-p3="explore"'].every((k) => sim.text.includes(k)), why);
   const home = await get('/');
   check('หน้าหลักยังเป็นหน้าเลขา (ไม่ถูก /sim แย่ง)', home.status === 200 && /id="menuBtn"/.test(home.text));
   const other = await get('/something-else');

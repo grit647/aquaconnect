@@ -69,7 +69,7 @@
     $('pondName').textContent = PONDS[key];
   }
   qsa('.pond', $('pondTabs')).forEach((b) => b.addEventListener('click', () => selectPond(b.dataset.pond)));
-  qsa('.node', $('scene')).forEach((g) => g.addEventListener('click', () => selectPond(g.dataset.pond)));
+  qsa('.node', $('scene')).forEach((g) => g.addEventListener('click', () => { selectPond(g.dataset.pond); if (g.dataset.pond === 'culture' && window.__openPond3d) window.__openPond3d(); }));
 
   // ----- แท็บขวา -----
   qsa('.tab', $('tabs')).forEach((b) => b.addEventListener('click', () => {
