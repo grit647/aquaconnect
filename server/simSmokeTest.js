@@ -17,7 +17,7 @@ const get = async (p) => { const r = await fetch(BASE + p); return { status: r.s
   check('มีระบบบ่อ 3 ส่วน (คลอง/บ่อพัก/บ่อเลี้ยง)', ['data-pond="canal"', 'data-pond="reservoir"', 'data-pond="culture"'].every((k) => sim.text.includes(k)));
   check('มี 3 แท็บแดชบอร์ด น้ำ/กุ้ง/ต้นทุน', ['data-tab="water"', 'data-tab="shrimp"', 'data-tab="cost"'].every((k) => sim.text.includes(k)));
   check('ปุ่มจัดการครบ 9 ปุ่ม', (sim.text.match(/data-act="/g) || []).length === 9);
-  check('หน้าตั้งค่าเริ่มเกม: ชนิดกุ้ง/ระบบเลี้ยง/ความหนาแน่น/จังหวัด/โหมด', ['fSpecies', 'fSystem', 'fDensity', 'fProvince', 'fMode', 'startBtn'].every((k) => sim.text.includes('id="' + k + '"')));
+  check('หน้าตั้งค่าเริ่มเกม: ชนิดกุ้ง/ระบบเลี้ยง/ความหนาแน่น/จังหวัด/โหมด', ['fName', 'fSpecies', 'fSystem', 'fSalinity', 'fSize', 'fStock', 'fLevel', 'fProvince', 'fMode', 'startBtn'].every((k) => sim.text.includes('id="' + k + '"')));
 
   const js = await get('/sim.js'); const css = await get('/sim.css');
   let ok = true; let why = '';

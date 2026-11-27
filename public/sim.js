@@ -113,7 +113,7 @@
   qsa('select', $('setup')).forEach((sel) => {
     const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'selbtn';
     const sync = () => { btn.textContent = sel.options[sel.selectedIndex].text; };
-    sync(); sel.parentNode.appendChild(btn);
+    sync(); sel.addEventListener('change', sync); sel.parentNode.appendChild(btn);
     btn.addEventListener('click', () => {
       const label = sel.parentNode.firstChild.textContent.trim();
       $('pickTitle').textContent = label; const list = $('pickList'); list.textContent = '';
@@ -129,21 +129,47 @@
   $('picker').addEventListener('click', (e) => { if (e.target === $('picker')) $('picker').hidden = true; });
 
   // ----- หน้าตั้งค่าเริ่มเกม -----
-  $('fDensity').addEventListener('input', () => { $('fDensityVal').textContent = $('fDensity').value; });
+  const fmt = (n) => Number(n).toLocaleString('th-TH');
+  const setDis = (id, test) => { Array.from($(id).options).forEach((o) => { o.disabled = test(o.value); }); };
+  const setVal = (id, v) => { $(id).value = String(v); $(id).dispatchEvent(new Event('change')); };
+  const MIX_RAI = [3, 4, 5];
+  function stockInfo() {
+    const rai = Number($('fSize').value), max = rai * 300000, v = Number($('fStock').value) || 0;
+    $('fStockHint').textContent = 'ปล่อยได้ 50,000 – ' + fmt(max) + ' ตัว (ไม่เกิน 3 แสนตัว/ไร่) • ตอนนี้ ≈ ' + Math.round(v / (rai * 1600)) + ' ตัว/ตร.ม.';
+    return { rai, max, v };
+  }
+  function applyRules() {
+    const mix = $('fSpecies').value === 'mix';
+    setDis('fSystem', (v) => mix && v !== 'earth'); setDis('fSalinity', (v) => mix && v !== '0'); setDis('fSize', (v) => mix && !MIX_RAI.includes(Number(v)));
+    if (mix) { setVal('fSystem', 'earth'); setVal('fSalinity', '0'); if (Number($('fSize').value) < 3) setVal('fSize', '3'); }
+    $('fRule').textContent = mix ? 'กุ้งขาวผสมก้ามกราม: เลี้ยงได้เฉพาะบ่อดิน • ความเค็ม 0 ppt • ขนาดบ่อ 3 / 4 / 5 ไร่ เท่านั้น' : '';
+    const i = stockInfo(); if (i.v > i.max) { $('fStock').value = String(i.max); stockInfo(); }
+  }
+  $('fSpecies').addEventListener('change', applyRules); $('fSize').addEventListener('change', applyRules);
+  $('fStock').addEventListener('input', stockInfo);
+  $('fLevel').addEventListener('input', () => { $('fLevelVal').textContent = Number($('fLevel').value).toFixed(1); });
+  applyRules();
+
   $('startBtn').addEventListener('click', () => {
     const sel = (id) => { const s = $(id); return s.options[s.selectedIndex].text; };
+    const i = stockInfo();
+    if (!(i.v >= 50000 && i.v <= i.max)) { toast('จำนวนที่ปล่อยต้องอยู่ระหว่าง 50,000 – ' + fmt(i.max) + ' ตัว'); $('fStock').focus(); return; }
+    const name = ($('fName').value || '').trim() || 'ฟาร์มของฉัน';
+    const level = Number($('fLevel').value), resv = Math.round((1 + Math.random() * 2) * 10) / 10, pe = $('fSystem').value === 'pe';
+    state.cfg = { name, species: $('fSpecies').value, system: $('fSystem').value, salinity: Number($('fSalinity').value), rai: i.rai, stock: i.v, level, province: $('fProvince').value, reservoir: { rai: 7, level: resv } };
     state.started = true;
-    $('kvSpecies').textContent = sel('fSpecies');
-    $('kvDensity').textContent = $('fDensity').value + ' ตัว/ตร.ม.';
-    $('kvSystem').textContent = sel('fSystem');
-    $('kvProvince').textContent = sel('fProvince');
-    $('chipDay').textContent = 'วันที่ 1';
-    $('chipTime').textContent = '06:00';
-    $('chipWx').textContent = sel('fProvince');
-    $('chipCash').textContent = '–';
+    $('farmName').textContent = name;
+    $('kvFarm').textContent = name; $('kvSpecies').textContent = sel('fSpecies'); $('kvSystem').textContent = sel('fSystem');
+    $('kvSalinity').textContent = sel('fSalinity'); $('kvSize').textContent = sel('fSize'); $('kvStock').textContent = fmt(i.v) + ' ตัว';
+    $('kvDensity').textContent = Math.round(i.v / (i.rai * 1600)) + ' ตัว/ตร.ม.'; $('kvLevel').textContent = level.toFixed(1) + ' ม. (ลึกสุด 3 ม.)';
+    $('kvProvince').textContent = sel('fProvince'); $('kvResv').textContent = '7 ไร่ • น้ำ ' + resv.toFixed(1) + ' ม. (สูงสุด 3 ม.)';
+    $('nodeCulSub').textContent = i.rai + ' ไร่ • บ่อแห้ง'; $('nodeResSub').textContent = '7 ไร่ • น้ำ ' + resv.toFixed(1) + ' ม.';
+    $('chipDay').textContent = 'ก่อนปล่อยกุ้ง'; $('chipTime').textContent = '06:00'; $('chipWx').textContent = sel('fProvince'); $('chipCash').textContent = '–';
+    window.__pond3dCfg = { rai: i.rai, pe, water: 0, shrimp: 0 };
     $('setup').hidden = true;
-    log('เริ่มเกม: ' + sel('fSpecies') + ' • ' + sel('fSystem') + ' • ' + $('fDensity').value + ' ตัว/ตร.ม. • ' + sel('fProvince'));
-    log('(ต้นแบบหน้าจอ — ยังไม่มีการคำนวณ ค่าบนแดชบอร์ดเป็น "–")');
+    log('เริ่มเกม: ' + name + ' • ' + sel('fSpecies') + ' • ' + sel('fSystem') + ' • ความเค็ม ' + $('fSalinity').value + ' ppt • บ่อ ' + i.rai + ' ไร่ • ปล่อย ' + fmt(i.v) + ' ตัว • ระดับน้ำ ' + level.toFixed(1) + ' ม.');
+    log('บ่อเลี้ยงยังไม่มีน้ำ — ขั้นต่อไป: เตรียมบ่อ → เตรียมน้ำ → ปล่อยกุ้ง จึงเข้าสู่โหมดเลี้ยง (ยังไม่เปิดใช้ในต้นแบบ)');
+    log('บ่อพัก 7 ไร่ มีน้ำเริ่มต้น ' + resv.toFixed(1) + ' ม. (สุ่มให้ ต่ำสุด 1 ม. สูงสุด 3 ม.)');
   });
 
   // ขนาดเวทีตามพื้นที่เห็นจริงของเบราว์เซอร์ (100dvh บางเครื่องล้ำไปใต้แถบปุ่มระบบ ทำให้ปุ่มขวาหาย)

@@ -16,7 +16,7 @@
 <div id="app">
   <header class="top">
     <a class="btn ghost small" href="/" id="backBtn">← กลับ</a>
-    <div class="title">🦐 ฟาร์มกุ้งจำลอง <span class="proto">ต้นแบบหน้าจอ</span></div>
+    <div class="title">🦐 <span id="farmName">ฟาร์มกุ้งจำลอง</span> <span class="proto">ต้นแบบหน้าจอ</span></div>
     <div class="chips">
       <span class="chip">วันที่เลี้ยง <b id="chipDay">–</b></span>
       <span class="chip">เวลา <b id="chipTime">–</b></span>
@@ -63,8 +63,8 @@
         <svg viewBox="0 0 600 240" class="flow" aria-label="ผังระบบบ่อ">
           <defs><marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#22d3ee"/></marker></defs>
           <g class="node" data-pond="canal"><rect x="14" y="70" width="140" height="100" rx="14"/><text x="84" y="115" text-anchor="middle">① คลอง</text><text x="84" y="140" text-anchor="middle" class="sub">แหล่งน้ำธรรมชาติ</text></g>
-          <g class="node" data-pond="reservoir"><rect x="230" y="70" width="140" height="100" rx="14"/><text x="300" y="115" text-anchor="middle">② บ่อพัก</text><text x="300" y="140" text-anchor="middle" class="sub">เตรียมน้ำ</text></g>
-          <g class="node on" data-pond="culture"><rect x="446" y="40" width="140" height="160" rx="14"/><text x="516" y="112" text-anchor="middle">③ บ่อเลี้ยง</text><text x="516" y="138" text-anchor="middle" class="sub">🦐 กุ้ง</text></g>
+          <g class="node" data-pond="reservoir"><rect x="230" y="70" width="140" height="100" rx="14"/><text x="300" y="115" text-anchor="middle">② บ่อพัก</text><text x="300" y="140" text-anchor="middle" class="sub" id="nodeResSub">เตรียมน้ำ</text></g>
+          <g class="node on" data-pond="culture"><rect x="446" y="40" width="140" height="160" rx="14"/><text x="516" y="112" text-anchor="middle">③ บ่อเลี้ยง</text><text x="516" y="138" text-anchor="middle" class="sub" id="nodeCulSub">🦐 กุ้ง</text></g>
           <path d="M156 120H226" marker-end="url(#ar)"/><text x="191" y="110" text-anchor="middle" class="lbl">สูบ</text>
           <path d="M372 120H442" marker-end="url(#ar)"/><text x="407" y="110" text-anchor="middle" class="lbl">เติม/ถ่าย</text>
           <path d="M516 204V228" marker-end="url(#ar)"/><text x="516" y="238" text-anchor="middle" class="lbl">น้ำทิ้ง</text>
@@ -89,10 +89,16 @@
       </section>
 
       <section class="panel" id="p-shrimp">
-        <div class="kv"><span>ชนิด</span><b id="kvSpecies">–</b></div>
+        <div class="kv"><span>ฟาร์ม</span><b id="kvFarm">–</b></div>
+        <div class="kv"><span>รูปแบบการเลี้ยง</span><b id="kvSpecies">–</b></div>
+        <div class="kv"><span>ชนิดบ่อ</span><b id="kvSystem">–</b></div>
+        <div class="kv"><span>ความเค็ม</span><b id="kvSalinity">–</b></div>
+        <div class="kv"><span>ขนาดบ่อเลี้ยง</span><b id="kvSize">–</b></div>
+        <div class="kv"><span>จำนวนที่จะปล่อย</span><b id="kvStock">–</b></div>
         <div class="kv"><span>ความหนาแน่น</span><b id="kvDensity">–</b></div>
-        <div class="kv"><span>ระบบเลี้ยง</span><b id="kvSystem">–</b></div>
+        <div class="kv"><span>ระดับน้ำที่ตั้งใจเลี้ยง</span><b id="kvLevel">–</b></div>
         <div class="kv"><span>ที่ตั้ง</span><b id="kvProvince">–</b></div>
+        <div class="kv"><span>บ่อพัก</span><b id="kvResv">–</b></div>
         <div class="sec-t">ผลการเลี้ยง</div>
         <div class="kv"><span>น้ำหนักเฉลี่ย</span><b>– ก.</b></div>
         <div class="kv"><span>ไซส์ (ตัว/กก.)</span><b>–</b></div>
@@ -128,14 +134,28 @@
   <div class="card">
     <div class="card-t">🦐 เริ่มเลี้ยงกุ้ง <span class="proto">ต้นแบบ</span></div>
     <div class="form">
-      <label>ชนิดกุ้ง
-        <select id="fSpecies"><option value="vannamei">กุ้งขาวแวนนาไม</option><option disabled>กุ้งกุลาดำ (เร็วๆ นี้)</option></select>
+      <label class="wide">① ชื่อฟาร์ม
+        <input id="fName" type="text" maxlength="40" placeholder="เช่น ฟาร์มกุ้งบ้านสวน" value="ฟาร์มของฉัน">
       </label>
-      <label>ระบบเลี้ยง
-        <select id="fSystem"><option value="earth">บ่อดิน (พัฒนา/หนาแน่น)</option><option disabled>ไบโอฟล็อก (เร็วๆ นี้)</option><option disabled>ระบบปิด (เร็วๆ นี้)</option></select>
+      <label>② รูปแบบการเลี้ยง
+        <select id="fSpecies"><option value="vannamei">กุ้งขาว</option><option value="blacktiger">กุ้งกุลาดำ</option><option value="mix">กุ้งขาวผสมก้ามกราม</option></select>
       </label>
-      <label>ความหนาแน่น <b id="fDensityVal">80</b> ตัว/ตร.ม. <small class="muted">(ค่าตัวอย่าง รอข้อมูลจริง)</small>
-        <input id="fDensity" type="range" min="20" max="200" step="10" value="80">
+      <label>③ ชนิดบ่อ
+        <select id="fSystem"><option value="earth">บ่อดิน</option><option value="pe">บ่อปูผ้า PE</option></select>
+      </label>
+      <label>④ ความเค็มที่เลี้ยง
+        <select id="fSalinity"><option value="0">0 ppt (น้ำจืด)</option><option value="5">5 ppt</option><option value="10">10 ppt</option><option value="15">15 ppt</option><option value="20">20 ppt</option><option value="25">25 ppt</option><option value="30">30 ppt</option></select>
+      </label>
+      <label>⑤ ขนาดบ่อเลี้ยง
+        <select id="fSize"><option value="1">1 ไร่</option><option value="1.5" selected>1.5 ไร่</option><option value="2">2 ไร่</option><option value="2.5">2.5 ไร่</option><option value="3">3 ไร่</option><option value="4">4 ไร่</option><option value="5">5 ไร่</option></select>
+      </label>
+      <label class="w2"><span>⑥ จำนวนที่ปล่อย (ตัว)</span>
+        <input id="fStock" type="number" inputmode="numeric" min="50000" step="10000" value="150000">
+        <small class="muted" id="fStockHint"></small>
+      </label>
+      <label class="w2"><span>⑦ ระดับน้ำที่ใช้เลี้ยง <b id="fLevelVal">1.2</b> เมตร</span>
+        <input id="fLevel" type="range" min="0.8" max="3" step="0.1" value="1.2">
+        <small class="muted">กำหนดได้ 0.8 – 3.0 ม. • ระหว่างเลี้ยงระดับน้ำขึ้น/ลงตามการระเหย ดูดเลน ถ่ายน้ำ ฝน และการเติมน้ำ</small>
       </label>
       <label>จังหวัด (ใช้อากาศ/ฤดูของพื้นที่)
         <select id="fProvince">
@@ -147,6 +167,8 @@
         <select id="fMode"><option value="easy">ง่าย/ฝึก — เห็นค่าจริงเรียลไทม์</option><option value="hard">ยาก — ตรวจเอง มีความคลาดเคลื่อน/ดีเลย์ (เร็วๆ นี้)</option></select>
       </label>
     </div>
+    <div class="muted tiny" id="fRule"></div>
+    <div class="muted tiny">เริ่มเกมแล้ว บ่อเลี้ยงจะ <b>ยังไม่มีน้ำ</b> — ต้องเตรียมบ่อ → เตรียมน้ำ → ปล่อยกุ้ง ก่อนเข้าสู่โหมดเลี้ยง • บ่อพักมีให้ 7 ไร่ (ลึกสูงสุด 3 ม.) น้ำเริ่มต้นสุ่มให้</div>
     <div class="row">
       <a class="btn ghost" href="/">← กลับ</a>
       <button class="btn" id="startBtn">▶ เริ่มเกม</button>
