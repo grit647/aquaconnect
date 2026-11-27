@@ -325,9 +325,9 @@
     FORM_IDS.forEach((id) => { if (o[id] != null) { $(id).value = o[id]; $(id).dispatchEvent(new Event('change')); } });
     $('fLevelVal').textContent = Number($('fLevel').value).toFixed(1); stockInfo();
   }
-  function saveGame() {
+  function saveGame(silent) {
     const data = { v: 1, savedAt: Date.now(), form: readForm(), game: state.started ? { cfg: state.cfg, water: state.water, simSec: state.simSec, cost: state.cost, pumps: state.pumps } : null };
-    try { localStorage.setItem(SAVE_KEY, JSON.stringify(data)); toast(state.started ? '💾 บันทึกเกมแล้ว (' + clockText().hhmm + ' ระดับน้ำบ่อเลี้ยง ' + state.water.toFixed(2) + ' ม.)' : '💾 บันทึกค่าที่ตั้งไว้แล้ว'); }
+    try { localStorage.setItem(SAVE_KEY, JSON.stringify(data)); if (silent === true) { $('hSave').title = 'บันทึกล่าสุด ' + new Date().toLocaleTimeString('th-TH'); return; } toast(state.started ? '💾 บันทึกเกมแล้ว (' + clockText().hhmm + ' ระดับน้ำบ่อเลี้ยง ' + state.water.toFixed(2) + ' ม.)' : '💾 บันทึกค่าที่ตั้งไว้แล้ว'); }
     catch (e) { toast('บันทึกไม่ได้ — เบราว์เซอร์ไม่อนุญาตให้เก็บข้อมูล'); }
   }
   function askDelete() {
@@ -337,7 +337,12 @@
   }
   $('cfNo').addEventListener('click', () => { $('confirmBox').hidden = true; });
   $('cfYes').addEventListener('click', () => { try { localStorage.removeItem(SAVE_KEY); } catch (e) { /* ข้าม */ } location.reload(); });
-  ['saveBtn', 'hSave'].forEach((id) => $(id).addEventListener('click', saveGame));
+  ['saveBtn', 'hSave'].forEach((id) => $(id).addEventListener('click', () => saveGame()));
+  // บันทึกอัตโนมัติ: ทุก 3 นาที (เวลาจริง) ขณะเล่น + ตอนซ่อนหน้า/ปิดหน้า — ไม่เด้งข้อความรบกวน (เล่นจริงทุกอย่างเรียลไทม์ ไม่ควรเสียความคืบหน้า)
+  const AUTOSAVE_MS = 3 * 60 * 1000;
+  setInterval(() => { if (state.started) { saveGame(true); toast('💾 บันทึกอัตโนมัติแล้ว'); } }, AUTOSAVE_MS);
+  document.addEventListener('visibilitychange', () => { if (document.hidden && state.started) saveGame(true); });
+  window.addEventListener('pagehide', () => { if (state.started) saveGame(true); });
   ['delBtn', 'hDel'].forEach((id) => $(id).addEventListener('click', askDelete));
   function loadSaved() {
     let d = null; try { d = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); } catch (e) { d = null; }
