@@ -224,6 +224,7 @@
   }
   function setSpeed(n) {
     state.speed = n; qsa('.sp').forEach((x) => x.classList.toggle('on', Number(x.dataset.sp) === n));
+    if (state.cfg) refreshSim();
     if (state.started) toast(n ? 'เดินเวลา ×' + n + (n === 1 ? ' (เรียลไทม์)' : '') : 'หยุดเวลา');
   }
   function openPump(k) {
@@ -294,6 +295,13 @@
     if (window.__pond3dCfg) window.__pond3dCfg.water = state.water;
     const fuel = state.cost.fuelL * PRICE.diesel, el = state.cost.kwh * PRICE.kwh;
     $('costFuel').textContent = baht(fuel) + ' (' + state.cost.fuelL.toFixed(1) + ' ล.)'; $('costElec').textContent = baht(el) + ' (' + state.cost.kwh.toFixed(1) + ' หน่วย)'; $('costTotal').textContent = baht(fuel + el);
+    // ภาพเคลื่อนไหวบนผัง: ลูกศรไหล + ใบพัดหมุน + ขอบบ่อปลายทางเรืองแสง ขณะกำลังสูบ (หยุดนิ่งเมื่อเวลาหยุด)
+    $('scene').classList.toggle('paused', !state.speed); $('scene').dataset.speed = String(state.speed);
+    [['res', 'reservoir', 1], ['cul', 'culture', 2]].forEach(([id, k]) => {
+      const p = state.pumps[k], g = $('flow_' + id); g.classList.toggle('on', !!p);
+      document.querySelector('.node[data-pond=' + k + ']').classList.toggle('filling', !!p);
+      if (p) { const eq = eqOf(p.mode, p.idx); $('flow_' + id + '_a').textContent = (eq.lph ? '⛽' : '⚡') + eq.q + ' ม³/ชม.'; $('flow_' + id + '_b').textContent = (state.speed ? '+' : '⏸ +') + (eq.q / pondArea(k) * 100).toFixed(0) + ' ซม./ชม.'; }
+    });
     qsa('.pump-btn').forEach((b) => { const run = !!state.pumps[b.dataset.pump]; b.classList.toggle('run', run); b.textContent = run ? '🚰 สูบอยู่…' : '🚰 สูบน้ำ'; });
     if (!$('pumpBox').hidden && state.pumpPond && state.pumps[state.pumpPond]) updatePumpStatus();
   }
