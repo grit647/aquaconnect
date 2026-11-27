@@ -294,7 +294,7 @@
     if (window.__pond3dCfg) window.__pond3dCfg.water = state.water;
     const fuel = state.cost.fuelL * PRICE.diesel, el = state.cost.kwh * PRICE.kwh;
     $('costFuel').textContent = baht(fuel) + ' (' + state.cost.fuelL.toFixed(1) + ' ล.)'; $('costElec').textContent = baht(el) + ' (' + state.cost.kwh.toFixed(1) + ' หน่วย)'; $('costTotal').textContent = baht(fuel + el);
-    qsa('.pump-btn').forEach((b) => { const run = !!state.pumps[b.dataset.pump]; b.classList.toggle('run', run); b.textContent = run ? '🚰 กำลังสูบ…' : '🚰 สูบน้ำ'; });
+    qsa('.pump-btn').forEach((b) => { const run = !!state.pumps[b.dataset.pump]; b.classList.toggle('run', run); b.textContent = run ? '🚰 สูบอยู่…' : '🚰 สูบน้ำ'; });
     if (!$('pumpBox').hidden && state.pumpPond && state.pumps[state.pumpPond]) updatePumpStatus();
   }
   qsa('.pump-btn').forEach((b) => b.addEventListener('click', () => openPump(b.dataset.pump)));
