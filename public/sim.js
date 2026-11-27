@@ -99,6 +99,25 @@
     } catch (e) { toast('เบราว์เซอร์นี้ไม่รองรับการล็อกแนวนอน — หมุนจอเองได้เลยครับ'); }
   });
 
+  // ----- ตัวเลือกที่วาดเอง แทน <select> ของระบบ (ป๊อปอัประบบไม่หมุนตามภาพตอนถือแนวตั้ง) -----
+  qsa('select', $('setup')).forEach((sel) => {
+    const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'selbtn';
+    const sync = () => { btn.textContent = sel.options[sel.selectedIndex].text; };
+    sync(); sel.parentNode.appendChild(btn);
+    btn.addEventListener('click', () => {
+      const label = sel.parentNode.firstChild.textContent.trim();
+      $('pickTitle').textContent = label; const list = $('pickList'); list.textContent = '';
+      Array.from(sel.options).forEach((o, i) => {
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'pick-opt' + (i === sel.selectedIndex ? ' on' : '');
+        b.textContent = o.text; b.disabled = o.disabled;
+        b.addEventListener('click', () => { sel.selectedIndex = i; sync(); $('picker').hidden = true; });
+        list.appendChild(b);
+      });
+      $('picker').hidden = false;
+    });
+  });
+  $('picker').addEventListener('click', (e) => { if (e.target === $('picker')) $('picker').hidden = true; });
+
   // ----- หน้าตั้งค่าเริ่มเกม -----
   $('fDensity').addEventListener('input', () => { $('fDensityVal').textContent = $('fDensity').value; });
   $('startBtn').addEventListener('click', () => {
