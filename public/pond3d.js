@@ -8,7 +8,7 @@
   const NOTES = {
     top: 'ท็อปวิว — มองจากด้านบน เห็นเครื่องตีน้ำ ถาดอาหาร และกุ้งใต้น้ำ',
     section: 'ภาพตัดขวาง — ขยายแนวตั้ง ×4 ให้เห็นความลึก (ตรงกลางลึกสุด) คันบ่อ และชั้นน้ำ',
-    explore: 'สำรวจพื้นบ่อ — ลากนิ้วเพื่อมอง • กดค้างปุ่มลูกศรเพื่อเดิน',
+    explore: 'สำรวจพื้นบ่อ — ลากนิ้วเพื่อมอง • แตะค้างบนภาพเพื่อเดินไปข้างหน้า',
   };
   let S = null, mode = 'top', raf = 0, open = false;
   const keys = { f: 0, s: 0 };
@@ -94,7 +94,7 @@
   function setMode(m) {
     mode = m;
     Array.from(document.querySelectorAll('[data-p3]')).forEach((b) => b.classList.toggle('on', b.dataset.p3 === m));
-    $('p3Note').textContent = NOTES[m]; $('p3Move').hidden = m !== 'explore';
+    $('p3Note').textContent = NOTES[m];
     S.group.scale.y = m === 'section' ? 4 : 1;
     S.cut.visible = m === 'section';
     S.clipped.forEach((x) => { x.clippingPlanes = m === 'section' ? [S.clip] : []; x.needsUpdate = true; });
@@ -135,23 +135,21 @@
     try { if (!S) build(); } catch (e) { $('pond3d').hidden = true; open = false; alert('เครื่อง/เบราว์เซอร์นี้เปิด 3 มิติไม่ได้'); return; }
     resize(); setMode(mode); cancelAnimationFrame(raf); raf = requestAnimationFrame(frame);
   }
-  function closePond() { open = false; cancelAnimationFrame(raf); $('pond3d').hidden = true; keys.f = keys.s = 0; }
+  function closePond() { clearTimeout(walkT); open = false; cancelAnimationFrame(raf); $('pond3d').hidden = true; keys.f = keys.s = 0; }
 
   // ----- ปุ่ม/การควบคุม -----
   Array.from(document.querySelectorAll('[data-p3]')).forEach((b) => b.addEventListener('click', () => S && setMode(b.dataset.p3)));
-  $('p3Close').addEventListener('click', closePond);
+  $('p3Back').addEventListener('click', closePond);
   window.__openPond3d = openPond;
-  const hold = (id, k, v) => { const el = $(id); const on = (e) => { e.preventDefault(); keys[k] = v; }; const off = () => { keys[k] = 0; };
-    el.addEventListener('pointerdown', on); el.addEventListener('pointerup', off); el.addEventListener('pointerleave', off); el.addEventListener('pointercancel', off); };
-  hold('p3F', 'f', 1); hold('p3B', 'f', -1); hold('p3L', 's', -1); hold('p3R', 's', 1);
-
   // ลากเพื่อมอง (ถือแนวตั้ง เวทีถูกหมุน 90° → สลับแกนให้ตรงกับภาพ)
   let drag = null; const cv = $('pond3dCanvas'); const portraitMq = window.matchMedia('(orientation: portrait)');
-  cv.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, y: e.clientY }; cv.setPointerCapture(e.pointerId); });
-  cv.addEventListener('pointerup', () => { drag = null; }); cv.addEventListener('pointercancel', () => { drag = null; });
+  let walkT = null; const stopWalk = () => { clearTimeout(walkT); keys.f = 0; };
+  cv.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY }; cv.setPointerCapture(e.pointerId); if (mode === 'explore') walkT = setTimeout(() => { keys.f = 1; }, 350); });
+  cv.addEventListener('pointerup', () => { drag = null; stopWalk(); }); cv.addEventListener('pointercancel', () => { drag = null; stopWalk(); });
   cv.addEventListener('pointermove', (e) => {
     if (!drag || mode !== 'explore') return;
-    let dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag = { x: e.clientX, y: e.clientY };
+    if (!keys.f && Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) > 10) clearTimeout(walkT);
+    let dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.x = e.clientX; drag.y = e.clientY;
     if (portraitMq.matches) { const t = dx; dx = dy; dy = -t; }
     view.yaw += dx * 0.006; view.pitch = Math.max(-1.2, Math.min(1.2, view.pitch + dy * 0.006));
   });

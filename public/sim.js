@@ -146,6 +146,23 @@
     log('(ต้นแบบหน้าจอ — ยังไม่มีการคำนวณ ค่าบนแดชบอร์ดเป็น "–")');
   });
 
+  // ขนาดเวทีตามพื้นที่เห็นจริงของเบราว์เซอร์ (100dvh บางเครื่องล้ำไปใต้แถบปุ่มระบบ ทำให้ปุ่มขวาหาย)
+  const stageEl = $('stage');
+  function fitStage() {
+    const vv = window.visualViewport;
+    const W = Math.floor(vv ? vv.width : window.innerWidth), H = Math.floor(Math.min(window.innerHeight, vv ? vv.height : window.innerHeight));
+    if (window.matchMedia('(orientation: portrait)').matches) {
+      stageEl.style.width = H + 'px'; stageEl.style.height = W + 'px'; stageEl.style.left = W + 'px';
+      document.documentElement.style.setProperty('--u', (W / 100) + 'px');
+    } else {
+      stageEl.style.width = ''; stageEl.style.height = ''; stageEl.style.left = '';
+      document.documentElement.style.setProperty('--u', (H / 100) + 'px');
+    }
+  }
+  fitStage();
+  window.addEventListener('resize', fitStage); window.addEventListener('orientationchange', () => setTimeout(fitStage, 150));
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', fitStage);
+
   // ถือแนวตั้ง = ภาพถูกหมุนตะแคงด้วย CSS → บอกให้ผู้ใช้หมุนมือถือให้ภาพตรง (หายเองหรือแตะเพื่อปิด)
   const portraitMq = window.matchMedia ? window.matchMedia('(orientation: portrait)') : null;
   let hintTimer = null;
