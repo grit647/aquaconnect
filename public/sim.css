@@ -130,5 +130,8 @@ body {
 .p-modes { gap: 6px; justify-content: flex-start; }
 .p-modes .btn.on { border-color: var(--neon); color: var(--neon); }
 .pick-opt small { display: block; color: var(--muted); font-size: .85em; }
+.row-mid { display: flex; gap: 6px; }
+.btn.danger { color: var(--danger); border-color: var(--danger); }
+.btn.danger:not(.ghost) { background: var(--panel2); }
 .row { display: flex; justify-content: space-between; gap: 10px; margin-top: 6px; }
 .toast { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); background: var(--panel2); border: 1px solid var(--neon); color: var(--text); border-radius: 12px; padding: 7px 14px; z-index: 60; max-width: 80%; text-align: center; }

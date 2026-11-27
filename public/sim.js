@@ -147,6 +147,20 @@
   $('fLevel').addEventListener('input', () => { $('fLevelVal').textContent = Number($('fLevel').value).toFixed(1); });
   applyRules();
 
+  // วาดหน้าจอเกมจากข้อมูลใน state.cfg (ใช้ทั้งตอนเริ่มเกมใหม่และตอนโหลดเกมที่บันทึกไว้)
+  function paintGame() {
+    const c = state.cfg, sel = (id) => { const s = $(id); return s.options[s.selectedIndex].text; };
+    $('farmName').textContent = c.name;
+    $('kvFarm').textContent = c.name; $('kvSpecies').textContent = sel('fSpecies'); $('kvSystem').textContent = sel('fSystem');
+    $('kvSalinity').textContent = sel('fSalinity'); $('kvSize').textContent = sel('fSize'); $('kvStock').textContent = fmt(c.stock) + ' ตัว';
+    $('kvDensity').textContent = Math.round(c.stock / (c.rai * 1600)) + ' ตัว/ตร.ม.'; $('kvLevel').textContent = c.level.toFixed(1) + ' ม. (ลึกสุด 3 ม.)';
+    $('kvProvince').textContent = sel('fProvince');
+    $('chipWx').textContent = sel('fProvince'); $('chipCash').textContent = '–';
+    window.__pond3dCfg = { rai: c.rai, pe: c.system === 'pe', water: state.water, shrimp: 0 };
+    $('setup').hidden = true;
+    refreshSim();
+  }
+
   $('startBtn').addEventListener('click', () => {
     const sel = (id) => { const s = $(id); return s.options[s.selectedIndex].text; };
     const i = stockInfo();
@@ -155,16 +169,8 @@
     const level = Number($('fLevel').value), resv = Math.round((1 + Math.random() * 2) * 10) / 10, pe = $('fSystem').value === 'pe';
     state.cfg = { name, species: $('fSpecies').value, system: $('fSystem').value, salinity: Number($('fSalinity').value), rai: i.rai, stock: i.v, level, province: $('fProvince').value, reservoir: { rai: 7, level: resv } };
     state.started = true;
-    $('farmName').textContent = name;
-    $('kvFarm').textContent = name; $('kvSpecies').textContent = sel('fSpecies'); $('kvSystem').textContent = sel('fSystem');
-    $('kvSalinity').textContent = sel('fSalinity'); $('kvSize').textContent = sel('fSize'); $('kvStock').textContent = fmt(i.v) + ' ตัว';
-    $('kvDensity').textContent = Math.round(i.v / (i.rai * 1600)) + ' ตัว/ตร.ม.'; $('kvLevel').textContent = level.toFixed(1) + ' ม. (ลึกสุด 3 ม.)';
-    $('kvProvince').textContent = sel('fProvince'); $('kvResv').textContent = '7 ไร่ • น้ำ ' + resv.toFixed(1) + ' ม. (สูงสุด 3 ม.)';
-    $('nodeCulSub').textContent = i.rai + ' ไร่ • บ่อแห้ง'; $('nodeResSub').textContent = '7 ไร่ • น้ำ ' + resv.toFixed(1) + ' ม.';
-    $('chipDay').textContent = 'ก่อนปล่อยกุ้ง'; $('chipTime').textContent = '06:00'; $('chipWx').textContent = sel('fProvince'); $('chipCash').textContent = '–';
-    window.__pond3dCfg = { rai: i.rai, pe, water: 0, shrimp: 0 };
     state.water = 0; state.simSec = 0; state.cost = { fuelL: 0, kwh: 0 }; state.pumps = { reservoir: null, culture: null };
-    refreshSim();
+    paintGame();
     $('setup').hidden = true;
     log('เริ่มเกม: ' + name + ' • ' + sel('fSpecies') + ' • ' + sel('fSystem') + ' • ความเค็ม ' + $('fSalinity').value + ' ppt • บ่อ ' + i.rai + ' ไร่ • ปล่อย ' + fmt(i.v) + ' ตัว • ระดับน้ำ ' + level.toFixed(1) + ' ม.');
     log('บ่อเลี้ยงยังไม่มีน้ำ — ขั้นต่อไป: เตรียมบ่อ → เตรียมน้ำ → ปล่อยกุ้ง จึงเข้าสู่โหมดเลี้ยง (ยังไม่เปิดใช้ในต้นแบบ)');
@@ -282,6 +288,9 @@
     if (!state.cfg) return;
     const c = clockText(); $('chipTime').textContent = c.hhmm; $('chipDay').textContent = 'ก่อนปล่อยกุ้ง' + (c.day ? ' (+' + c.day + ' วัน)' : '');
     updateBars();
+    const rl = state.cfg.reservoir.level;
+    $('nodeCulSub').textContent = state.cfg.rai + ' ไร่ • ' + (state.water > 0.01 ? 'น้ำ ' + state.water.toFixed(2) + ' ม.' : 'บ่อแห้ง'); $('nodeResSub').textContent = '7 ไร่ • น้ำ ' + rl.toFixed(2) + ' ม.';
+    $('kvResv').textContent = '7 ไร่ • น้ำ ' + rl.toFixed(2) + ' ม. (สูงสุด 3 ม.)';
     if (window.__pond3dCfg) window.__pond3dCfg.water = state.water;
     const fuel = state.cost.fuelL * PRICE.diesel, el = state.cost.kwh * PRICE.kwh;
     $('costFuel').textContent = baht(fuel) + ' (' + state.cost.fuelL.toFixed(1) + ' ล.)'; $('costElec').textContent = baht(el) + ' (' + state.cost.kwh.toFixed(1) + ' หน่วย)'; $('costTotal').textContent = baht(fuel + el);
@@ -299,6 +308,39 @@
     if (!state.started || !state.speed) return;
     const dt = dtReal * state.speed; state.simSec += dt; pumpTick(dt); refreshSim();
   }, 250);
+
+  // ===== บันทึก / โหลด / ลบ เกม (เก็บในเครื่องนี้ด้วย localStorage) =====
+  const SAVE_KEY = 'simSave1', FORM_IDS = ['fName', 'fSpecies', 'fSystem', 'fSalinity', 'fSize', 'fStock', 'fLevel', 'fProvince', 'fMode'];
+  const readForm = () => { const o = {}; FORM_IDS.forEach((id) => { o[id] = $(id).value; }); return o; };
+  function applyForm(o) {
+    FORM_IDS.forEach((id) => { if (o[id] != null) { $(id).value = o[id]; $(id).dispatchEvent(new Event('change')); } });
+    $('fLevelVal').textContent = Number($('fLevel').value).toFixed(1); stockInfo();
+  }
+  function saveGame() {
+    const data = { v: 1, savedAt: Date.now(), form: readForm(), game: state.started ? { cfg: state.cfg, water: state.water, simSec: state.simSec, cost: state.cost, pumps: state.pumps } : null };
+    try { localStorage.setItem(SAVE_KEY, JSON.stringify(data)); toast(state.started ? '💾 บันทึกเกมแล้ว (' + clockText().hhmm + ' ระดับน้ำบ่อเลี้ยง ' + state.water.toFixed(2) + ' ม.)' : '💾 บันทึกค่าที่ตั้งไว้แล้ว'); }
+    catch (e) { toast('บันทึกไม่ได้ — เบราว์เซอร์ไม่อนุญาตให้เก็บข้อมูล'); }
+  }
+  function askDelete() {
+    $('cfTitle').textContent = '🗑 ลบเกมที่บันทึกไว้?';
+    $('cfMsg').textContent = 'จะลบข้อมูลที่บันทึกไว้ในเครื่องนี้ แล้วเริ่มใหม่ทั้งหมด (ระดับน้ำ ค่าน้ำมัน/ค่าไฟที่สะสมไว้จะหาย กู้คืนไม่ได้)';
+    $('confirmBox').hidden = false;
+  }
+  $('cfNo').addEventListener('click', () => { $('confirmBox').hidden = true; });
+  $('cfYes').addEventListener('click', () => { try { localStorage.removeItem(SAVE_KEY); } catch (e) { /* ข้าม */ } location.reload(); });
+  ['saveBtn', 'hSave'].forEach((id) => $(id).addEventListener('click', saveGame));
+  ['delBtn', 'hDel'].forEach((id) => $(id).addEventListener('click', askDelete));
+  function loadSaved() {
+    let d = null; try { d = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); } catch (e) { d = null; }
+    if (!d || d.v !== 1) return;
+    applyForm(d.form || {});
+    if (d.game && d.game.cfg) {
+      Object.assign(state, { cfg: d.game.cfg, started: true, water: d.game.water || 0, simSec: d.game.simSec || 0, cost: d.game.cost || { fuelL: 0, kwh: 0 }, pumps: d.game.pumps || { reservoir: null, culture: null }, speed: 0 });
+      paintGame();
+      log('โหลดเกมที่บันทึกไว้ (บันทึกเมื่อ ' + new Date(d.savedAt).toLocaleString('th-TH') + ') • เวลาหยุดอยู่ กด ▶ เพื่อเดินต่อ');
+      toast('โหลดเกมที่บันทึกไว้แล้ว');
+    } else toast('โหลดค่าที่บันทึกไว้แล้ว');
+  }
 
   // รูปโปรไฟล์ไลน์ของผู้เล่น แทนรูปกุ้งบนหัวหน้าตั้งค่า (ไม่มีรูป/ยังไม่ล็อกอิน = คงรูปกุ้งไว้)
   (async function () {
@@ -344,4 +386,5 @@
 
   renderParams();
   selectPond('culture');
+  loadSaved();
 })();

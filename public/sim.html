@@ -29,6 +29,8 @@
       <button class="sp" data-sp="60" title="เร็ว 60 เท่า (1 วินาที = 1 นาที)">▶▶</button>
       <button class="sp" data-sp="600" title="เร็ว 600 เท่า (1 วินาที = 10 นาที)">▶▶▶</button>
     </div>
+    <button class="btn ghost small" id="hSave" title="บันทึกเกม" type="button">💾</button>
+    <button class="btn ghost small danger" id="hDel" title="ลบเกมที่บันทึก/เริ่มใหม่" type="button">🗑</button>
     <button class="btn ghost small" id="musicBtn" title="เพลงประกอบ" type="button">🎵</button>
     <button class="btn ghost small" id="fsBtn" title="เต็มจอ/ล็อกแนวนอน">⛶</button>
   </header>
@@ -173,9 +175,19 @@
     <div class="muted tiny">เริ่มเกมแล้ว บ่อเลี้ยงจะ <b>ยังไม่มีน้ำ</b> — ต้องเตรียมบ่อ → เตรียมน้ำ → ปล่อยกุ้ง ก่อนเข้าสู่โหมดเลี้ยง • บ่อพักมีให้ 7 ไร่ (ลึกสูงสุด 3 ม.) น้ำเริ่มต้นสุ่มให้</div>
     <div class="row">
       <a class="btn ghost" href="/">← กลับ</a>
+      <span class="row-mid"><button class="btn ghost" id="saveBtn" type="button">💾 บันทึก</button><button class="btn ghost danger" id="delBtn" type="button">🗑 ลบ</button></span>
       <button class="btn" id="startBtn">▶ เริ่มเกม</button>
     </div>
     <div class="muted tiny">หน้านี้เป็นต้นแบบเพื่อดูการจัดวาง ยังไม่มีการคำนวณจริง</div>
+  </div>
+</div>
+
+<!-- ยืนยันการลบ -->
+<div id="confirmBox" class="modal" hidden style="z-index:55">
+  <div class="card pick-card">
+    <div class="card-t" id="cfTitle">ยืนยัน</div>
+    <div class="muted" id="cfMsg"></div>
+    <div class="row"><button class="btn ghost" id="cfNo" type="button">ยกเลิก</button><button class="btn danger" id="cfYes" type="button">🗑 ลบ</button></div>
   </div>
 </div>
 
