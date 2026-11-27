@@ -172,6 +172,19 @@
     log('บ่อพัก 7 ไร่ มีน้ำเริ่มต้น ' + resv.toFixed(1) + ' ม. (สุ่มให้ ต่ำสุด 1 ม. สูงสุด 3 ม.)');
   });
 
+  // รูปโปรไฟล์ไลน์ของผู้เล่น แทนรูปกุ้งบนหัวหน้าตั้งค่า (ไม่มีรูป/ยังไม่ล็อกอิน = คงรูปกุ้งไว้)
+  (async function () {
+    try {
+      const r = await fetch('/api/auth/me', { credentials: 'same-origin' }); const j = await r.json();
+      const url = j && j.user && j.user.pictureUrl;
+      if (url && /^https:\/\/profile\.line-scdn\.net\//.test(url)) {
+        const img = document.createElement('img'); img.alt = ''; img.referrerPolicy = 'no-referrer';
+        img.onload = () => { const el = $('setupAv'); el.textContent = ''; el.appendChild(img); };
+        img.src = url;
+      }
+    } catch (e) { /* ใช้รูปกุ้งต่อไป */ }
+  })();
+
   // ขนาดเวทีตามพื้นที่เห็นจริงของเบราว์เซอร์ (100dvh บางเครื่องล้ำไปใต้แถบปุ่มระบบ ทำให้ปุ่มขวาหาย)
   const stageEl = $('stage');
   function fitStage() {
